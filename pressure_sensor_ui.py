@@ -283,8 +283,802 @@ class PressureSensorUI:
         # 在主线程中显示警告
         self.root.after(0, show_warning)
         
+    def create_menubar(self):
+        """创建医院风格的专业菜单栏"""
+        menubar = tk.Menu(self.root, 
+                         bg='#ffffff',       # 纯白背景，医院清洁风格
+                         fg='#1a1a1a',       # 深黑色文字，最高对比度
+                         activebackground='#f0f8ff',  # 极淡蓝色悬停，医疗风格
+                         activeforeground='#0066cc',  # 专业医疗蓝色文字
+                         font=('Microsoft YaHei UI', 12, 'normal'),  # 增大字体提高高度
+                         borderwidth=0,      # 无边框，清洁感
+                         relief='flat',      # 平滑无立体效果
+                         selectcolor='#4a90e2',  # 选中时的蓝色
+                         activeborderwidth=1,  # 悬停时细边框
+                         disabledforeground='#888888')  # 禁用项灰色
+        self.root.config(menu=menubar)
+        
+        # 创建"文件"菜单 (医院风格配色)
+        file_menu = tk.Menu(menubar, tearoff=0,
+                           bg='#ffffff',        # 纯白背景，医院风格
+                           fg='#37474f',        # 深灰色文字
+                           activebackground='#e8f5e8',  # 淡绿色悬停（健康色调）
+                           activeforeground='#2e7d32',   # 深绿色悬停文字
+                           font=('Microsoft YaHei UI', 11),
+                           borderwidth=1,
+                           relief='solid',
+                           selectcolor='#4caf50')
+        menubar.add_cascade(label="  📄 文件  ", menu=file_menu, 
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加文件菜单项
+        file_menu.add_command(label="📁 新建检测档案", command=self.show_new_profile_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="📊 导出检测数据", command=self.save_log)
+        file_menu.add_command(label="📸 保存热力图快照", command=self.save_snapshot)
+        file_menu.add_separator()
+        file_menu.add_command(label="❌ 退出系统", command=self.on_closing)
+        
+        # 创建"检测"菜单（使用医疗蓝色主题）
+        detection_menu = tk.Menu(menubar, tearoff=0,
+                               bg='#ffffff',        # 纯白背景
+                               fg='#37474f',        # 深灰色文字
+                               activebackground='#e3f2fd',  # 淡蓝色悬停
+                               activeforeground='#1976d2',   # 医疗蓝悬停文字
+                               font=('Microsoft YaHei UI', 11),
+                               borderwidth=1,
+                               relief='solid',
+                               selectcolor='#2196f3')
+        menubar.add_cascade(label="  🔬 检测  ", menu=detection_menu, 
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加检测菜单项
+        detection_menu.add_command(label="📋 检测流程指导", command=self.show_detection_process_dialog)
+        detection_menu.add_command(label="👤 患者信息管理", command=self.show_new_profile_dialog)
+        detection_menu.add_separator()
+        detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
+        detection_menu.add_command(label="🔄 重新连接设备", command=self.auto_connect_device)
+        
+        # 创建"设备"菜单（使用淡紫色医疗主题）
+        device_menu = tk.Menu(menubar, tearoff=0,
+                             bg='#ffffff',        # 纯白背景
+                             fg='#37474f',        # 深灰色文字
+                             activebackground='#f3e5f5',  # 淡紫色悬停
+                             activeforeground='#7b1fa2',   # 深紫色悬停文字
+                             font=('Microsoft YaHei UI', 11),
+                             borderwidth=1,
+                             relief='solid',
+                             selectcolor='#9c27b0')
+        menubar.add_cascade(label="  📱 设备  ", menu=device_menu,
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加设备菜单项
+        device_menu.add_command(label="🔍 自动检测端口", command=lambda: self.show_device_config())
+        device_menu.add_command(label="📊 实时数据监控", command=lambda: messagebox.showinfo("数据监控", "数据监控面板已在右侧显示"))
+        device_menu.add_separator()
+        device_menu.add_command(label="⚡ 性能模式设置", command=lambda: messagebox.showinfo("性能设置", "当前运行在标准模式\n可通过启动脚本切换:\n• run_ui.py (标准)\n• run_ui_fast.py (快速)\n• run_ui_ultra.py (极速)"))
+        
+        # 创建"视图"菜单（使用橙色健康主题）
+        view_menu = tk.Menu(menubar, tearoff=0,
+                           bg='#ffffff',        # 纯白背景
+                           fg='#37474f',        # 深灰色文字
+                           activebackground='#fff3e0',  # 淡橙色悬停
+                           activeforeground='#f57c00',   # 深橙色悬停文字
+                           font=('Microsoft YaHei UI', 11),
+                           borderwidth=1,
+                           relief='solid',
+                           selectcolor='#ff9800')
+        menubar.add_cascade(label="  👀 视图  ", menu=view_menu,
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加视图菜单项
+        view_menu.add_command(label="📈 统计数据面板", command=lambda: messagebox.showinfo("统计面板", "实时统计数据已在右侧显示\n包含最大值、最小值、平均值等"))
+        view_menu.add_command(label="🎨 热力图显示设置", command=lambda: messagebox.showinfo("显示设置", "热力图显示功能:\n• 16级颜色梯度\n• 0-60mmHg压力范围\n• 实时数据更新"))
+        view_menu.add_separator()
+        view_menu.add_command(label="📝 清除日志记录", command=self.clear_log)
+        view_menu.add_command(label="🔍 放大热力图", command=lambda: messagebox.showinfo("显示提示", "可拖拽调整窗口大小来放大显示"))
+        
+        # 创建"帮助"菜单（使用医疗绿色主题）
+        help_menu = tk.Menu(menubar, tearoff=0,
+                           bg='#ffffff',        # 纯白背景
+                           fg='#37474f',        # 深灰色文字
+                           activebackground='#e8f5e8',  # 淡绿色悬停
+                           activeforeground='#2e7d32',   # 深绿色悬停文字
+                           font=('Microsoft YaHei UI', 11),
+                           borderwidth=1,
+                           relief='solid',
+                           selectcolor='#4caf50')
+        menubar.add_cascade(label="  ❓ 帮助  ", menu=help_menu,
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加帮助菜单项
+        help_menu.add_command(label="📖 操作指南手册", command=self.show_help_dialog)
+        help_menu.add_command(label="🚀 快速入门教程", command=lambda: messagebox.showinfo("快速入门", 
+                                "智能肌少症检测系统快速入门:\n\n1️⃣ 设备配置\n   • 点击'设备配置'选择设备类型\n   • 配置COM端口连接\n\n2️⃣ 开始检测\n   • 确保设备连接正常\n   • 观察热力图实时显示\n\n3️⃣ 数据分析\n   • 查看右侧统计数据\n   • 保存检测快照和日志"))
+        help_menu.add_separator()
+        help_menu.add_command(label="🏥 产品介绍", command=lambda: messagebox.showinfo("产品介绍", 
+                                "智能肌少症检测系统\n\n🔬 专业医疗设备\n• 压力传感器阵列技术\n• 实时数据可视化分析\n• 标准化检测流程\n\n🏥 适用场景\n• 医院康复科\n• 体检中心\n• 养老机构\n• 健康管理中心"))
+        help_menu.add_separator()
+        help_menu.add_command(label="🌐 官方网站", command=lambda: messagebox.showinfo("联系方式", 
+                                "威海聚桥工业科技有限公司\n\n🌐 官方网站: www.jq-tech.com\n📧 技术支持: support@jq-tech.com\n📱 客服热线: 400-xxx-xxxx"))
+        help_menu.add_command(label="📞 技术支持", command=lambda: messagebox.showinfo("技术支持", 
+                                "24小时技术支持服务:\n\n📧 邮箱: support@jq-tech.com\n📱 热线: 400-xxx-xxxx\n💬 微信: JQ-Tech-Support\n⏰ 服务时间: 7×24小时\n\n🔧 远程协助服务可用"))
+        help_menu.add_separator()
+        help_menu.add_command(label="ℹ️ 关于本系统", command=self.show_about_dialog)
+    
+    def show_new_profile_dialog(self):
+        """显示新建档案对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("新建检测档案")
+        dialog.geometry("600x500")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        
+        # 居中显示
+        dialog.transient(self.root)
+        x = self.root.winfo_x() + (self.root.winfo_width() - 600) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 500) // 2
+        dialog.geometry(f"600x500+{x}+{y}")
+        
+        # 主框架
+        main_frame = ttk.Frame(dialog, padding=25)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 标题
+        title_label = ttk.Label(main_frame, text="📁 新建检测档案", 
+                               font=("Arial", 16, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # 基本信息框架
+        info_frame = ttk.LabelFrame(main_frame, text="基本信息", padding=15)
+        info_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # 姓名
+        ttk.Label(info_frame, text="姓名:", font=("Microsoft YaHei", 10)).grid(
+            row=0, column=0, sticky="e", padx=(0, 10), pady=5)
+        name_entry = ttk.Entry(info_frame, width=20, font=("Microsoft YaHei", 10))
+        name_entry.grid(row=0, column=1, sticky="w", pady=5)
+        
+        # 年龄
+        ttk.Label(info_frame, text="年龄:", font=("Microsoft YaHei", 10)).grid(
+            row=0, column=2, sticky="e", padx=(20, 10), pady=5)
+        age_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
+        age_entry.grid(row=0, column=3, sticky="w", pady=5)
+        
+        # 性别
+        ttk.Label(info_frame, text="性别:", font=("Microsoft YaHei", 10)).grid(
+            row=1, column=0, sticky="e", padx=(0, 10), pady=5)
+        gender_var = tk.StringVar(value="男")
+        gender_frame = ttk.Frame(info_frame)
+        gender_frame.grid(row=1, column=1, sticky="w", pady=5)
+        ttk.Radiobutton(gender_frame, text="男", variable=gender_var, value="男").pack(side=tk.LEFT)
+        ttk.Radiobutton(gender_frame, text="女", variable=gender_var, value="女").pack(side=tk.LEFT, padx=(10, 0))
+        
+        # 身高体重
+        ttk.Label(info_frame, text="身高(cm):", font=("Microsoft YaHei", 10)).grid(
+            row=1, column=2, sticky="e", padx=(20, 10), pady=5)
+        height_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
+        height_entry.grid(row=1, column=3, sticky="w", pady=5)
+        
+        ttk.Label(info_frame, text="体重(kg):", font=("Microsoft YaHei", 10)).grid(
+            row=2, column=0, sticky="e", padx=(0, 10), pady=5)
+        weight_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
+        weight_entry.grid(row=2, column=1, sticky="w", pady=5)
+        
+        # 联系方式
+        ttk.Label(info_frame, text="联系方式:", font=("Microsoft YaHei", 10)).grid(
+            row=2, column=2, sticky="e", padx=(20, 10), pady=5)
+        contact_entry = ttk.Entry(info_frame, width=15, font=("Microsoft YaHei", 10))
+        contact_entry.grid(row=2, column=3, sticky="w", pady=5)
+        
+        # 检测配置框架
+        config_frame = ttk.LabelFrame(main_frame, text="检测配置", padding=15)
+        config_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # 检测模式
+        ttk.Label(config_frame, text="检测模式:", font=("Microsoft YaHei", 10)).grid(
+            row=0, column=0, sticky="e", padx=(0, 10), pady=5)
+        mode_var = tk.StringVar(value="标准检测")
+        mode_combo = ttk.Combobox(config_frame, textvariable=mode_var, width=18,
+                                 values=["标准检测", "快速检测", "详细检测"], state="readonly")
+        mode_combo.grid(row=0, column=1, sticky="w", pady=5)
+        
+        # 检测设备
+        ttk.Label(config_frame, text="检测设备:", font=("Microsoft YaHei", 10)).grid(
+            row=0, column=2, sticky="e", padx=(20, 10), pady=5)
+        device_info = self.device_manager.get_current_device_info() if self.device_configured else None
+        device_name = f"{device_info['icon']} {device_info['name']}" if device_info else "未配置设备"
+        device_label = ttk.Label(config_frame, text=device_name, 
+                                font=("Microsoft YaHei", 10), foreground="blue")
+        device_label.grid(row=0, column=3, sticky="w", pady=5)
+        
+        # 备注框架
+        notes_frame = ttk.LabelFrame(main_frame, text="备注信息", padding=15)
+        notes_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        notes_text = tk.Text(notes_frame, height=4, width=60, font=("Microsoft YaHei", 10))
+        notes_scrollbar = ttk.Scrollbar(notes_frame, orient="vertical", command=notes_text.yview)
+        notes_text.configure(yscrollcommand=notes_scrollbar.set)
+        notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        notes_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 按钮框架
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=(10, 0))
+        
+        def create_profile():
+            """创建档案"""
+            name = name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("输入错误", "请输入姓名！")
+                return
+            
+            try:
+                age = int(age_entry.get()) if age_entry.get() else 0
+                height = float(height_entry.get()) if height_entry.get() else 0
+                weight = float(weight_entry.get()) if weight_entry.get() else 0
+            except ValueError:
+                messagebox.showwarning("输入错误", "年龄、身高、体重请输入数字！")
+                return
+            
+            # 创建档案信息
+            from datetime import datetime
+            profile_data = {
+                "name": name,
+                "age": age,
+                "gender": gender_var.get(),
+                "height": height,
+                "weight": weight,
+                "contact": contact_entry.get().strip(),
+                "detection_mode": mode_var.get(),
+                "device": device_name,
+                "notes": notes_text.get("1.0", tk.END).strip(),
+                "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "profile_id": datetime.now().strftime("%Y%m%d_%H%M%S")
+            }
+            
+            # 保存档案到文件
+            try:
+                import json
+                filename = f"检测档案_{profile_data['profile_id']}.json"
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(profile_data, f, ensure_ascii=False, indent=2)
+                
+                self.log_message(f"📁 新档案已创建: {name} ({filename})")
+                messagebox.showinfo("档案创建成功", 
+                                  f"检测档案创建成功！\n\n"
+                                  f"姓名: {name}\n"
+                                  f"档案编号: {profile_data['profile_id']}\n"
+                                  f"保存位置: {filename}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("保存失败", f"档案保存失败：{e}")
+        
+        ttk.Button(btn_frame, text="✅ 创建档案", command=create_profile, width=15).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="❌ 取消", command=dialog.destroy, width=15).pack(side=tk.LEFT)
+
+    def show_detection_process_dialog(self):
+        """显示检测流程对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("检测流程说明")
+        dialog.geometry("750x600")
+        dialog.resizable(True, True)
+        dialog.grab_set()
+        
+        # 居中显示
+        dialog.transient(self.root)
+        x = self.root.winfo_x() + (self.root.winfo_width() - 750) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 600) // 2
+        dialog.geometry(f"750x600+{x}+{y}")
+        
+        # 创建滚动文本框架
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 标题
+        title_label = ttk.Label(main_frame, text="📋 智能肌少症检测系统 - 检测流程指南", 
+                               font=("Arial", 14, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # 创建带滚动条的文本框
+        text_frame = ttk.Frame(main_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        text_widget = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, font=("Microsoft YaHei", 11))
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        
+        # 检测流程内容（之前的帮助内容）
+        process_content = """
+📋 标准化健康检测流程说明
+
+本系统采用7步标准化检测流程，通过顺序检测降噪提升检测精准度，确保结果的准确性和可重复性。
+
+🎯 检测目标：
+通过压力传感器阵列监测人体平衡能力、肌力表现和步态稳定性，综合评估肌少症风险。
+
+📝 检测流程（总时长约2-3分钟）：
+
+┌────────────────────────────────────────────┐
+│  第一步：静坐检测（10秒）                    │
+├────────────────────────────────────────────┤
+│  • 请坐在检测区域，保持自然坐姿            │
+│  • 双脚平放，身体放松                      │
+│  • 系统将记录基础压力分布数据              │
+│  • 用途：建立个人基准数据，排除外界干扰    │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第二步：起坐测试（5次重复）               │
+├────────────────────────────────────────────┤
+│  • 从坐姿快速起立至完全站直                │
+│  • 重复5次，动作要连贯有力                 │
+│  • 系统监测起立时的力量变化                │
+│  • 用途：评估下肢肌力和协调性              │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第三步：静态站立（10秒）                  │
+├────────────────────────────────────────────┤
+│  • 双脚并拢，身体直立                      │
+│  • 目视前方，保持平衡                      │
+│  • 避免左右摇摆或前后晃动                  │
+│  • 用途：测试静态平衡能力                  │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第四步：前后脚站立（10秒）                │
+├────────────────────────────────────────────┤
+│  • 一脚在前，一脚在后，呈一条直线          │
+│  • 保持身体平衡，不扶任何支撑物            │
+│  • 可选择左脚或右脚在前                    │
+│  • 用途：测试动态平衡和本体感觉            │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第五步：双脚前后站立（10秒）              │
+├────────────────────────────────────────────┤
+│  • 双脚前后交替站立                        │
+│  • 每只脚轮流承重，类似走路预备姿势        │
+│  • 保持上身稳定                            │
+│  • 用途：评估步态预备能力和平衡调节        │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第六步：握力检测                          │
+├────────────────────────────────────────────┤
+│  • 站在检测区域，使用握力计测量            │
+│  • 双手各测量3次，取最高值                 │
+│  • 与压力传感器数据同步记录                │
+│  • 用途：评估上肢肌力表现                  │
+└────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────┐
+│  第七步：4.5米步道折返                     │
+├────────────────────────────────────────────┤
+│  • 以正常速度行走4.5米                     │
+│  • 转身后返回起点                          │
+│  • 系统记录完整步态数据                    │
+│  • 用途：分析步态稳定性和行走能力          │
+└────────────────────────────────────────────┘
+
+⚠️ 注意事项：
+• 检测过程中请穿着舒适、防滑的鞋子
+• 如有身体不适或平衡困难，请立即停止检测
+• 检测区域周围应有安全保护措施
+• 建议由专业人员陪同指导完成
+
+📊 数据分析：
+系统将综合所有检测数据，通过AI算法分析：
+• 静态平衡评分
+• 动态平衡评分  
+• 肌力指数
+• 步态稳定性指数
+• 综合健康风险评估
+
+🎯 检测意义：
+通过多维度数据融合，提供科学、客观的肌少症风险评估，为健康管理和康复训练提供数据支持。
+
+💡 温馨提示：
+定期检测有助于及时发现健康问题，建议每月进行一次完整检测，跟踪健康状态变化。
+        """
+        
+        text_widget.insert(tk.END, process_content.strip())
+        text_widget.config(state=tk.DISABLED)
+        
+        # 关闭按钮
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=(15, 0))
+        ttk.Button(btn_frame, text="关闭", command=dialog.destroy, width=15).pack()
+    
+    def show_help_dialog(self):
+        """显示操作帮助对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("操作帮助")
+        dialog.geometry("700x650")
+        dialog.resizable(True, True)
+        dialog.grab_set()
+        
+        # 居中显示
+        dialog.transient(self.root)
+        x = self.root.winfo_x() + (self.root.winfo_width() - 700) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 650) // 2
+        dialog.geometry(f"700x650+{x}+{y}")
+        
+        # 创建滚动文本框架
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 标题
+        title_label = ttk.Label(main_frame, text="❓ 智能肌少症检测系统 - 操作帮助", 
+                               font=("Arial", 14, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # 创建带滚动条的文本框
+        text_frame = ttk.Frame(main_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        text_widget = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, font=("Microsoft YaHei", 11))
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        
+        # 操作帮助内容
+        help_content = """
+❓ 系统操作指南
+
+本指南将帮助您快速掌握智能肌少症检测系统的各项功能和操作方法。
+
+🚀 快速开始
+
+1️⃣ 首次使用系统
+   • 启动程序后会自动弹出设备配置对话框
+   • 选择您的检测设备类型（32x32, 32x64, 32x96）
+   • 配置COM端口和设备参数
+   • 点击"确认配置"完成初始化
+
+2️⃣ 设备连接
+   • 确保压力传感器设备已正确连接电脑
+   • 检查USB或串口线连接状态
+   • 系统会自动检测并连接配置的设备
+   • 连接成功后状态栏显示"🟢 已连接"
+
+🎛️ 主界面操作
+
+📊 热力图显示区域
+   • 实时显示压力传感器数据的热力图
+   • 颜色越红表示压力越大，越蓝表示压力越小
+   • 支持32x32, 32x64, 32x96多种阵列规格
+   • 自动适配显示比例和颜色映射
+
+📈 实时统计面板
+   • 最大值：当前帧的最大压力值
+   • 最小值：当前帧的最小压力值  
+   • 平均值：所有传感器点的平均压力
+   • 标准差：压力分布的离散程度
+   • 有效点：非零压力点的数量
+
+📝 数据日志区域
+   • 实时显示接收到的数据帧信息
+   • 包含时间戳、帧编号、统计数据
+   • JQ变换标识（✨表示已应用，📊表示原始数据）
+   • 支持日志清除和保存功能
+
+🎛️ 控制面板功能
+
+🔧 设备管理
+   • 设备选择：从下拉菜单选择当前使用的设备
+   • 设备配置：重新配置设备参数和端口设置
+   • 自动连接：系统会自动连接选择的设备
+   • 连接监控：自动检测连接状态并尝试重连
+
+⚙️ 功能按钮
+   • 📸 保存快照：保存当前热力图为PNG图片文件
+   • 🔄 调序：调整32x96步道模式的段显示顺序
+   • 💾 保存日志：将当前日志内容保存为文本文件
+   • 🗑️ 清除日志：清空日志显示区域
+
+🍽️ 菜单栏功能
+
+📋 检测菜单
+   • 📁 新建档案：创建新的检测档案，录入被检测者信息
+   • 📋 检测流程：查看标准化7步检测流程说明
+
+🛠️ 其他菜单
+   • ❓ 操作帮助：查看本操作指南（当前页面）
+   • ℹ️ 关于系统：查看系统版本和开发信息
+
+🔍 设备配置详解
+
+📱 支持的设备类型
+   • 32x32阵列：标准检测模式，适用于静态平衡测试
+   • 32x64阵列：扩展检测模式，适用于动态平衡测试
+   • 32x96阵列：步道模式，适用于步态分析和行走测试
+
+🔌 端口配置
+   • 自动检测：系统会扫描可用的COM端口
+   • 手动选择：可以指定特定的COM端口
+   • 波特率：默认1,000,000 bps（无需修改）
+   • 连接测试：配置时会自动测试端口连通性
+
+⚡ 性能优化设置
+
+🏃 运行模式
+   • 标准模式：run_ui.py - 20 FPS，平衡性能与稳定性
+   • 快速模式：run_ui_fast.py - 100 FPS，高刷新率显示
+   • 极速模式：run_ui_ultra.py - 200 FPS，极致响应速度
+
+🔄 数据处理
+   • JQ变换：威海聚桥工业科技专用数据变换算法
+   • 自动应用于32x32和32x96阵列数据
+   • 提供数据镜像翻转和重排序功能
+   • 优化数据显示效果和分析精度
+
+🚨 故障排除
+
+❌ 常见问题
+   • 设备无法连接：检查USB线缆和端口选择
+   • 数据接收异常：确认设备电源和波特率设置
+   • 热力图不更新：检查设备连接状态和数据流
+   • 程序运行缓慢：尝试使用标准模式或重启程序
+
+🔧 解决方案
+   • 重启设备：断开并重新连接检测设备
+   • 重新配置：通过"设备配置"重新设置参数
+   • 端口切换：尝试不同的COM端口
+   • 程序重启：关闭并重新启动检测软件
+
+📞 技术支持
+
+如果遇到无法解决的问题，请联系：
+• 威海聚桥工业科技有限公司
+• 技术支持邮箱：support@jq-tech.com
+• 客服电话：400-xxx-xxxx
+
+💡 使用技巧
+
+✨ 提高检测精度
+   • 确保检测环境安静无干扰
+   • 检测前校准设备基准数据
+   • 选择合适的数组大小和模式
+   • 定期清洁传感器表面
+
+📊 数据分析
+   • 观察热力图的颜色分布模式
+   • 关注压力峰值的位置和变化
+   • 结合统计数据进行综合判断
+   • 保存关键时刻的快照用于对比
+
+🎯 检测建议
+   • 建议连续检测获得更准确结果
+   • 注意观察被检测者的动作规范性
+   • 记录检测过程中的特殊情况
+   • 定期备份检测档案和数据
+        """
+        
+        text_widget.insert(tk.END, help_content.strip())
+        text_widget.config(state=tk.DISABLED)  # 设为只读
+        
+        # 关闭按钮
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=(15, 0))
+        ttk.Button(btn_frame, text="关闭", command=dialog.destroy, width=15).pack()
+
+    def show_about_dialog(self):
+        """显示美观的关于对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("关于 - 智能肌少症检测系统")
+        dialog.geometry("720x650")  # 扩大尺寸以显示完整内容
+        dialog.resizable(True, True)  # 允许调整大小
+        dialog.grab_set()
+        
+        # 设置对话框图标和样式
+        dialog.configure(bg='#f8f9fa')
+        
+        # 居中显示
+        dialog.transient(self.root)
+        x = self.root.winfo_x() + (self.root.winfo_width() - 720) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 650) // 2
+        dialog.geometry(f"720x650+{x}+{y}")
+        
+        # 创建滚动框架
+        canvas = tk.Canvas(dialog, bg='#f8f9fa', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # 主框架
+        main_frame = ttk.Frame(scrollable_frame, padding=30)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 顶部装饰区域
+        header_frame = tk.Frame(main_frame, bg='#2c3e50', height=120)
+        header_frame.pack(fill=tk.X, pady=(0, 25))
+        header_frame.pack_propagate(False)
+        
+        # 应用图标和标题 (在深色背景上)
+        title_label = tk.Label(header_frame, text="🔬 智能肌少症检测系统", 
+                               font=("Microsoft YaHei UI", 20, "bold"),
+                               bg='#2c3e50', fg='#ffffff')
+        title_label.pack(pady=(15, 5))
+        
+        subtitle_label = tk.Label(header_frame, text="Intelligent Sarcopenia Detection System", 
+                                  font=("Arial", 12, "italic"),
+                                  bg='#2c3e50', fg='#bdc3c7')
+        subtitle_label.pack(pady=(0, 5))
+        
+        version_label = tk.Label(header_frame, text="压力传感器数据可视化界面 v1.2", 
+                                font=("Microsoft YaHei UI", 10),
+                                bg='#2c3e50', fg='#ecf0f1')
+        version_label.pack(pady=(0, 15))
+        
+        # 系统信息卡片
+        info_card = tk.Frame(main_frame, bg='#ffffff', relief='solid', bd=1)
+        info_card.pack(fill=tk.X, pady=(0, 20))
+        
+        info_title = tk.Label(info_card, text="📋 系统信息", 
+                             font=("Microsoft YaHei UI", 14, "bold"),
+                             bg='#ffffff', fg='#2c3e50')
+        info_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        # 创建信息网格
+        info_grid_frame = tk.Frame(info_card, bg='#ffffff')
+        info_grid_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        info_items = [
+            ("🏷️ 软件版本:", "v1.2.0 模块化专业版", "#27ae60"),
+            ("🏢 开发公司:", "威海聚桥工业科技有限公司", "#3498db"),
+            ("🔧 技术支持:", "JQ工业科技压力传感器阵列", "#e67e22"),
+            ("📐 支持阵列:", "32×32, 32×64, 32×96 多规格", "#9b59b6"),
+            ("📅 开发时间:", "2024年 (持续更新中)", "#34495e"),
+            ("💻 运行环境:", "Windows 10/11, Python 3.7+", "#16a085"),
+            ("⚡ 性能模式:", "标准/快速/极速 三种模式", "#f39c12"),
+            ("🌐 通信协议:", "串口 1000000 bps 高速传输", "#e74c3c"),
+        ]
+        
+        for i, (label, value, color) in enumerate(info_items):
+            row = i // 2
+            col = (i % 2) * 3
+            
+            label_widget = tk.Label(info_grid_frame, text=label, 
+                                   font=("Microsoft YaHei UI", 10, "bold"),
+                                   bg='#ffffff', fg='#2c3e50')
+            label_widget.grid(row=row, column=col, sticky="e", padx=(0, 8), pady=6)
+            
+            value_widget = tk.Label(info_grid_frame, text=value, 
+                                   font=("Microsoft YaHei UI", 10),
+                                   bg='#ffffff', fg=color)
+            value_widget.grid(row=row, column=col+1, sticky="w", padx=(0, 30), pady=6)
+        
+        # 核心功能卡片
+        features_card = tk.Frame(main_frame, bg='#ffffff', relief='solid', bd=1)
+        features_card.pack(fill=tk.X, pady=(0, 20))
+        
+        features_title = tk.Label(features_card, text="⚡ 核心功能特性", 
+                                 font=("Microsoft YaHei UI", 14, "bold"),
+                                 bg='#ffffff', fg='#2c3e50')
+        features_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        features_frame = tk.Frame(features_card, bg='#ffffff')
+        features_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        features_list = [
+            "🎨 实时压力数据可视化热力图显示 (16级颜色梯度)",
+            "🔄 多设备智能配置和无缝切换管理系统",
+            "✨ JQ工业科技专用数据变换算法 (镜像+重排)",
+            "⚡ 高性能数据处理引擎 (最高200FPS刷新率)",
+            "📋 标准化健康检测流程指导和档案管理",
+            "💾 数据导出、快照保存和日志记录功能",
+            "🔍 智能端口检测和自动连接重连机制",
+            "📊 实时统计分析 (最值/均值/标准差/有效点)",
+        ]
+        
+        for i, feature in enumerate(features_list):
+            feature_label = tk.Label(features_frame, text=feature, 
+                                    font=("Microsoft YaHei UI", 10),
+                                    bg='#ffffff', fg='#2c3e50',
+                                    justify=tk.LEFT, anchor="w")
+            feature_label.pack(anchor="w", pady=3, padx=10)
+        
+        # 技术规格卡片
+        specs_card = tk.Frame(main_frame, bg='#ffffff', relief='solid', bd=1)
+        specs_card.pack(fill=tk.X, pady=(0, 20))
+        
+        specs_title = tk.Label(specs_card, text="⚙️ 技术规格", 
+                              font=("Microsoft YaHei UI", 14, "bold"),
+                              bg='#ffffff', fg='#2c3e50')
+        specs_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        specs_text = """
+📡 通信参数: 串口通信，波特率1,000,000 bps，帧头AA 55 03 99
+📐 阵列规格: 支持32×32(1024点)、32×64(2048点)、32×96(3072点)
+🎯 数据精度: 8位无符号整数 (0-255)，压力范围0-60mmHg
+⚡ 刷新性能: 标准20FPS/快速100FPS/极速200FPS三种模式
+💻 系统要求: Windows 10/11，Python 3.7+，4GB内存，USB端口
+🔄 数据处理: JQ变换算法，NumPy向量化计算，多线程架构
+        """
+        
+        specs_label = tk.Label(specs_card, text=specs_text.strip(), 
+                              font=("Consolas", 9),
+                              bg='#ffffff', fg='#34495e',
+                              justify=tk.LEFT, anchor="w")
+        specs_label.pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # 联系方式卡片
+        contact_card = tk.Frame(main_frame, bg='#2c3e50')
+        contact_card.pack(fill=tk.X, pady=(0, 20))
+        
+        contact_title = tk.Label(contact_card, text="📞 联系方式与技术支持", 
+                                font=("Microsoft YaHei UI", 14, "bold"),
+                                bg='#2c3e50', fg='#ffffff')
+        contact_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        contact_info = [
+            "🏢 威海聚桥工业科技有限公司",
+            "🌐 官方网站: www.jq-tech.com",
+            "📧 技术支持: support@jq-tech.com", 
+            "📱 客服热线: 400-xxx-xxxx (工作日 9:00-18:00)",
+            "📍 公司地址: 山东省威海市环翠区工业园区",
+            "💬 微信客服: JQ-Tech-Support",
+        ]
+        
+        for info in contact_info:
+            info_label = tk.Label(contact_card, text=info, 
+                                 font=("Microsoft YaHei UI", 10),
+                                 bg='#2c3e50', fg='#ecf0f1')
+            info_label.pack(anchor="w", padx=20, pady=2)
+        
+        contact_bottom = tk.Label(contact_card, text="🤝 感谢您使用智能肌少症检测系统！", 
+                                 font=("Microsoft YaHei UI", 11, "bold"),
+                                 bg='#2c3e50', fg='#f1c40f')
+        contact_bottom.pack(anchor="center", pady=(10, 15))
+        
+        # 按钮区域
+        btn_frame = tk.Frame(main_frame, bg='#f8f9fa')
+        btn_frame.pack(pady=(20, 10))
+        
+        # 创建更美观的按钮
+        close_btn = tk.Button(btn_frame, text="✅ 关闭", 
+                             command=dialog.destroy,
+                             font=("Microsoft YaHei UI", 11, "bold"),
+                             bg='#3498db', fg='white',
+                             activebackground='#2980b9',
+                             activeforeground='white',
+                             relief='flat', bd=0,
+                             padx=25, pady=8,
+                             cursor='hand2')
+        close_btn.pack(side=tk.LEFT, padx=5)
+        
+        info_btn = tk.Button(btn_frame, text="🌐 官网", 
+                            command=lambda: messagebox.showinfo("官方网站", "请访问: www.jq-tech.com"),
+                            font=("Microsoft YaHei UI", 11),
+                            bg='#27ae60', fg='white',
+                            activebackground='#229954',
+                            activeforeground='white',
+                            relief='flat', bd=0,
+                            padx=20, pady=8,
+                            cursor='hand2')
+        info_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 打包滚动区域
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 绑定鼠标滚轮事件
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
     def setup_ui(self):
         """设置用户界面"""
+        # 创建菜单栏
+        self.create_menubar()
+        
         # 主框架
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
