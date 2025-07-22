@@ -14,12 +14,25 @@ class DataProcessor:
         self.array_rows = array_rows
         self.array_cols = array_cols
         self.total_points = array_rows * array_cols
+        # 32x96步道的段顺序，默认[1,2,3]，可调整为[2,3,1]或其他
+        self.walkway_segment_order = [0, 1, 2]  # 对应segment1, segment2, segment3
         
     def set_array_size(self, rows, cols):
         """设置阵列大小"""
         self.array_rows = rows
         self.array_cols = cols
         self.total_points = rows * cols
+    
+    def set_segment_order(self, order):
+        """设置32x96步道的段顺序"""
+        if len(order) == 3 and all(i in [0, 1, 2] for i in order):
+            self.walkway_segment_order = order
+            return True
+        return False
+    
+    def get_segment_order(self):
+        """获取当前段顺序"""
+        return self.walkway_segment_order.copy()
         
     def prepare_data(self, raw_data):
         """准备数据 - 快速调整数据长度以匹配阵列大小"""
@@ -31,6 +44,7 @@ class DataProcessor:
         
         data_len = len(data_array)
         
+        # 其他阵列大小的正常处理
         if data_len < self.total_points:
             # 使用numpy的resize，更高效
             result = np.resize(data_array, self.total_points)
@@ -68,6 +82,63 @@ class DataProcessor:
         # 重新展平为1D数组
         return result_2d.ravel()
     
+    def process_walkway_data(self, raw_data):
+        """
+        处理32x96步道数据：3个1024字节帧，每个先进行JQ变换，然后合并
+        """
+        try:
+            # 确保数据是numpy数组
+            if isinstance(raw_data, (bytes, bytearray)):
+                data_array = np.frombuffer(raw_data, dtype=np.uint8)
+            else:
+                data_array = np.asarray(raw_data, dtype=np.uint8)
+            
+            data_len = len(data_array)
+            
+            if data_len < 3072:
+                raise ValueError(f"步道数据长度不足，期望3072字节，实际{data_len}字节")
+            
+            # 分割成3个1024字节的段
+            segment1 = data_array[:1024]
+            segment2 = data_array[1024:2048]
+            segment3 = data_array[2048:3072]
+            
+            # 对每个段进行JQ变换
+            transformed_seg1 = self.jqbed_transform(segment1)
+            transformed_seg2 = self.jqbed_transform(segment2) 
+            transformed_seg3 = self.jqbed_transform(segment3)
+            
+            # 将每个变换后的1024字节段重塑为32x32
+            matrix1 = transformed_seg1.reshape(32, 32)
+            matrix2 = transformed_seg2.reshape(32, 32)
+            matrix3 = transformed_seg3.reshape(32, 32)
+            
+            # 按照设定的顺序合并成32x96
+            matrices = [matrix1, matrix2, matrix3]
+            ordered_matrices = [matrices[i] for i in self.walkway_segment_order]
+            combined_matrix = np.hstack(ordered_matrices)
+            
+            return combined_matrix.ravel(), f"32x96 walkway processed (3x1024->JQ->combined)"
+            
+        except Exception as e:
+            # 降级处理：直接使用原始数据
+            try:
+                if isinstance(raw_data, (bytes, bytearray)):
+                    fallback_array = np.frombuffer(raw_data, dtype=np.uint8)
+                else:
+                    fallback_array = np.asarray(raw_data, dtype=np.uint8)
+                
+                if len(fallback_array) >= 3072:
+                    return fallback_array[:3072], f"32x96 fallback (no JQ transform)"
+                else:
+                    # 数据不足，填充到3072
+                    padded = np.resize(fallback_array, 3072)
+                    return padded, f"32x96 padded fallback ({len(fallback_array)}->3072)"
+                    
+            except Exception as e2:
+                # 最后的降级：返回零数组
+                return np.zeros(3072, dtype=np.uint8), f"32x96 zeros fallback"
+    
     def process_frame_data(self, frame_data_dict, enable_jq_transform=True):
         """
         处理完整的帧数据
@@ -82,16 +153,21 @@ class DataProcessor:
         try:
             raw_data = frame_data_dict['data']
             
-            # 1. 准备数据
-            prepared_data, prep_msg = self.prepare_data(raw_data)
-            
-            # 2. 应用JQ变换（仅对32x32数据且用户启用时）
-            if enable_jq_transform and self.array_rows == 32 and self.array_cols == 32:
-                transformed_data = self.jqbed_transform(prepared_data)
-                jq_applied = True
+            # 特殊处理32x96步道数据
+            if self.array_rows == 32 and self.array_cols == 96:
+                transformed_data, prep_msg = self.process_walkway_data(raw_data)
+                jq_applied = True  # 步道数据已经进行了JQ变换
             else:
-                transformed_data = prepared_data
-                jq_applied = False
+                # 1. 准备数据
+                prepared_data, prep_msg = self.prepare_data(raw_data)
+                
+                # 2. 应用JQ变换（仅对32x32数据且用户启用时）
+                if enable_jq_transform and self.array_rows == 32 and self.array_cols == 32:
+                    transformed_data = self.jqbed_transform(prepared_data)
+                    jq_applied = True
+                else:
+                    transformed_data = prepared_data
+                    jq_applied = False
             
             # 3. 重塑为2D数组
             matrix_2d = transformed_data.reshape(self.array_rows, self.array_cols)

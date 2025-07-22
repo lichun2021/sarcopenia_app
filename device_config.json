@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-07-22T14:07:02.548614",
+  "devices": {
+    "footpad": {
+      "port": "COM6",
+      "name": "脚垫",
+      "icon": "👣",
+      "array_size": "32x32"
+    }
+  }
+}

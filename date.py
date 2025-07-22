@@ -34,28 +34,28 @@ def find_available_ports():
     
     return available_ports
 
-def test_port_connection(port_name, baudrate=1000000, timeout=2):
+def test_port_connection(port_name, baudrate=1000000, timeout=0.5):
     """
-    测试端口连接和波特率
+    快速测试端口连接
     
     Args:
         port_name (str): 端口名称
         baudrate (int): 波特率
-        timeout (int): 超时时间
+        timeout (float): 超时时间（秒）- 减少到0.5秒
         
     Returns:
         bool: 是否连接成功并检测到数据
     """
     try:
         ser = serial.Serial(port_name, baudrate, timeout=timeout)
-        time.sleep(0.5)  # 等待连接稳定
+        time.sleep(0.1)  # 减少等待时间到0.1秒
         
-        # 尝试读取一些数据
-        test_data = ser.read(100)
+        # 快速读取数据
+        test_data = ser.read(50)  # 减少读取量
         ser.close()
         
-        # 如果读取到数据，认为连接成功
-        return len(test_data) > 0
+        # 简化判断：有数据就认为成功
+        return len(test_data) > 10
         
     except Exception:
         return False
@@ -166,7 +166,7 @@ def main():
     print("=" * 70)
     print(f"📡 目标波特率: 1000000 bps")
     print(f"📋 帧头: {' '.join(f'0x{b:02X}' for b in FRAME_HEADER)}")
-    print(f"🔚 固定终止符: {' '.join(f'0x{b:02X}' for b in FRAME_TERMINATOR)}")
+    print(f"�� 固定终止符: {' '.join(f'0x{b:02X}' for b in FRAME_TERMINATOR)}")
     print("=" * 70)
     
     # 自动查找工作的COM端口

@@ -31,6 +31,12 @@ class SerialInterface:
         # 帧头定义
         self.FRAME_HEADER = [0xAA, 0x55, 0x03, 0x99]
         
+        # 32x96步道数据累积缓冲区
+        self.walkway_buffer = bytearray()
+        self.walkway_frame_count = 0
+        self.expected_walkway_frames = 3  # 32x96需要3个1024字节帧
+        self.is_walkway_mode = False  # 是否为步道模式
+        
     def get_available_ports(self):
         """获取可用端口列表"""
         return find_available_ports()
@@ -42,6 +48,14 @@ class SerialInterface:
     def auto_detect_port(self):
         """自动检测工作端口"""
         return auto_find_working_port()
+    
+    def set_walkway_mode(self, is_walkway):
+        """设置步道模式"""
+        self.is_walkway_mode = is_walkway
+        if not is_walkway:
+            # 清空步道缓冲区
+            self.walkway_buffer.clear()
+            self.walkway_frame_count = 0
     
     def connect(self, port_name):
         """连接到指定端口"""
@@ -129,14 +143,38 @@ class SerialInterface:
                             self.frame_count += 1
                             timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                             
-                            # 将数据和时间戳放入队列
-                            frame_data = {
-                                'data': frame_content,
-                                'timestamp': timestamp,
-                                'frame_number': self.frame_count,
-                                'data_length': len(frame_content)
-                            }
-                            self.data_queue.put(frame_data)
+                            # 步道模式：累积多个1024字节帧
+                            if self.is_walkway_mode and len(frame_content) == 1024:
+                                self.walkway_buffer.extend(frame_content)
+                                self.walkway_frame_count += 1
+                                # print(f"🚶 步道帧 {self.walkway_frame_count}/{self.expected_walkway_frames}, 累积长度: {len(self.walkway_buffer)}")
+                                
+                                # 检查是否收集够3帧
+                                if self.walkway_frame_count >= self.expected_walkway_frames:
+                                    # 将合并的数据放入队列
+                                    combined_data = bytes(self.walkway_buffer)
+                                    frame_data = {
+                                        'data': combined_data,
+                                        'timestamp': timestamp,
+                                        'frame_number': self.frame_count,
+                                        'data_length': len(combined_data),
+                                        'walkway_frames': self.walkway_frame_count
+                                    }
+                                    self.data_queue.put(frame_data)
+                                    # print(f"🚶 步道数据合并完成: {len(combined_data)}字节")
+                                    
+                                    # 清空缓冲区准备下一组
+                                    self.walkway_buffer.clear()
+                                    self.walkway_frame_count = 0
+                            else:
+                                # 普通模式或非1024字节帧，直接处理
+                                frame_data = {
+                                    'data': frame_content,
+                                    'timestamp': timestamp,
+                                    'frame_number': self.frame_count,
+                                    'data_length': len(frame_content)
+                                }
+                                self.data_queue.put(frame_data)
                             
                         data_buffer = data_buffer[next_frame_pos:]
                     
