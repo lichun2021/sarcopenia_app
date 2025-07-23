@@ -24,7 +24,7 @@ class PressureSensorUI:
         self.root = root
         self.root.title("🔬 智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
         self.root.geometry("1600x1000")
-        self.root.configure(bg='#f0f0f0')
+        self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
         
         # 初始化多设备管理器
         self.device_manager = DeviceManager()
@@ -54,6 +54,9 @@ class PressureSensorUI:
         
         # 启动连接监控
         self.start_connection_monitor()
+        
+        # 集成肌少症分析功能
+        self.integrate_sarcneuro_analysis()
         
         # 显示设备配置对话框
         self.root.after(500, self.show_device_config)
@@ -1079,58 +1082,103 @@ class PressureSensorUI:
         # 创建菜单栏
         self.create_menubar()
         
-        # 主框架
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # 配置ttk样式为医院风格
+        style = ttk.Style()
+        style.theme_use('clam')  # 使用清洁的clam主题
         
-        # 顶部控制面板
-        control_frame = ttk.LabelFrame(main_frame, text="🎛️ 控制面板", padding=10)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        # 自定义医院风格样式
+        style.configure('Hospital.TLabelframe', 
+                       background='#ffffff',
+                       foreground='#2c3e50',
+                       borderwidth=1,
+                       relief='solid')
+        style.configure('Hospital.TLabelframe.Label', 
+                       background='#ffffff',
+                       foreground='#1976d2',
+                       font=('Microsoft YaHei UI', 11, 'bold'))
+        style.configure('Hospital.TFrame', background='#ffffff')
+        style.configure('Hospital.TLabel', 
+                       background='#ffffff',
+                       foreground='#37474f',
+                       font=('Microsoft YaHei UI', 10))
+        style.configure('Hospital.TButton',
+                       background='#f8f9fa',
+                       foreground='#2c3e50',
+                       borderwidth=1,
+                       focuscolor='none',
+                       font=('Microsoft YaHei UI', 9))
+        style.map('Hospital.TButton',
+                 background=[('active', '#e3f2fd'),
+                           ('pressed', '#bbdefb')])
+        
+        # 主框架 - 医院白色
+        main_frame = ttk.Frame(self.root, style='Hospital.TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # 顶部控制面板 - 医院风格
+        control_frame = ttk.LabelFrame(main_frame, text="🎛️ 控制面板", 
+                                     padding=15, style='Hospital.TLabelframe')
+        control_frame.pack(fill=tk.X, pady=(0, 15))
         
         # 第一行：设备和连接控制
         # 设备选择
-        ttk.Label(control_frame, text="设备:").grid(row=0, column=0, padx=(0, 5))
+        ttk.Label(control_frame, text="设备:", style='Hospital.TLabel').grid(row=0, column=0, padx=(0, 8))
         self.device_var = tk.StringVar()
-        self.device_combo = ttk.Combobox(control_frame, textvariable=self.device_var, width=15, state="readonly")
-        self.device_combo.grid(row=0, column=1, padx=(0, 10))
+        self.device_combo = ttk.Combobox(control_frame, textvariable=self.device_var, 
+                                       width=15, state="readonly",
+                                       font=('Microsoft YaHei UI', 10))
+        self.device_combo.grid(row=0, column=1, padx=(0, 15))
         self.device_combo.bind('<<ComboboxSelected>>', self.on_device_changed)
         
         # 设备配置按钮
-        ttk.Button(control_frame, text="⚙️ 设备配置", command=self.show_device_config).grid(row=0, column=2, padx=(0, 20))
+        ttk.Button(control_frame, text="⚙️ 设备配置", 
+                  command=self.show_device_config, 
+                  style='Hospital.TButton').grid(row=0, column=2, padx=(0, 25))
         
-        # 状态标签
-        self.status_label = ttk.Label(control_frame, text="⚙️ 未配置设备", foreground="orange")
-        self.status_label.grid(row=0, column=3, padx=(0, 20))
+        # 状态标签 - 医院配色
+        self.status_label = tk.Label(control_frame, text="⚙️ 未配置设备", 
+                                   foreground="#ff6b35", bg='#ffffff',
+                                   font=('Microsoft YaHei UI', 10, 'bold'))
+        self.status_label.grid(row=0, column=3, padx=(0, 25))
         
         # 端口信息显示
-        self.port_info_label = ttk.Label(control_frame, text="端口: 未知")
-        self.port_info_label.grid(row=0, column=4, padx=(0, 10))
+        self.port_info_label = tk.Label(control_frame, text="端口: 未知",
+                                      bg='#ffffff', fg='#6c757d',
+                                      font=('Microsoft YaHei UI', 9))
+        self.port_info_label.grid(row=0, column=4, padx=(0, 15))
         
         # 第二行：功能按钮
         # 保存快照按钮
-        ttk.Button(control_frame, text="📸 保存快照", command=self.save_snapshot).grid(row=1, column=0, padx=(0, 10), pady=(10, 0))
+        ttk.Button(control_frame, text="📸 保存快照", 
+                  command=self.save_snapshot,
+                  style='Hospital.TButton').grid(row=1, column=0, padx=(0, 15), pady=(15, 0))
         
         # 调序按钮（仅32x32以上设备显示）
-        self.order_button = ttk.Button(control_frame, text="🔄 调序", command=self.show_segment_order_dialog)
-        self.order_button.grid(row=1, column=1, padx=(0, 10), pady=(10, 0))
-        self.order_button.grid_remove()  # 默认隐藏
+        self.order_button = ttk.Button(control_frame, text="🔄 调序", 
+                                     command=self.show_segment_order_dialog,
+                                     style='Hospital.TButton')
+        self.order_button.grid(row=1, column=1, padx=(0, 15), pady=(15, 0))
+        self.order_button.grid_remove()
         
-        # 中间内容区域
-        content_frame = ttk.Frame(main_frame)
+        # 中间内容区域 - 医院白色背景
+        content_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
         content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 左侧：热力图显示
-        self.plot_frame = ttk.LabelFrame(content_frame, text="📊 压力传感器热力图 (32x32) - JQ工业科技", padding=10)
-        self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        # 左侧：热力图显示 - 医院风格边框
+        self.plot_frame = ttk.LabelFrame(content_frame, 
+                                       text="📊 压力传感器热力图 (32x32) - JQ工业科技", 
+                                       padding=15, style='Hospital.TLabelframe')
+        self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
         
-        # 右侧：数据日志和统计
-        right_frame = ttk.Frame(content_frame)
+        # 右侧：数据日志和统计 - 医院白色
+        right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
         right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 0))
         right_frame.config(width=450)
         
-        # 统计信息面板
-        stats_frame = ttk.LabelFrame(right_frame, text="📊 实时统计", padding=10)
-        stats_frame.pack(fill=tk.X, pady=(0, 10))
+        # 统计信息面板 - 医院风格
+        stats_frame = ttk.LabelFrame(right_frame, text="📊 实时统计", 
+                                   padding=15, style='Hospital.TLabelframe')
+        stats_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.stats_labels = {}
         stats_items = [("最大值:", "max_value"), ("最小值:", "min_value"), ("平均值:", "mean_value"), 
@@ -1139,36 +1187,65 @@ class PressureSensorUI:
         for i, (text, key) in enumerate(stats_items):
             row = i // 2
             col = (i % 2) * 2
-            ttk.Label(stats_frame, text=text).grid(row=row, column=col, sticky="e", padx=(0, 5))
-            label = ttk.Label(stats_frame, text="0", font=("Consolas", 10, "bold"))
-            label.grid(row=row, column=col+1, sticky="w", padx=(0, 20))
+            # 标签使用医院风格
+            label_text = tk.Label(stats_frame, text=text, 
+                                bg='#ffffff', fg='#495057',
+                                font=('Microsoft YaHei UI', 10))
+            label_text.grid(row=row, column=col, sticky="e", padx=(0, 8))
+            
+            # 数值使用突出颜色
+            label = tk.Label(stats_frame, text="0", 
+                           font=("Consolas", 11, "bold"),
+                           bg='#ffffff', fg='#1976d2')
+            label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # 数据日志
-        log_frame = ttk.LabelFrame(right_frame, text="📝 数据日志", padding=10)
+        # 数据日志 - 医院风格
+        log_frame = ttk.LabelFrame(right_frame, text="📝 数据日志", 
+                                 padding=15, style='Hospital.TLabelframe')
         log_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, width=55, height=25, font=("Consolas", 9))
+        # 日志文本框 - 医院配色
+        self.log_text = scrolledtext.ScrolledText(log_frame, width=55, height=25, 
+                                                font=("Consolas", 9),
+                                                bg='#ffffff',
+                                                fg='#495057',
+                                                selectbackground='#e3f2fd',
+                                                selectforeground='#1976d2',
+                                                insertbackground='#1976d2',
+                                                borderwidth=1,
+                                                relief='solid')
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
         # 日志控制按钮
-        log_btn_frame = ttk.Frame(log_frame)
-        log_btn_frame.pack(fill=tk.X, pady=(5, 0))
+        log_btn_frame = ttk.Frame(log_frame, style='Hospital.TFrame')
+        log_btn_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Button(log_btn_frame, text="🗑️ 清除日志", command=self.clear_log).pack(side=tk.LEFT)
-        ttk.Button(log_btn_frame, text="💾 保存日志", command=self.save_log).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(log_btn_frame, text="💾 保存日志", 
+                  command=self.save_log,
+                  style='Hospital.TButton').pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(log_btn_frame, text="🗑️ 清除日志", 
+                  command=self.clear_log,
+                  style='Hospital.TButton').pack(side=tk.LEFT)
         
-        # 底部状态栏
-        status_frame = ttk.Frame(main_frame)
-        status_frame.pack(fill=tk.X, pady=(10, 0))
+        # 底部状态栏 - 医院风格
+        status_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
+        status_frame.pack(fill=tk.X, pady=(15, 0))
         
-        self.frame_count_label = ttk.Label(status_frame, text="📦 接收帧数: 0")
-        self.frame_count_label.pack(side=tk.LEFT)
+        # 创建状态栏背景
+        status_bg = tk.Frame(status_frame, bg='#f8f9fa', height=35, relief='solid', bd=1)
+        status_bg.pack(fill=tk.X)
         
-        self.data_rate_label = ttk.Label(status_frame, text="📈 数据速率: 0 帧/秒")
-        self.data_rate_label.pack(side=tk.RIGHT)
+        self.frame_count_label = tk.Label(status_bg, text="📦 接收帧数: 0",
+                                        bg='#f8f9fa', fg='#495057',
+                                        font=('Microsoft YaHei UI', 9))
+        self.frame_count_label.pack(side=tk.LEFT, padx=(15, 0), pady=8)
         
-        
+        self.data_rate_label = tk.Label(status_bg, text="📈 数据速率: 0 帧/秒",
+                                      bg='#f8f9fa', fg='#495057',
+                                      font=('Microsoft YaHei UI', 9))
+        self.data_rate_label.pack(side=tk.RIGHT, padx=(0, 15), pady=8)
+    
     def setup_visualizer(self):
         """设置可视化模块"""
         array_info = self.data_processor.get_array_info()
@@ -1449,9 +1526,27 @@ class PressureSensorUI:
         self.log_text.delete("1.0", tk.END)
         self.log_message("📝 日志已清除")
         
+    def integrate_sarcneuro_analysis(self):
+        """集成肌少症分析功能"""
+        try:
+            from integration_ui import integrate_sarcneuro_analysis
+            integrate_sarcneuro_analysis(self)
+            print("✅ 肌少症分析功能集成成功")
+        except Exception as e:
+            print(f"⚠️ 肌少症分析功能集成失败: {e}")
+            # 不影响主程序运行
+
     def on_closing(self):
         """窗口关闭事件"""
         try:
+            # 停止肌少症分析服务
+            if hasattr(self, 'sarcneuro_panel') and self.sarcneuro_panel:
+                try:
+                    if self.sarcneuro_panel.sarcneuro_service:
+                        self.sarcneuro_panel.sarcneuro_service.stop_service()
+                except:
+                    pass
+            
             self.stop_connection()
             self.root.quit()
             self.root.destroy()

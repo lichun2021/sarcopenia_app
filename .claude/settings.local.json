@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python test:*)",
       "Bash(python3:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": []
   }
