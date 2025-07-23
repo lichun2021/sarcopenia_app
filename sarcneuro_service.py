@@ -16,13 +16,13 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class SarcNeuroEdgeService:
     """SarcNeuro Edge 服务管理器"""
     
-    def __init__(self, port: int = 8001, service_dir: str = "sarcneuro-edge"):
+    def __init__(self, port: int = 8000, service_dir: str = "sarcneuro-edge"):
         self.port = port
         self.service_dir = Path(service_dir)
         self.process = None
@@ -32,6 +32,7 @@ class SarcNeuroEdgeService:
         self.health_check_interval = 30  # 30秒健康检查间隔
         self._monitor_thread = None
         self._stop_monitor = False
+        self._pause_monitoring = False  # 暂停监控标志
         
         # 检查服务目录
         if not self.service_dir.exists():
@@ -64,8 +65,7 @@ class SarcNeuroEdgeService:
             # 设置环境变量
             env = os.environ.copy()
             env["PYTHONPATH"] = str(self.service_dir)
-            env["EDGE_PORT"] = str(self.port)
-            env["EDGE_HOST"] = "127.0.0.1"
+            # 不强制设置端口，让SarcNeuro Edge使用默认配置
             
             # 启动子进程
             startupinfo = None
@@ -88,16 +88,28 @@ class SarcNeuroEdgeService:
             # 等待服务启动
             logger.info("等待服务启动...")
             start_time = time.time()
+            check_count = 0
             
             while time.time() - start_time < self.startup_timeout:
+                check_count += 1
+                elapsed = time.time() - start_time
+                
+                # 检查进程是否还在运行
                 if self.process.poll() is not None:
-                    # 进程已退出
+                    # 进程已退出，获取输出
                     stdout, stderr = self.process.communicate()
                     logger.error(f"服务启动失败，进程已退出")
+                    if stdout:
+                        logger.info(f"标准输出: {stdout.decode('utf-8', errors='ignore')}")
                     if stderr:
                         logger.error(f"错误输出: {stderr.decode('utf-8', errors='ignore')}")
                     return False
                 
+                # 每10秒打印一次进度
+                if check_count % 5 == 0:
+                    logger.info(f"等待服务响应... ({elapsed:.1f}s/{self.startup_timeout}s)")
+                
+                # 检查服务健康状态
                 if self._check_service_health():
                     logger.info("SarcNeuro Edge 服务启动成功!")
                     self.is_running = True
@@ -106,8 +118,22 @@ class SarcNeuroEdgeService:
                 
                 time.sleep(2)
             
-            # 启动超时
+            # 启动超时，获取进程输出用于调试
             logger.error(f"服务启动超时 ({self.startup_timeout}秒)")
+            if self.process and self.process.poll() is None:
+                logger.info("进程仍在运行，尝试获取输出...")
+                # 尝试获取部分输出（非阻塞）
+                try:
+                    if sys.platform != 'win32':
+                        import select
+                        ready, _, _ = select.select([self.process.stdout], [], [], 0.1)
+                        if ready:
+                            output = self.process.stdout.read(1024)
+                            if output:
+                                logger.info(f"进程输出: {output.decode('utf-8', errors='ignore')}")
+                except:
+                    pass
+            
             self.stop_service()
             return False
             
@@ -170,10 +196,26 @@ class SarcNeuroEdgeService:
     def _check_service_health(self) -> bool:
         """检查服务健康状态"""
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=5)
+            logger.debug(f"检查服务健康状态: {self.base_url}/health")
+            response = requests.get(f"{self.base_url}/health", timeout=15)
+            logger.debug(f"健康检查响应: 状态码={response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
-                return data.get("status") == "healthy"
+                logger.debug(f"健康检查数据: {data}")
+                is_healthy = data.get("status") == "healthy"
+                if not is_healthy:
+                    logger.warning(f"服务状态不健康: {data.get('status')}")
+                return is_healthy
+            else:
+                logger.warning(f"健康检查返回错误状态码: {response.status_code}")
+                return False
+                
+        except requests.exceptions.ConnectionError as e:
+            logger.debug(f"连接错误: {e}")
+            return False
+        except requests.exceptions.Timeout as e:
+            logger.debug(f"请求超时: {e}")
             return False
         except Exception as e:
             logger.debug(f"健康检查失败: {e}")
@@ -191,11 +233,16 @@ class SarcNeuroEdgeService:
     def _monitor_service(self):
         """监控服务状态"""
         consecutive_failures = 0
-        max_failures = 3
+        max_failures = 5  # 增加到5次失败才标记为不可用
         
         while not self._stop_monitor and self.is_running:
             try:
                 time.sleep(self.health_check_interval)
+                
+                # 如果监控被暂停，跳过健康检查
+                if self._pause_monitoring:
+                    logger.debug("监控已暂停，跳过健康检查")
+                    continue
                 
                 if self._check_service_health():
                     consecutive_failures = 0
@@ -236,6 +283,10 @@ class SarcNeuroEdgeService:
         try:
             logger.info(f"发送数据分析请求 - 患者: {patient_info.get('name', '未知')}")
             
+            # 暂停监控，避免在AI分析期间进行健康检查
+            self._pause_monitoring = True
+            logger.debug("已暂停服务监控，开始AI分析")
+            
             # 构建请求数据
             request_data = {
                 "patient_info": patient_info,
@@ -248,7 +299,7 @@ class SarcNeuroEdgeService:
             response = requests.post(
                 f"{self.base_url}/api/analysis/analyze",
                 json=request_data,
-                timeout=120,  # 2分钟超时
+                timeout=180,  # 增加到3分钟超时
                 headers={"Content-Type": "application/json"}
             )
             
@@ -270,6 +321,10 @@ class SarcNeuroEdgeService:
         except Exception as e:
             logger.error(f"分析过程出错: {e}")
             return None
+        finally:
+            # 恢复监控
+            self._pause_monitoring = False
+            logger.debug("已恢复服务监控")
     
     def get_analysis_result(self, analysis_id: int) -> Optional[Dict[str, Any]]:
         """获取分析结果详情"""
@@ -334,7 +389,7 @@ class SarcNeuroEdgeService:
 # 全局服务实例
 _service_instance = None
 
-def get_sarcneuro_service(port: int = 8001) -> SarcNeuroEdgeService:
+def get_sarcneuro_service(port: int = 8000) -> SarcNeuroEdgeService:
     """获取全局服务实例"""
     global _service_instance
     

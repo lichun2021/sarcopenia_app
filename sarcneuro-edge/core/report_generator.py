@@ -528,23 +528,92 @@ class ReportGenerator:
     ) -> Dict[str, Any]:
         """生成分析报告"""
         try:
-            # 获取测试数据
-            with db_manager.get_session() as session:
-                test = session.query(Test).filter(Test.id == test_id).first()
+            # 获取测试数据 - 在Session内预加载所有关联对象
+            for session in db_manager.get_session():
+                from sqlalchemy.orm import joinedload
+                
+                # 先导入需要的模型类
+                from models.database_models import AnalysisResult, GaitMetrics, BalanceMetrics
+                
+                test = session.query(Test).options(
+                    joinedload(Test.patient),  # 预加载患者信息
+                    joinedload(Test.analysis_result).joinedload(AnalysisResult.gait_metrics),  # 预加载分析结果和步态指标
+                    joinedload(Test.analysis_result).joinedload(AnalysisResult.balance_metrics)  # 预加载平衡指标
+                ).filter(Test.id == test_id).first()
+                
                 if not test:
                     return {"status": "error", "message": "测试记录不存在"}
                 
-                patient = test.patient
-                analysis_result = test.analysis_result
-                
-                if not analysis_result:
+                if not test.analysis_result:
                     return {"status": "error", "message": "分析结果不存在"}
+                
+                # 在Session内提取所有需要的数据，创建数据字典避免Session外访问
+                patient_data = {
+                    'id': test.patient.id,
+                    'name': test.patient.name,
+                    'age': test.patient.age,
+                    'gender': test.patient.gender,
+                    'height': test.patient.height,
+                    'weight': test.patient.weight,
+                    'phone': test.patient.phone,
+                    'email': test.patient.email
+                }
+                
+                analysis_data = {
+                    'id': test.analysis_result.id,
+                    'overall_score': test.analysis_result.overall_score,
+                    'risk_level': test.analysis_result.risk_level,
+                    'confidence': test.analysis_result.confidence,
+                    'interpretation': test.analysis_result.interpretation,
+                    'abnormalities': test.analysis_result.abnormalities,
+                    'recommendations': test.analysis_result.recommendations,
+                    'detailed_analysis': test.analysis_result.detailed_analysis,
+                    'processing_time': test.analysis_result.processing_time,
+                    'model_version': test.analysis_result.model_version,
+                    'created_at': test.analysis_result.created_at
+                }
+                
+                test_data = {
+                    'id': test.id,
+                    'test_type': test.test_type,
+                    'test_mode': test.test_mode,
+                    'duration': test.duration,
+                    'created_at': test.created_at,
+                    'notes': test.notes
+                }
+                
+                # 安全访问关联对象
+                gait_data = {}
+                balance_data = {}
+                
+                if test.analysis_result.gait_metrics:
+                    gm = test.analysis_result.gait_metrics
+                    gait_data = {
+                        'walking_speed': gm.walking_speed,
+                        'step_length': gm.step_length,
+                        'cadence': gm.cadence,
+                        'stance_phase': gm.stance_phase,
+                        'asymmetry_index': gm.asymmetry_index,
+                        'stability_score': gm.stability_score
+                    }
+                
+                if test.analysis_result.balance_metrics:
+                    bm = test.analysis_result.balance_metrics
+                    balance_data = {
+                        'cop_displacement': bm.cop_displacement,
+                        'sway_area': bm.sway_area,
+                        'sway_velocity': bm.sway_velocity,
+                        'stability_index': bm.stability_index,
+                        'fall_risk_score': bm.fall_risk_score
+                    }
+                
+                break  # 退出for循环，数据已获取
             
             # 准备报告数据
-            report_data = await self._prepare_report_data(test, patient, analysis_result)
+            report_data = await self._prepare_report_data(test_data, patient_data, analysis_data, gait_data, balance_data)
             
             # 生成可视化图表
-            charts = await self._generate_charts(test, analysis_result)
+            charts = await self._generate_charts(test_data, analysis_data)
             report_data["charts"] = charts
             
             # 生成报告
@@ -556,7 +625,7 @@ class ReportGenerator:
                 return {"status": "error", "message": f"不支持的格式: {format}"}
             
             # 保存报告记录到数据库
-            report_record = await self._save_report_record(test, patient, report_data, report_path)
+            report_record = await self._save_report_record(test_data, patient_data, report_data, report_path)
             
             return {
                 "status": "success",
@@ -571,83 +640,102 @@ class ReportGenerator:
             logger.error(f"报告生成失败: {e}")
             return {"status": "error", "message": str(e)}
     
-    async def _prepare_report_data(self, test, patient, analysis_result) -> Dict[str, Any]:
+    async def _prepare_report_data(self, test_data, patient_data, analysis_data, gait_data, balance_data) -> Dict[str, Any]:
         """准备报告数据"""
         # 解析分析结果
-        detailed_analysis = analysis_result.detailed_analysis or {}
+        detailed_analysis = analysis_data.get('detailed_analysis') or {}
         
-        # 构造步态分析数据（从数据库或详细分析中获取）
-        gait_metrics = analysis_result.gait_metrics
-        balance_metrics = analysis_result.balance_metrics
-        
-        gait_data = {
-            "walking_speed": gait_metrics.walking_speed if gait_metrics else 1.2,
-            "step_length": gait_metrics.step_length if gait_metrics else 65.0,
-            "cadence": gait_metrics.cadence if gait_metrics else 110.0,
-            "stance_phase": gait_metrics.stance_phase if gait_metrics else 60.0,
-            "asymmetry_index": gait_metrics.asymmetry_index if gait_metrics else 0.05,
-            "stability_score": gait_metrics.stability_score if gait_metrics else 85.0
+        # 使用传入的步态和平衡数据，如果为空则使用默认值
+        final_gait_data = {
+            "walking_speed": gait_data.get('walking_speed', 1.2),
+            "step_length": gait_data.get('step_length', 65.0),
+            "cadence": gait_data.get('cadence', 110.0),
+            "stance_phase": gait_data.get('stance_phase', 60.0),
+            "asymmetry_index": gait_data.get('asymmetry_index', 0.05),
+            "stability_score": gait_data.get('stability_score', 85.0)
         }
         
-        balance_data = {
-            "cop_displacement": balance_metrics.cop_displacement if balance_metrics else 25.0,
-            "sway_area": balance_metrics.sway_area if balance_metrics else 150.0,
-            "sway_velocity": balance_metrics.sway_velocity if balance_metrics else 8.5,
-            "stability_index": balance_metrics.stability_index if balance_metrics else 2.3,
-            "fall_risk_score": balance_metrics.fall_risk_score if balance_metrics else 0.15
+        final_balance_data = {
+            "cop_displacement": balance_data.get('cop_displacement', 25.0),
+            "sway_area": balance_data.get('sway_area', 150.0),
+            "sway_velocity": balance_data.get('sway_velocity', 8.5),
+            "stability_index": balance_data.get('stability_index', 2.3),
+            "fall_risk_score": balance_data.get('fall_risk_score', 0.15)
         }
         
         return {
-            "report_number": f"SR{datetime.now().strftime('%Y%m%d')}{test.id:04d}",
+            "report_number": f"SR{datetime.now().strftime('%Y%m%d')}{test_data['id']:04d}",
             "generation_time": datetime.now().strftime('%Y年%m月%d日 %H:%M:%S'),
             "patient": {
-                "name": patient.name,
-                "age": patient.age,
-                "gender": patient.gender,
-                "height": patient.height,
-                "weight": patient.weight
+                "name": patient_data['name'],
+                "age": patient_data['age'],
+                "gender": patient_data['gender'],
+                "height": patient_data['height'],
+                "weight": patient_data['weight']
             },
             "test": {
-                "test_type": test.test_type,
-                "test_mode": test.test_mode,
-                "duration": test.duration,
-                "created_at": test.created_at
+                "test_type": test_data['test_type'],
+                "test_mode": test_data['test_mode'],
+                "duration": test_data['duration'],
+                "created_at": self._parse_datetime(test_data['created_at'])
             },
             "analysis": {
-                "overall_score": analysis_result.overall_score,
-                "risk_level": analysis_result.risk_level,
-                "confidence": analysis_result.confidence,
-                "interpretation": analysis_result.interpretation,
-                "abnormalities": analysis_result.abnormalities or [],
-                "recommendations": analysis_result.recommendations or [],
+                "overall_score": analysis_data['overall_score'],
+                "risk_level": analysis_data['risk_level'],
+                "confidence": analysis_data['confidence'],
+                "interpretation": analysis_data['interpretation'],
+                "abnormalities": analysis_data['abnormalities'] or [],
+                "recommendations": analysis_data['recommendations'] or [],
                 "detailed_analysis": detailed_analysis
             },
-            "gait": gait_data,
-            "balance": balance_data
+            "gait": final_gait_data,
+            "balance": final_balance_data
         }
     
-    async def _generate_charts(self, test, analysis_result) -> List[Dict[str, str]]:
+    def _parse_datetime(self, dt_value):
+        """解析datetime值，支持字符串、datetime对象或None"""
+        if dt_value is None:
+            return datetime.now()
+        elif isinstance(dt_value, datetime):
+            return dt_value
+        elif isinstance(dt_value, str):
+            try:
+                # 处理ISO格式字符串
+                if 'T' in dt_value:
+                    return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
+                else:
+                    # 尝试常见格式
+                    return datetime.strptime(dt_value, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                try:
+                    return datetime.strptime(dt_value, '%Y-%m-%d')
+                except ValueError:
+                    return datetime.now()
+        else:
+            return datetime.now()
+    
+    async def _generate_charts(self, test_data, analysis_data) -> List[Dict[str, str]]:
         """生成可视化图表"""
         charts = []
         
         try:
             # 1. 步态参数雷达图
-            gait_chart = await self._create_gait_radar_chart(analysis_result)
+            gait_chart = await self._create_gait_radar_chart(analysis_data)
             if gait_chart:
                 charts.append(gait_chart)
             
             # 2. 平衡参数条形图
-            balance_chart = await self._create_balance_bar_chart(analysis_result)
+            balance_chart = await self._create_balance_bar_chart(analysis_data)
             if balance_chart:
                 charts.append(balance_chart)
             
             # 3. 风险评估饼图
-            risk_chart = await self._create_risk_pie_chart(analysis_result)
+            risk_chart = await self._create_risk_pie_chart(analysis_data)
             if risk_chart:
                 charts.append(risk_chart)
             
             # 4. 足底压力热力图（如果有压力数据）
-            pressure_chart = await self._create_pressure_heatmap(test)
+            pressure_chart = await self._create_pressure_heatmap(test_data)
             if pressure_chart:
                 charts.append(pressure_chart)
             
@@ -814,7 +902,7 @@ class ReportGenerator:
     async def _create_pressure_heatmap(self, test) -> Optional[Dict[str, str]]:
         """创建足底压力热力图"""
         try:
-            with db_manager.get_session() as session:
+            for session in db_manager.get_session():
                 from models.database_models import PressureData
                 
                 # 获取压力数据
@@ -893,6 +981,36 @@ class ReportGenerator:
     async def _generate_pdf_report(self, report_data: Dict[str, Any]) -> Path:
         """生成PDF报告"""
         try:
+            # 注册中文字体
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            
+            # 尝试注册中文字体
+            try:
+                # Windows系统字体路径
+                font_paths = [
+                    'C:/Windows/Fonts/msyh.ttc',  # 微软雅黑
+                    'C:/Windows/Fonts/simsun.ttc',  # 宋体
+                    'C:/Windows/Fonts/simhei.ttf',  # 黑体
+                ]
+                
+                font_registered = False
+                for font_path in font_paths:
+                    if os.path.exists(font_path):
+                        try:
+                            pdfmetrics.registerFont(TTFont('ChineseFont', font_path))
+                            font_registered = True
+                            break
+                        except:
+                            continue
+                
+                if not font_registered:
+                    # 如果没有找到系统字体，使用默认字体
+                    logger.warning("未找到中文字体，使用默认字体")
+                    
+            except Exception as e:
+                logger.warning(f"字体注册失败: {e}")
+            
             # PDF文件路径
             report_filename = f"report_{report_data['report_number']}.pdf"
             report_path = self.output_dir / report_filename
@@ -911,14 +1029,21 @@ class ReportGenerator:
             story = []
             styles = getSampleStyleSheet()
             
-            # 自定义样式
+            # 自定义中文样式
+            try:
+                chinese_font = 'ChineseFont'
+                pdfmetrics.getFont(chinese_font)  # 测试字体是否可用
+            except:
+                chinese_font = 'Helvetica'  # 回退到默认字体
+            
             title_style = ParagraphStyle(
                 'CustomTitle',
                 parent=styles['Heading1'],
                 fontSize=20,
                 spaceAfter=30,
                 textColor=colors.blue,
-                alignment=TA_CENTER
+                alignment=TA_CENTER,
+                fontName=chinese_font
             )
             
             # 标题
@@ -942,8 +1067,9 @@ class ReportGenerator:
                 ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 0), (-1, -1), chinese_font),  # 所有单元格使用中文字体
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),  # 内容字体稍小
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black)
@@ -952,9 +1078,34 @@ class ReportGenerator:
             story.append(info_table)
             story.append(Spacer(1, 30))
             
+            # 创建中文段落样式
+            heading2_style = ParagraphStyle(
+                'ChineseHeading2',
+                parent=styles['Heading2'],
+                fontName=chinese_font,
+                fontSize=14,
+                spaceAfter=12
+            )
+            
+            heading3_style = ParagraphStyle(
+                'ChineseHeading3',
+                parent=styles['Heading3'],
+                fontName=chinese_font,
+                fontSize=12,
+                spaceAfter=8
+            )
+            
+            normal_style = ParagraphStyle(
+                'ChineseNormal',
+                parent=styles['Normal'],
+                fontName=chinese_font,
+                fontSize=10,
+                spaceAfter=6
+            )
+            
             # 添加图表（如果有）
             if report_data.get('charts'):
-                story.append(Paragraph("数据可视化分析", styles['Heading2']))
+                story.append(Paragraph("数据可视化分析", heading2_style))
                 for chart in report_data['charts']:
                     # 将base64图片转换为临时文件
                     chart_data = base64.b64decode(chart['data'])
@@ -965,7 +1116,7 @@ class ReportGenerator:
                     
                     # 添加到PDF
                     story.append(Spacer(1, 10))
-                    story.append(Paragraph(chart['title'], styles['Heading3']))
+                    story.append(Paragraph(chart['title'], heading3_style))
                     
                     # 调整图片大小以适应页面
                     img = Image(str(temp_chart_path))
@@ -974,12 +1125,85 @@ class ReportGenerator:
                     story.append(img)
                     story.append(Spacer(1, 20))
             
+            # 详细分析结果
+            story.append(Paragraph("详细分析结果", heading2_style))
+            
+            # 分析解读
+            if report_data['analysis'].get('interpretation'):
+                story.append(Paragraph("分析解读：", heading3_style))
+                story.append(Paragraph(report_data['analysis']['interpretation'], normal_style))
+                story.append(Spacer(1, 10))
+            
+            # 步态分析数据
+            if report_data.get('gait'):
+                gait_data = report_data['gait']
+                story.append(Paragraph("步态分析数据", heading3_style))
+                
+                gait_info = [
+                    ['指标', '测量值', '正常范围', '评估'],
+                    ['步行速度', f"{gait_data.get('walking_speed', 0):.2f} m/s", "1.2-1.4 m/s", "正常" if gait_data.get('walking_speed', 0) >= 1.2 else "偏低"],
+                    ['步长', f"{gait_data.get('step_length', 0):.1f} cm", "60-70 cm", "正常" if gait_data.get('step_length', 0) >= 60 else "偏短"],
+                    ['步频', f"{gait_data.get('cadence', 0):.0f} 步/分", "100-120 步/分", "正常" if gait_data.get('cadence', 0) >= 100 else "偏低"],
+                    ['稳定性评分', f"{gait_data.get('stability_score', 0):.1f}%", ">80%", "良好" if gait_data.get('stability_score', 0) >= 80 else "需改善"],
+                ]
+                
+                gait_table = Table(gait_info, colWidths=[3*cm, 3*cm, 3*cm, 3*cm])
+                gait_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, -1), chinese_font),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                
+                story.append(gait_table)
+                story.append(Spacer(1, 15))
+            
+            # 平衡分析数据
+            if report_data.get('balance'):
+                balance_data = report_data['balance']
+                story.append(Paragraph("平衡分析数据", heading3_style))
+                
+                balance_info = [
+                    ['指标', '测量值', '正常范围', '评估'],
+                    ['重心位移', f"{balance_data.get('cop_displacement', 0):.1f} mm", "<30 mm", "正常" if balance_data.get('cop_displacement', 0) < 30 else "偏高"],
+                    ['摆动面积', f"{balance_data.get('sway_area', 0):.0f} mm²", "<200 mm²", "正常" if balance_data.get('sway_area', 0) < 200 else "偏大"],
+                    ['摆动速度', f"{balance_data.get('sway_velocity', 0):.1f} mm/s", "<10 mm/s", "正常" if balance_data.get('sway_velocity', 0) < 10 else "偏快"],
+                    ['跌倒风险', f"{balance_data.get('fall_risk_score', 0)*100:.1f}%", "<20%", "低风险" if balance_data.get('fall_risk_score', 0) < 0.2 else "需注意"],
+                ]
+                
+                balance_table = Table(balance_info, colWidths=[3*cm, 3*cm, 3*cm, 3*cm])
+                balance_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, -1), chinese_font),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                
+                story.append(balance_table)
+                story.append(Spacer(1, 15))
+            
+            # 异常发现
+            if report_data['analysis'].get('abnormalities'):
+                story.append(Paragraph("异常发现", heading3_style))
+                for abnormality in report_data['analysis']['abnormalities']:
+                    story.append(Paragraph(f"• {abnormality}", normal_style))
+                story.append(Spacer(1, 10))
+            
             # 医学建议
             if report_data['analysis'].get('recommendations'):
-                story.append(Paragraph("医学建议", styles['Heading2']))
+                story.append(Paragraph("医学建议", heading3_style))
                 for rec in report_data['analysis']['recommendations']:
-                    story.append(Paragraph(f"• {rec}", styles['Normal']))
-                story.append(Spacer(1, 20))
+                    story.append(Paragraph(f"• {rec}", normal_style))
+                story.append(Spacer(1, 15))
+            
+            # 报告结语
+            story.append(Paragraph("报告说明", heading3_style))
+            story.append(Paragraph("本报告基于SarcNeuro智能分析系统生成，仅供医疗参考。具体诊断和治疗方案请咨询专业医师。", normal_style))
+            story.append(Spacer(1, 20))
             
             # 生成PDF
             doc.build(story)
@@ -998,15 +1222,15 @@ class ReportGenerator:
             logger.error(f"PDF报告生成失败: {e}")
             raise
     
-    async def _save_report_record(self, test, patient, report_data: Dict[str, Any], report_path: Path) -> Report:
+    async def _save_report_record(self, test_data, patient_data, report_data: Dict[str, Any], report_path: Path) -> Report:
         """保存报告记录到数据库"""
         try:
-            with db_manager.get_session() as session:
+            for session in db_manager.get_session():
                 # 创建报告记录
                 report = Report(
-                    patient_id=patient.id,
-                    test_id=test.id,
-                    title=f"SarcNeuro 肌少症分析报告 - {patient.name}",
+                    patient_id=patient_data['id'],
+                    test_id=test_data['id'],
+                    title=f"SarcNeuro 肌少症分析报告 - {patient_data['name']}",
                     report_number=report_data['report_number'],
                     status="PUBLISHED",
                     summary=report_data['analysis']['interpretation'],
@@ -1036,7 +1260,7 @@ class ReportGenerator:
     async def get_report_list(self, patient_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取报告列表"""
         try:
-            with db_manager.get_session() as session:
+            for session in db_manager.get_session():
                 query = session.query(Report)
                 
                 if patient_id:

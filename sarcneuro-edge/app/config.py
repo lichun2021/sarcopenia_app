@@ -5,7 +5,8 @@ import os
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 # 加载环境变量

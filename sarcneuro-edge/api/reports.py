@@ -23,8 +23,8 @@ router = APIRouter()
 # Pydantic模型
 class ReportGenerateRequest(BaseModel):
     test_id: int = Field(..., description="测试ID")
-    report_type: str = Field("comprehensive", regex="^(comprehensive|summary|detailed)$", description="报告类型")
-    format: str = Field("html", regex="^(html|pdf)$", description="报告格式")
+    report_type: str = Field("comprehensive", pattern="^(comprehensive|summary|detailed)$", description="报告类型")
+    format: str = Field("html", pattern="^(html|pdf)$", description="报告格式")
     title: Optional[str] = Field(None, description="自定义标题")
     template: Optional[str] = Field(None, description="报告模板")
 

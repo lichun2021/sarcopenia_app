@@ -284,7 +284,7 @@ async def get_test_pressure_data(
     test_id: int,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=1000),
-    format: str = Query("summary", regex="^(summary|full)$", description="数据格式"),
+    format: str = Query("summary", pattern="^(summary|full)$", description="数据格式"),
     db: Session = Depends(get_db)
 ):
     """获取测试的压力数据"""

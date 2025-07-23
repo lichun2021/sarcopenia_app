@@ -20,6 +20,9 @@ datas = [
     (str(project_root / 'device_config.json'), '.'),
     (str(project_root / 'requirements.txt'), '.'),
     
+    # 图标文件
+    (str(project_root / 'icon.ico'), '.'),
+    
     # 模块说明文档
     (str(project_root / '模块说明.md'), '.'),
 ]
@@ -67,6 +70,10 @@ hiddenimports = [
     'numpy',
     'pandas',
     'scipy',
+    'scipy.ndimage',
+    'scipy._lib',
+    'scipy._lib._docscrape',
+    'scipy._lib._array_api',
     'scikit-learn',
     'sklearn',
     'sklearn.base',
@@ -105,6 +112,7 @@ hiddenimports = [
     'sys',
     'unittest',
     'unittest.mock',
+    'pydoc',
     
     # 主系统模块
     'tkinter',
@@ -130,17 +138,8 @@ hiddenimports = [
 
 # 排除的模块（减少打包大小）
 excludes = [
-    'test',
-    'tests',
-    'testing',
     'pytest',
-    'doctest',
-    'pdb',
-    'pydoc',
     'tkinter.test',
-    'matplotlib.tests',
-    'numpy.tests',
-    'pandas.tests',
 ]
 
 # 分析主程序
@@ -191,7 +190,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico' if (project_root / 'icon.ico').exists() else None,  # 如果有图标文件
+    icon=str(project_root / 'icon.ico'),  # 图标文件
     version_file=None,
     uac_admin=False,  # 不需要管理员权限
     uac_uiaccess=False,

@@ -175,25 +175,68 @@ class SarcNeuroAnalyzer:
             # 跳过标题行
             for i, line in enumerate(lines[1:], 1):
                 try:
-                    parts = line.strip().split(',')
-                    if len(parts) < 6:
+                    # 使用pandas的CSV解析来正确处理引号内的逗号
+                    import pandas as pd
+                    from io import StringIO
+                    
+                    # 创建单行CSV来解析
+                    single_line_csv = f"{lines[0]}\n{line}"
+                    df = pd.read_csv(StringIO(single_line_csv))
+                    
+                    if len(df) == 0:
                         continue
+                        
+                    row = df.iloc[0]
                     
-                    time_val = float(parts[0])
-                    max_pressure = int(parts[1])
-                    timestamp = parts[2]
-                    contact_area = int(parts[3])
-                    total_pressure = int(parts[4])
+                    # 提取各字段，兼容不同的列名
+                    time_val = float(row.iloc[0])  # 第一列是时间
+                    max_pressure = int(row.iloc[1])  # 第二列是最大压力
+                    timestamp = str(row.iloc[2])    # 第三列是时间戳
+                    contact_area = int(row.iloc[3]) # 第四列是接触面积
+                    total_pressure = int(row.iloc[4]) # 第五列是总压力
                     
-                    # 解析压力数据数组
+                    # 解析压力数据数组 - 第六列
+                    data_str = str(row.iloc[5])
+                    
+                    # 清理数据字符串
+                    data_str = data_str.strip()
+                    if data_str.startswith('"') and data_str.endswith('"'):
+                        data_str = data_str[1:-1]  # 移除外层引号
+                    
+                    # 解析JSON数组
                     try:
-                        data_array = json.loads(parts[5])
-                        if len(data_array) != 1024:  # 32x32
-                            self.logger.warning(f"行{i}: 压力数据长度异常({len(data_array)}), 期望1024")
+                        data_array = json.loads(data_str)
+                        if not isinstance(data_array, list):
+                            self.logger.warning(f"行{i}: 压力数据不是数组格式")
                             continue
-                    except json.JSONDecodeError:
-                        self.logger.warning(f"行{i}: 压力数据JSON解析失败")
+                            
+                        # 验证数据长度（支持不同尺寸）
+                        expected_lengths = [256, 1024, 2048, 3072]  # 16x16, 32x32, 32x64, 32x96
+                        if len(data_array) not in expected_lengths:
+                            self.logger.warning(f"行{i}: 压力数据长度异常({len(data_array)}), 支持的长度: {expected_lengths}")
+                            continue
+                            
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"行{i}: 压力数据JSON解析失败 - {e}")
+                        self.logger.debug(f"行{i}: 原始数据字符串: {data_str[:100]}...")
                         continue
+                    except Exception as e:
+                        self.logger.warning(f"行{i}: 数据解析异常 - {e}")
+                        continue
+                    
+                    # 转换时间戳格式（如果需要）
+                    try:
+                        # 尝试解析中文时间格式 2025/6/17 14:43:28:219
+                        if '/' in timestamp and ':' in timestamp:
+                            # 转换为ISO格式
+                            from datetime import datetime
+                            dt = datetime.strptime(timestamp.replace(':', ':').split(':')[0] + ':' + 
+                                                 timestamp.split(':')[1] + ':' + 
+                                                 timestamp.split(':')[2], 
+                                                 '%Y/%m/%d %H:%M:%S')
+                            timestamp = dt.isoformat() + 'Z'
+                    except:
+                        pass  # 保持原格式
                     
                     pressure_point = PressurePoint(
                         time=time_val,
@@ -206,8 +249,32 @@ class SarcNeuroAnalyzer:
                     
                     pressure_points.append(pressure_point)
                     
-                except (ValueError, IndexError) as e:
+                except Exception as e:
                     self.logger.warning(f"行{i}: 数据解析错误 - {e}")
+                    # 尝试传统的逗号分割方法作为备用
+                    try:
+                        parts = line.strip().split(',')
+                        if len(parts) >= 6:
+                            # 重新组合data部分（可能被逗号分割了）
+                            data_part = ','.join(parts[5:])
+                            if data_part.startswith('"') and data_part.endswith('"'):
+                                data_part = data_part[1:-1]
+                            
+                            data_array = json.loads(data_part)
+                            if len(data_array) in [256, 1024, 2048, 3072]:
+                                pressure_point = PressurePoint(
+                                    time=float(parts[0]),
+                                    max_pressure=int(parts[1]),
+                                    timestamp=parts[2],
+                                    contact_area=int(parts[3]),
+                                    total_pressure=int(parts[4]),
+                                    data=data_array
+                                )
+                                pressure_points.append(pressure_point)
+                                continue
+                    except:
+                        pass
+                    
                     continue
             
             if not pressure_points:

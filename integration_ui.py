@@ -72,7 +72,9 @@ class SarcopeniaAnalysisPanel:
         ttk.Entry(info_grid, textvariable=self.age_var, width=8).grid(row=0, column=3, padx=(0, 10))
         
         ttk.Label(info_grid, text="性别:").grid(row=0, column=4, sticky="w", padx=(0, 5))
-        self.gender_var = tk.StringVar(value="男")\n        gender_combo = ttk.Combobox(info_grid, textvariable=self.gender_var, values=["男", "女"], width=6)\n        gender_combo.grid(row=0, column=5, padx=(0, 10))
+        self.gender_var = tk.StringVar(value="男")
+        gender_combo = ttk.Combobox(info_grid, textvariable=self.gender_var, values=["男", "女"], width=6)
+        gender_combo.grid(row=0, column=5, padx=(0, 10))
         gender_combo.state(["readonly"])
         
         # 第二行
@@ -153,7 +155,7 @@ class SarcopeniaAnalysisPanel:
     def init_service(self):
         """初始化分析服务"""
         try:
-            self.sarcneuro_service = SarcNeuroEdgeService(port=8001)
+            self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
             self.update_service_status()
         except Exception as e:
             self.log_result(f"❌ 服务初始化失败: {e}")
@@ -324,7 +326,7 @@ class SarcopeniaAnalysisPanel:
                 # 发送分析请求
                 result = self.sarcneuro_service.analyze_data(csv_data, patient_info)
                 
-                if result and result.get('success'):
+                if result and result.get('status') == 'success':
                     self.display_analysis_result(result['data'])
                     self.log_result("✅ 分析完成！")
                 else:
@@ -579,4 +581,10 @@ if __name__ == "__main__":
     
     root.title("肌少症分析面板测试")
     root.geometry("800x900")
+    
+    # 设置窗口图标
+    try:
+        root.iconbitmap("icon.ico")
+    except Exception:
+        pass
     root.mainloop()

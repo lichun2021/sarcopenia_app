@@ -17,6 +17,16 @@ from data_processor import DataProcessor
 from visualization import HeatmapVisualizer
 from device_config import DeviceConfigDialog, DeviceManager
 
+# 导入 SarcNeuro Edge 相关模块
+try:
+    from sarcneuro_service import SarcNeuroEdgeService
+    from data_converter import SarcopeniaDataConverter
+    from patient_info_dialog import PatientInfoDialog
+    SARCNEURO_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ SarcNeuro Edge 功能不可用: {e}")
+    SARCNEURO_AVAILABLE = False
+
 class PressureSensorUI:
     """主UI控制器类"""
     
@@ -26,6 +36,13 @@ class PressureSensorUI:
         self.root.geometry("1600x1000")
         self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
         
+        # 设置窗口图标
+        try:
+            self.root.iconbitmap("icon.ico")
+        except Exception:
+            # 如果图标文件不存在，使用默认图标
+            pass
+        
         # 初始化多设备管理器
         self.device_manager = DeviceManager()
         self.serial_interface = None  # 将根据当前设备动态获取
@@ -34,6 +51,10 @@ class PressureSensorUI:
         
         # 设备配置状态
         self.device_configured = False
+        
+        # SarcNeuro Edge 服务
+        self.sarcneuro_service = None
+        self.init_sarcneuro_service()
         
         # 数据监控
         self.is_running = False
@@ -380,6 +401,26 @@ class PressureSensorUI:
         view_menu.add_separator()
         view_menu.add_command(label="📝 清除日志记录", command=self.clear_log)
         view_menu.add_command(label="🔍 放大热力图", command=lambda: messagebox.showinfo("显示提示", "可拖拽调整窗口大小来放大显示"))
+        
+        # 创建"分析"菜单（使用医疗红色主题）
+        analysis_menu = tk.Menu(menubar, tearoff=0,
+                              bg='#ffffff',        # 纯白背景
+                              fg='#37474f',        # 深灰色文字
+                              activebackground='#ffebee',  # 淡红色悬停
+                              activeforeground='#c62828',   # 深红色悬停文字
+                              font=('Microsoft YaHei UI', 11),
+                              borderwidth=1,
+                              relief='solid',
+                              selectcolor='#f44336')
+        menubar.add_cascade(label="  🧠 AI分析  ", menu=analysis_menu,
+                          activebackground='#f0f8ff', activeforeground='#0066cc')
+        
+        # 添加分析菜单项
+        analysis_menu.add_command(label="📊 导入CSV生成PDF报告", command=self.import_csv_for_analysis)
+        analysis_menu.add_command(label="📋 实时数据生成PDF报告", command=self.generate_pdf_report)
+        analysis_menu.add_separator()
+        analysis_menu.add_command(label="📈 查看分析历史", command=self.show_analysis_history)
+        analysis_menu.add_command(label="⚙️ AI服务状态", command=self.show_service_status)
         
         # 创建"帮助"菜单（使用医疗绿色主题）
         help_menu = tk.Menu(menubar, tearoff=0,
@@ -1200,25 +1241,44 @@ class PressureSensorUI:
             label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # 数据日志 - 医院风格
-        log_frame = ttk.LabelFrame(right_frame, text="📝 数据日志", 
-                                 padding=15, style='Hospital.TLabelframe')
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        # 日志区域 - 分为上下两部分
+        log_container = ttk.Frame(right_frame)
+        log_container.pack(fill=tk.BOTH, expand=True)
         
-        # 日志文本框 - 医院配色
-        self.log_text = scrolledtext.ScrolledText(log_frame, width=55, height=25, 
+        # AI分析日志 - 上半部分
+        ai_log_frame = ttk.LabelFrame(log_container, text="🧠 AI分析日志", 
+                                    padding=10, style='Hospital.TLabelframe')
+        ai_log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=55, height=12, 
+                                                   font=("Consolas", 9),
+                                                   bg='#f8f9ff',  # 淡蓝色背景
+                                                   fg='#2c3e50',
+                                                   selectbackground='#e3f2fd',
+                                                   selectforeground='#1976d2',
+                                                   insertbackground='#1976d2',
+                                                   borderwidth=1,
+                                                   relief='solid')
+        self.ai_log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # 硬件设备日志 - 下半部分
+        hw_log_frame = ttk.LabelFrame(log_container, text="⚙️ 硬件设备日志", 
+                                    padding=10, style='Hospital.TLabelframe')
+        hw_log_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        
+        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=55, height=12, 
                                                 font=("Consolas", 9),
                                                 bg='#ffffff',
                                                 fg='#495057',
-                                                selectbackground='#e3f2fd',
-                                                selectforeground='#1976d2',
-                                                insertbackground='#1976d2',
+                                                selectbackground='#e8f5e8',
+                                                selectforeground='#2e7d32',
+                                                insertbackground='#2e7d32',
                                                 borderwidth=1,
                                                 relief='solid')
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
         # 日志控制按钮
-        log_btn_frame = ttk.Frame(log_frame, style='Hospital.TFrame')
+        log_btn_frame = ttk.Frame(log_container, style='Hospital.TFrame')
         log_btn_frame.pack(fill=tk.X, pady=(10, 0))
         
         ttk.Button(log_btn_frame, text="💾 保存日志", 
@@ -1508,9 +1568,11 @@ class PressureSensorUI:
 
             
     def log_message(self, message):
-        """添加日志消息"""
+        """添加硬件设备日志消息"""
         def add_log():
-            self.log_text.insert(tk.END, message + "\n")
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}"
+            self.log_text.insert(tk.END, log_entry + "\n")
             self.log_text.see(tk.END)
             
             # 限制日志行数
@@ -1520,6 +1582,27 @@ class PressureSensorUI:
                 
         # 在主线程中执行UI更新
         self.root.after(0, add_log)
+    
+    def log_ai_message(self, message):
+        """添加AI分析日志消息"""
+        def add_ai_log():
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}"
+            
+            if hasattr(self, 'ai_log_text'):
+                self.ai_log_text.insert(tk.END, log_entry + "\n")
+                self.ai_log_text.see(tk.END)
+                
+                # 限制日志行数
+                lines = self.ai_log_text.get("1.0", tk.END).count('\n')
+                if lines > 500:
+                    self.ai_log_text.delete("1.0", "50.0")
+            else:
+                # 如果AI日志不存在，fallback到普通日志
+                self.log_message(f"[AI] {message}")
+                
+        # 在主线程中执行UI更新
+        self.root.after(0, add_ai_log)
         
     def clear_log(self):
         """清除日志"""
@@ -1530,11 +1613,695 @@ class PressureSensorUI:
         """集成肌少症分析功能"""
         try:
             from integration_ui import integrate_sarcneuro_analysis
+            # 传递正确的参数类型
             integrate_sarcneuro_analysis(self)
             print("✅ 肌少症分析功能集成成功")
         except Exception as e:
             print(f"⚠️ 肌少症分析功能集成失败: {e}")
-            # 不影响主程序运行
+            # 不影响主程序运行，继续使用原有功能
+            self.sarcneuro_panel = None
+    
+    # ============= SarcNeuro Edge AI 分析功能 =============
+    
+    def init_sarcneuro_service(self):
+        """初始化 SarcNeuro Edge 服务"""
+        if not SARCNEURO_AVAILABLE:
+            return
+            
+        try:
+            # 使用修复版服务管理器
+            from sarcneuro_service_fixed import get_sarcneuro_service_fixed
+            self.sarcneuro_service = get_sarcneuro_service_fixed(port=8000)
+            self.data_converter = SarcopeniaDataConverter()
+            print("✅ SarcNeuro Edge 修复版服务初始化完成")
+        except Exception as e:
+            print(f"⚠️ SarcNeuro Edge 服务初始化失败: {e}")
+            # 如果修复版也失败，回退到原版
+            try:
+                self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
+                print("⚠️ 使用原版服务作为后备")
+            except:
+                self.sarcneuro_service = None
+    
+    def import_csv_for_analysis(self):
+        """导入CSV文件进行AI分析并生成PDF报告"""
+        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
+            return
+        
+        # 选择CSV文件
+        file_path = filedialog.askopenfilename(
+            title="选择压力传感器CSV数据文件",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ],
+            initialdir="."
+        )
+        
+        if not file_path:
+            return
+        
+        # 从文件名解析患者信息
+        import os
+        import re
+        
+        filename = os.path.basename(file_path)
+        filename_without_ext = os.path.splitext(filename)[0]
+        
+        # 解析文件名格式: 姓名-活动描述-年龄岁.csv
+        # 例如: 曾超-步道4圈-36岁.csv
+        try:
+            # 使用正则表达式匹配文件名模式
+            pattern = r'^(.+?)-(.+?)-(\d+)岁?$'
+            match = re.match(pattern, filename_without_ext)
+            
+            if match:
+                name = match.group(1).strip()
+                activity = match.group(2).strip()
+                age = int(match.group(3))
+                
+                # 创建患者信息字典
+                patient_info = {
+                    'name': name,
+                    'age': age,
+                    'gender': 'MALE',  # 默认性别，使用SarcNeuro Edge期望的英文格式
+                    'height': None,
+                    'weight': None,
+                    'test_date': datetime.now().strftime("%Y-%m-%d"),
+                    'test_type': '综合分析',
+                    'notes': f'活动描述: {activity}',
+                    'created_time': datetime.now().isoformat()
+                }
+                
+                self.log_ai_message(f"📋 从文件名解析患者信息: {name}, {age}岁, 活动: {activity}")
+                
+            else:
+                # 如果文件名不符合格式，使用默认信息
+                self.log_ai_message(f"⚠️ 文件名格式不标准，使用默认患者信息")
+                patient_info = {
+                    'name': filename_without_ext,
+                    'age': 30,
+                    'gender': 'MALE',  # 使用SarcNeuro Edge期望的英文格式
+                    'height': None,
+                    'weight': None,
+                    'test_date': datetime.now().strftime("%Y-%m-%d"),
+                    'test_type': '综合分析',
+                    'notes': '从CSV文件导入的数据',
+                    'created_time': datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            self.log_ai_message(f"❌ 解析文件名失败: {e}")
+            return
+        
+        # 在后台线程中处理分析
+        def analyze_csv():
+            try:
+                # 更新状态
+                self.log_ai_message("🔍 正在分析CSV文件...")
+                self.root.config(cursor="wait")
+                
+                # 启动服务（如果未启动）
+                if not self.sarcneuro_service.is_running:
+                    self.log_ai_message("🚀 启动 SarcNeuro Edge 分析服务...")
+                    if not self.sarcneuro_service.start_service():
+                        raise Exception("无法启动 SarcNeuro Edge 服务")
+                
+                # 读取CSV文件
+                self.log_ai_message(f"📂 读取文件: {file_path}")
+                import pandas as pd
+                import json
+                
+                df = pd.read_csv(file_path)
+                if 'data' not in df.columns:
+                    raise Exception("CSV文件格式错误：必须包含'data'列")
+                
+                self.log_ai_message(f"📋 CSV文件包含 {len(df)} 行数据")
+                
+                # 显示CSV基本信息
+                columns_info = ", ".join(df.columns)
+                self.log_ai_message(f"📊 数据列: {columns_info}")
+                
+                # 解析压力数据
+                frames = []
+                metadata = []  # 存储每帧的元数据
+                
+                for idx, row in df.iterrows():
+                    try:
+                        # 解析压力数据数组
+                        if pd.isna(row['data']) or row['data'] == '':
+                            continue
+                            
+                        data_array = json.loads(row['data'])
+                        if len(data_array) in [256, 1024, 2048, 3072]:  # 支持16x16, 32x32, 32x64, 32x96
+                            frames.append(data_array)
+                            
+                            # 收集元数据
+                            frame_meta = {
+                                'timestamp': row.get('time', ''),
+                                'area': row.get('area', 0),
+                                'total_pressure': row.get('press', 0),
+                                'frame_index': idx
+                            }
+                            metadata.append(frame_meta)
+                    except Exception as e:
+                        # 跳过无效行，但记录警告
+                        if idx < 5:  # 只显示前5个错误
+                            self.log_ai_message(f"⚠️ 第{idx}行数据解析失败: {str(e)[:50]}")
+                        continue
+                
+                if not frames:
+                    raise Exception("CSV文件中没有有效的压力数据")
+                
+                # 数据统计分析
+                total_frames = len(frames)
+                array_size = len(frames[0]) if frames else 0
+                
+                # 计算数据质量指标
+                valid_frames = sum(1 for meta in metadata if meta['total_pressure'] > 0)
+                contact_ratio = (valid_frames / total_frames * 100) if total_frames > 0 else 0
+                
+                # 计算平均接触面积和压力
+                avg_area = sum(meta['area'] for meta in metadata) / len(metadata) if metadata else 0
+                avg_pressure = sum(meta['total_pressure'] for meta in metadata) / len(metadata) if metadata else 0
+                
+                # 确定传感器阵列类型
+                if array_size == 256:
+                    array_type = "16×16"
+                elif array_size == 1024:
+                    array_type = "32×32"
+                elif array_size == 2048:
+                    array_type = "32×64"
+                elif array_size == 3072:
+                    array_type = "32×96"
+                else:
+                    array_type = f"未知({array_size}点)"
+                
+                self.log_ai_message(f"✅ 成功解析 {total_frames} 帧压力数据")
+                self.log_ai_message(f"📐 传感器阵列: {array_type} ({array_size}个传感点)")
+                self.log_ai_message(f"📊 有效帧数: {valid_frames}/{total_frames} ({contact_ratio:.1f}%)")
+                self.log_ai_message(f"📏 平均接触面积: {avg_area:.1f} 像素")
+                self.log_ai_message(f"⚖️ 平均总压力: {avg_pressure:.1f}")
+                
+                # 时间范围分析
+                if metadata and metadata[0]['timestamp'] and metadata[-1]['timestamp']:
+                    start_time = metadata[0]['timestamp']
+                    end_time = metadata[-1]['timestamp']
+                    self.log_ai_message(f"⏰ 采集时间: {start_time} ~ {end_time}")
+                
+                # 转换为SarcNeuro格式
+                self.log_ai_message("🔄 转换数据格式...")
+                csv_data = self.data_converter.convert_frames_to_csv(frames, frame_rate=10.0)
+                self.log_ai_message(f"📊 数据格式转换完成，准备发送到AI分析服务")
+                
+                # 发送分析请求
+                self.log_ai_message("🧠 发送AI分析请求...")
+                self.log_ai_message("⏳ AI分析正在进行中，请耐心等待...")
+                self.log_ai_message("📍 分析状态：正在处理压力数据...")
+                
+                result = self.sarcneuro_service.analyze_data(csv_data, patient_info, "COMPREHENSIVE")
+                
+                self.log_ai_message("📍 分析状态：检查分析结果...")
+                
+                # 检查分析结果
+                self.log_ai_message("📍 分析状态：检查分析结果...")
+                
+                if result and result.get('status') == 'success':
+                    analysis_data = result['data']
+                    self.log_ai_message("✅ AI分析完成！")
+                    
+                    # 显示分析结果摘要
+                    overall_score = analysis_data.get('overall_score', 0)
+                    risk_level = analysis_data.get('risk_level', 'UNKNOWN')
+                    confidence = analysis_data.get('confidence', 0)
+                    
+                    self.log_ai_message(f"📊 综合评分: {overall_score:.1f}/100")
+                    self.log_ai_message(f"⚠️ 风险等级: {risk_level}")
+                    self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
+                    
+                    # 分析成功，获取完整结果并生成报告
+                    analysis_id = analysis_data.get('analysis_id')
+                    test_id = analysis_data.get('test_id')
+                    
+                    if analysis_id and test_id:
+                        try:
+                            self.log_ai_message(f"📋 获取分析详细结果 (analysis_id: {analysis_id})")
+                            
+                            # 调用 /api/analysis/results/{analysis_id} 获取完整结果
+                            detailed_result = self.get_analysis_result(analysis_id)
+                            
+                            if detailed_result:
+                                self.log_ai_message("📋 正在生成PDF报告...")
+                                # 使用test_id生成报告
+                                report_path = self.generate_sarcneuro_report(test_id, "pdf", file_path, patient_info)
+                                
+                                if report_path:
+                                    self.log_ai_message(f"📄 PDF报告已生成: {report_path}")
+                                    # 显示成功对话框
+                                    self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path))
+                                else:
+                                    raise Exception("报告生成失败")
+                            else:
+                                raise Exception("无法获取分析详细结果")
+                                
+                        except Exception as report_error:
+                            self.log_ai_message(f"⚠️ 报告生成失败: {report_error}")
+                            self.log_ai_message("✅ 但AI分析已成功完成！")
+                            
+                            # 报告生成失败，但分析成功
+                            success_msg = f"""✅ AI分析成功完成！
+
+📊 分析结果：
+• 综合评分：{overall_score:.1f}/100  
+• 风险等级：{risk_level}
+• 置信度：{confidence:.1%}
+
+⚠️ 注意：PDF报告生成失败，但AI分析数据完整。"""
+                            
+                            self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
+                    else:
+                        self.log_ai_message("⚠️ 分析结果中缺少analysis_id或test_id")
+                        
+                        success_msg = f"""✅ AI分析成功完成！
+
+📊 分析结果：
+• 综合评分：{overall_score:.1f}/100  
+• 风险等级：{risk_level}
+• 置信度：{confidence:.1%}
+
+⚠️ 注意：无法生成PDF报告（缺少必要ID）。"""
+                        
+                        self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
+                    
+                    # 分析成功，直接返回，不要继续到异常处理
+                    return
+                    
+                else:
+                    # 分析失败的详细信息
+                    if result is None:
+                        error_msg = "AI分析服务无响应 - 可能是服务超时或崩溃"
+                        self.log_ai_message("❌ 分析结果为空，服务可能无响应")
+                    elif result.get('status') != 'success':
+                        error_msg = result.get('message', '未知分析错误')
+                        self.log_ai_message(f"❌ 分析失败: {error_msg}")
+                        # 如果有详细错误信息，也打印出来
+                        if 'error' in result:
+                            self.log_ai_message(f"🔍 错误详情: {result['error']}")
+                    else:
+                        error_msg = "分析结果格式异常"
+                        self.log_ai_message(f"❌ 结果格式异常: {result}")
+                    
+                    # 只有真正分析失败才显示错误
+                    self.log_ai_message(f"❌ CSV分析失败: {error_msg}")
+                    self.root.after(0, lambda: messagebox.showerror("分析失败", f"CSV分析失败: {error_msg}"))
+                
+            except Exception as e:
+                # 只有程序异常才到这里
+                error_msg = f"程序异常: {str(e)}"
+                self.log_ai_message(f"❌ {error_msg}")
+                self.root.after(0, lambda: messagebox.showerror("程序错误", error_msg))
+            
+            finally:
+                self.root.after(0, lambda: self.root.config(cursor=""))
+        
+        # 启动分析线程
+        threading.Thread(target=analyze_csv, daemon=True).start()
+    
+    def generate_pdf_report(self):
+        """生成当前数据的PDF报告"""
+        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用")
+            return
+        
+        # 检查是否有数据
+        if not hasattr(self.data_processor, 'latest_pressure_array') or self.data_processor.latest_pressure_array is None:
+            messagebox.showwarning("无数据", "当前没有压力传感器数据\n请先连接设备并采集数据")
+            return
+        
+        # 显示患者信息输入对话框
+        patient_dialog = PatientInfoDialog(self.root)
+        if not patient_dialog.result:
+            return
+        
+        patient_info = patient_dialog.result
+        
+        # 收集当前数据
+        messagebox.showinfo("数据收集", "将收集30秒的实时数据进行分析\n请保持设备连接正常")
+        
+        # 实现数据收集和分析逻辑
+        self.collect_and_analyze_data(patient_info)
+    
+    def start_sarcneuro_service(self):
+        """启动SarcNeuro Edge服务"""
+        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            messagebox.showerror("服务不可用", "SarcNeuro Edge 服务不可用")
+            return
+        
+        def start_service():
+            try:
+                self.log_ai_message("🚀 启动 SarcNeuro Edge 服务...")
+                if self.sarcneuro_service.start_service():
+                    self.log_ai_message("✅ SarcNeuro Edge 服务启动成功！")
+                    status = self.sarcneuro_service.get_service_status()
+                    self.root.after(0, lambda: messagebox.showinfo("服务启动成功", 
+                        f"SarcNeuro Edge 服务已启动\n\n端口: {status['port']}\n进程ID: {status.get('process_id', 'N/A')}"))
+                else:
+                    self.log_ai_message("❌ SarcNeuro Edge 服务启动失败")
+                    self.root.after(0, lambda: messagebox.showerror("启动失败", "无法启动 SarcNeuro Edge 服务\n请检查端口是否被占用"))
+            except Exception as e:
+                self.log_ai_message(f"❌ 服务启动异常: {e}")
+                self.root.after(0, lambda: messagebox.showerror("启动异常", f"服务启动时发生异常:\n{e}"))
+        
+        threading.Thread(target=start_service, daemon=True).start()
+    
+    def show_analysis_history(self):
+        """显示分析历史"""
+        messagebox.showinfo("分析历史", "分析历史功能正在开发中\n\n当前会话的分析结果将显示在日志中\n未来版本将提供完整的历史记录管理")
+    
+    def show_service_status(self):
+        """显示AI服务状态"""
+        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            messagebox.showwarning("服务不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
+            return
+        
+        try:
+            status = self.sarcneuro_service.get_service_status()
+            is_running = "🟢 运行中" if status['is_running'] else "🔴 未启动"
+            
+            status_info = f"""🧠 SarcNeuro Edge AI 服务状态
+
+🚀 运行状态: {is_running}
+🌐 服务端口: {status['port']}
+🔗 服务地址: {status['base_url']}
+🆔 进程ID: {status.get('process_id', 'N/A')}
+
+{'✅ 服务正常运行，可以进行AI分析' if status['is_running'] else '⚠️ 服务未启动，将在需要时自动启动'}"""
+            
+            messagebox.showinfo("AI服务状态", status_info)
+            
+        except Exception as e:
+            messagebox.showerror("状态查询失败", f"无法获取服务状态:\n{e}")
+    
+    def generate_analysis_pdf(self, analysis_data, patient_info, source_file, metadata=None):
+        """生成分析报告文件"""
+        try:
+            from datetime import datetime
+            import os
+            
+            # 生成报告文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            patient_name = patient_info.get('name', '未知患者').replace(' ', '_')
+            report_filename = f"肌少症分析报告_{patient_name}_{timestamp}.txt"
+            
+            # 确保在当前工作目录生成
+            report_path = os.path.join(os.getcwd(), report_filename)
+            
+            self.log_ai_message(f"📁 报告文件路径: {report_path}")
+            
+            # 生成详细的分析报告
+            report_content = f"""
+==========================================
+🧠 SarcNeuro 肌少症智能分析报告
+==========================================
+
+📋 患者基本信息
+------------------------------------------
+• 姓名: {patient_info.get('name', 'N/A')}
+• 年龄: {patient_info.get('age', 'N/A')} 岁
+• 性别: {patient_info.get('gender', 'N/A')}
+• 身高: {patient_info.get('height', 'N/A')} cm
+• 体重: {patient_info.get('weight', 'N/A')} kg
+• 检测日期: {patient_info.get('test_date', 'N/A')}
+• 检测类型: {patient_info.get('test_type', '综合分析')}
+
+📊 AI分析结果
+------------------------------------------
+• 综合评分: {analysis_data.get('overall_score', 0):.1f}/100
+• 风险等级: {analysis_data.get('risk_level', 'UNKNOWN')}
+• 分析置信度: {analysis_data.get('confidence', 0):.1%}
+
+🔬 详细分析数据
+------------------------------------------"""
+
+            # 添加详细分析数据
+            detailed = analysis_data.get('detailed_analysis', {})
+            if detailed:
+                # 步态分析
+                gait = detailed.get('gait_analysis', {})
+                if gait:
+                    report_content += f"""
+🚶 步态分析:
+  - 步行速度: {gait.get('walking_speed', 0):.3f} m/s
+  - 步长: {gait.get('step_length', 0):.1f} cm
+  - 步频: {gait.get('cadence', 0):.1f} 步/分钟
+  - 步态不对称指数: {gait.get('asymmetry_index', 0):.3f}
+  - 步态稳定性评分: {gait.get('stability_score', 0):.1f}/100"""
+
+                # 平衡分析
+                balance = detailed.get('balance_analysis', {})
+                if balance:
+                    report_content += f"""
+⚖️ 平衡分析:
+  - 压力中心位移: {balance.get('cop_displacement', 0):.2f} mm
+  - 身体摆动面积: {balance.get('sway_area', 0):.2f} mm²
+  - 摆动速度: {balance.get('sway_velocity', 0):.2f} mm/s
+  - 平衡稳定性指数: {balance.get('stability_index', 0):.2f}
+  - 跌倒风险评估: {balance.get('fall_risk_score', 0):.1%}"""
+
+            # 医学解释
+            interpretation = analysis_data.get('interpretation', '无详细解释')
+            report_content += f"""
+
+🏥 医学解释与建议
+------------------------------------------
+{interpretation}
+"""
+
+            # 异常检测
+            abnormalities = analysis_data.get('abnormalities', [])
+            if abnormalities:
+                report_content += f"""
+⚠️ 检测到的异常情况 ({len(abnormalities)}项)
+------------------------------------------"""
+                for i, abnormality in enumerate(abnormalities, 1):
+                    report_content += f"""
+{i}. {abnormality}"""
+
+            # 康复建议
+            recommendations = analysis_data.get('recommendations', [])
+            if recommendations:
+                report_content += f"""
+
+💡 个性化康复建议 ({len(recommendations)}项)
+------------------------------------------"""
+                for i, recommendation in enumerate(recommendations, 1):
+                    report_content += f"""
+{i}. {recommendation}"""
+
+            # 数据来源信息
+            report_content += f"""
+
+📁 数据来源信息
+------------------------------------------
+• 源文件: {os.path.basename(source_file)}
+• 文件路径: {source_file}
+• 分析时间: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}
+• 分析版本: SarcNeuro Edge v1.0.0
+• 技术支持: 威海聚桥工业科技有限公司
+
+------------------------------------------
+本报告由SarcNeuro AI智能分析系统生成
+仅供医疗专业人员参考，不可替代临床诊断
+==========================================
+"""
+            
+            # 保存为文本文件（将来可改为PDF）
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            return report_path
+            
+        except Exception as e:
+            raise Exception(f"PDF报告生成失败: {e}")
+
+    def generate_sarcneuro_report(self, test_id, format_type="pdf", csv_file_path=None, patient_info=None):
+        """调用sarcneuro-edge API生成报告"""
+        try:
+            import requests
+            import os
+            from datetime import datetime
+            
+            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
+                raise Exception("SarcNeuro Edge服务未运行")
+            
+            base_url = self.sarcneuro_service.base_url
+            
+            # 1. 调用报告生成API
+            self.log_ai_message(f"🔗 调用报告生成API (test_id: {test_id})")
+            
+            generate_data = {
+                "test_id": test_id,
+                "report_type": "comprehensive",
+                "format": format_type
+            }
+            
+            response = requests.post(
+                f"{base_url}/api/reports/generate",
+                json=generate_data,
+                timeout=60,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"报告生成API调用失败: HTTP {response.status_code} - {response.text}")
+            
+            result = response.json()
+            if result.get('status') != 'success':
+                raise Exception(f"报告生成失败: {result.get('message', '未知错误')}")
+            
+            data = result.get('data', {})
+            report_id = data.get('report_id')
+            report_number = data.get('report_number')
+            
+            if not report_id:
+                raise Exception("报告生成成功但未返回report_id")
+            
+            self.log_ai_message(f"✅ 报告生成成功 (ID: {report_id}, 编号: {report_number})")
+            
+            # 2. 下载报告文件
+            self.log_ai_message("📥 下载报告文件...")
+            
+            download_response = requests.get(
+                f"{base_url}/api/reports/{report_id}/download",
+                timeout=30
+            )
+            
+            if download_response.status_code != 200:
+                raise Exception(f"报告下载失败: HTTP {download_response.status_code}")
+            
+            # 3. 按用户要求的规则保存文件
+            today = datetime.now().strftime("%Y-%m-%d")
+            patient_name = patient_info.get('name', '未知患者') if patient_info else '未知患者'
+            
+            # 创建日期目录
+            date_dir = os.path.join(os.getcwd(), today)
+            if not os.path.exists(date_dir):
+                os.makedirs(date_dir)
+                self.log_ai_message(f"📁 创建日期目录: {date_dir}")
+            
+            # 使用原CSV文件名，但改为PDF扩展名
+            if csv_file_path:
+                csv_basename = os.path.splitext(os.path.basename(csv_file_path))[0]
+                local_filename = f"{csv_basename}.{format_type}"
+            else:
+                local_filename = f"{patient_name}_肌少症分析报告.{format_type}"
+            
+            local_path = os.path.join(date_dir, local_filename)
+            
+            # 如果同名文件存在，添加时间戳
+            if os.path.exists(local_path):
+                timestamp = datetime.now().strftime("_%H%M%S")
+                name_part = os.path.splitext(local_filename)[0]
+                local_filename = f"{name_part}{timestamp}.{format_type}"
+                local_path = os.path.join(date_dir, local_filename)
+            
+            # 写入文件
+            with open(local_path, 'wb') as f:
+                f.write(download_response.content)
+            
+            file_size = os.path.getsize(local_path)
+            self.log_ai_message(f"💾 报告已保存到: {today}\\{local_filename} ({file_size} 字节)")
+            
+            return local_path
+            
+        except requests.exceptions.Timeout:
+            raise Exception("报告生成请求超时")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"网络请求失败: {e}")
+        except Exception as e:
+            self.log_ai_message(f"❌ 报告生成详细错误: {e}")
+            raise
+
+    def get_analysis_result(self, analysis_id):
+        """调用sarcneuro-edge API获取分析详细结果"""
+        try:
+            import requests
+            
+            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
+                raise Exception("SarcNeuro Edge服务未运行")
+            
+            base_url = self.sarcneuro_service.base_url
+            
+            # 调用 /api/analysis/results/{analysis_id}
+            response = requests.get(
+                f"{base_url}/api/analysis/results/{analysis_id}",
+                timeout=30,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"获取分析结果失败: HTTP {response.status_code} - {response.text}")
+            
+            result = response.json()
+            if result.get('status') != 'success':
+                raise Exception(f"获取分析结果失败: {result.get('message', '未知错误')}")
+            
+            self.log_ai_message("✅ 成功获取分析详细结果")
+            return result.get('data')
+            
+        except requests.exceptions.Timeout:
+            raise Exception("获取分析结果请求超时")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"网络请求失败: {e}")
+        except Exception as e:
+            self.log_ai_message(f"❌ 获取分析结果错误: {e}")
+            raise
+    
+    def show_analysis_complete_dialog(self, analysis_data, report_path):
+        """显示分析完成对话框"""
+        overall_score = analysis_data.get('overall_score', 0)
+        risk_level = analysis_data.get('risk_level', 'UNKNOWN')
+        confidence = analysis_data.get('confidence', 0)
+        
+        # 检查报告文件类型
+        import os
+        file_ext = os.path.splitext(report_path)[1].lower()
+        file_type = "PDF报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
+        filename = os.path.basename(report_path)
+        
+        message = f"""🧠 AI分析完成！
+
+📊 分析结果:
+• 综合评分: {overall_score:.1f}/100
+• 风险等级: {risk_level}
+• 置信度: {confidence:.1%}
+
+📋 {file_type}已生成: {filename}
+
+是否立即打开报告文件？"""
+        
+        result = messagebox.askyesno("分析完成", message)
+        if result:
+            try:
+                import os
+                import subprocess
+                import platform
+                
+                if platform.system() == "Windows":
+                    os.startfile(report_path)  # Windows
+                elif platform.system() == "Darwin":
+                    subprocess.run(['open', report_path])  # macOS
+                else:
+                    subprocess.run(['xdg-open', report_path])  # Linux
+            except Exception as e:
+                messagebox.showinfo("打开文件", f"请手动打开报告文件:\n{report_path}")
+    
+    def collect_and_analyze_data(self, patient_info):
+        """收集实时数据并进行分析"""
+        # 实现30秒数据收集逻辑
+        # 这里可以复用integration_ui.py中的收集逻辑
+        messagebox.showinfo("功能开发中", "实时数据收集分析功能正在开发中\n请使用CSV导入功能进行分析")
 
     def on_closing(self):
         """窗口关闭事件"""
@@ -1544,6 +2311,13 @@ class PressureSensorUI:
                 try:
                     if self.sarcneuro_panel.sarcneuro_service:
                         self.sarcneuro_panel.sarcneuro_service.stop_service()
+                except:
+                    pass
+            
+            # 停止菜单栏的 SarcNeuro 服务
+            if hasattr(self, 'sarcneuro_service') and self.sarcneuro_service:
+                try:
+                    self.sarcneuro_service.stop_service()
                 except:
                     pass
             

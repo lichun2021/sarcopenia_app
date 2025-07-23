@@ -21,7 +21,7 @@ router = APIRouter()
 class PatientCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50, description="患者姓名")
     age: int = Field(..., ge=0, le=120, description="患者年龄")
-    gender: str = Field(..., regex="^(MALE|FEMALE)$", description="患者性别")
+    gender: str = Field(..., pattern="^(MALE|FEMALE)$", description="患者性别")
     height: Optional[float] = Field(None, ge=50, le=250, description="身高(cm)")
     weight: Optional[float] = Field(None, ge=10, le=200, description="体重(kg)")
     phone: Optional[str] = Field(None, max_length=20, description="联系电话")
@@ -36,7 +36,7 @@ class PatientCreate(BaseModel):
 class PatientUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=50, description="患者姓名")
     age: Optional[int] = Field(None, ge=0, le=120, description="患者年龄")
-    gender: Optional[str] = Field(None, regex="^(MALE|FEMALE)$", description="患者性别")
+    gender: Optional[str] = Field(None, pattern="^(MALE|FEMALE)$", description="患者性别")
     height: Optional[float] = Field(None, ge=50, le=250, description="身高(cm)")
     weight: Optional[float] = Field(None, ge=10, le=200, description="体重(kg)")
     phone: Optional[str] = Field(None, max_length=20, description="联系电话")
@@ -151,7 +151,7 @@ async def get_patients(
     page: int = Query(1, ge=1, description="页码"),
     size: int = Query(20, ge=1, le=100, description="每页数量"),
     search: Optional[str] = Query(None, description="搜索关键词"),
-    gender: Optional[str] = Query(None, regex="^(MALE|FEMALE)$", description="性别筛选"),
+    gender: Optional[str] = Query(None, pattern="^(MALE|FEMALE)$", description="性别筛选"),
     age_min: Optional[int] = Query(None, ge=0, description="最小年龄"),
     age_max: Optional[int] = Query(None, le=120, description="最大年龄"),
     active_only: bool = Query(True, description="仅显示活跃患者"),
