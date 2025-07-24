@@ -191,7 +191,7 @@ async def get_sync_logs(
         from app.database import db_manager
         from models.database_models import SyncLog
         
-        for session in db_manager.get_session():
+        with db_manager.get_session() as session:
             # 获取同步日志
             query = session.query(SyncLog).order_by(SyncLog.created_at.desc())
             
@@ -243,7 +243,7 @@ async def clear_sync_logs(
         
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
         
-        for session in db_manager.get_session():
+        with db_manager.get_session() as session:
             # 删除旧日志
             deleted_count = session.query(SyncLog).filter(
                 SyncLog.created_at < cutoff_date
@@ -268,7 +268,7 @@ async def get_pending_sync_data():
         from app.database import db_manager
         from models.database_models import Patient, Test, Report
         
-        for session in db_manager.get_session():
+        with db_manager.get_session() as session:
             # 统计待同步数据
             pending_patients = session.query(Patient).filter(
                 Patient.sync_status == "pending"

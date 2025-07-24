@@ -58,9 +58,11 @@ class SarcNeuroEdgeService:
                     logger.error("现有服务无响应")
                     return False
             
-            # 准备启动命令
+            # 直接使用 standalone_upload.py（兼容8000端口）
             python_exe = sys.executable
-            cmd = [python_exe, "-m", "app.main"]
+            cmd = [python_exe, "standalone_upload.py"]
+            # 保持原有端口8000，standalone_upload.py已修改为使用8000端口
+            logger.info(f"使用 standalone_upload.py 启动服务，端口: {self.port}")
             
             # 设置环境变量
             env = os.environ.copy()

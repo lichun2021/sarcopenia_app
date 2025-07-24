@@ -5,8 +5,8 @@ import os
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
-from pydantic import Field
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -20,8 +20,7 @@ class AppConfig(BaseSettings):
     host: str = Field(default="0.0.0.0", env="HOST")
     port: int = Field(default=8000, env="PORT")
     
-    class Config:
-        env_prefix = "APP_"
+    model_config = {"env_prefix": "APP_"}
 
 class DatabaseConfig(BaseSettings):
     """数据库配置"""
@@ -30,8 +29,7 @@ class DatabaseConfig(BaseSettings):
     max_overflow: int = Field(default=20, env="DB_MAX_OVERFLOW")
     echo: bool = Field(default=False, env="DB_ECHO")
     
-    class Config:
-        env_prefix = "DB_"
+    model_config = {"env_prefix": "DB_"}
 
 class SyncConfig(BaseSettings):
     """同步配置"""
@@ -43,8 +41,7 @@ class SyncConfig(BaseSettings):
     timeout: int = Field(default=30, env="SYNC_TIMEOUT")
     batch_size: int = Field(default=100, env="SYNC_BATCH_SIZE")
     
-    class Config:
-        env_prefix = "SYNC_"
+    model_config = {"env_prefix": "SYNC_"}
 
 class ModelConfig(BaseSettings):
     """AI模型配置"""
@@ -53,8 +50,7 @@ class ModelConfig(BaseSettings):
     model_version: str = Field(default="latest", env="MODEL_VERSION")
     download_timeout: int = Field(default=600, env="MODEL_DOWNLOAD_TIMEOUT")  # 10分钟
     
-    class Config:
-        env_prefix = "MODEL_"
+    model_config = {"env_prefix": "MODEL_"}
 
 class SecurityConfig(BaseSettings):
     """安全配置"""
@@ -62,8 +58,7 @@ class SecurityConfig(BaseSettings):
     access_token_expire_minutes: int = Field(default=1440, env="ACCESS_TOKEN_EXPIRE_MINUTES")  # 24小时
     algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
     
-    class Config:
-        env_prefix = "SECURITY_"
+    model_config = {"env_prefix": "SECURITY_"}
 
 class LoggingConfig(BaseSettings):
     """日志配置"""
@@ -76,8 +71,7 @@ class LoggingConfig(BaseSettings):
         env="LOG_FORMAT"
     )
     
-    class Config:
-        env_prefix = "LOG_"
+    model_config = {"env_prefix": "LOG_"}
 
 class EdgeConfig:
     """Edge设备总配置"""
@@ -143,12 +137,12 @@ class EdgeConfig:
     def save_config_file(self):
         """保存配置到文件"""
         config_data = {
-            "app": self.app.dict(),
-            "database": self.database.dict(),
-            "sync": self.sync.dict(),
-            "model": self.model.dict(),
-            "security": {k: v for k, v in self.security.dict().items() if k != "secret_key"},
-            "logging": self.logging.dict()
+            "app": self.app.model_dump(),
+            "database": self.database.model_dump(),
+            "sync": self.sync.model_dump(),
+            "model": self.model.model_dump(),
+            "security": {k: v for k, v in self.security.model_dump().items() if k != "secret_key"},
+            "logging": self.logging.model_dump()
         }
         
         with open(self.config_file, 'w', encoding='utf-8') as f:
@@ -173,12 +167,12 @@ class EdgeConfig:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
-            "app": self.app.dict(),
-            "database": self.database.dict(),
-            "sync": self.sync.dict(),
-            "model": self.model.dict(),
-            "security": self.security.dict(),
-            "logging": self.logging.dict()
+            "app": self.app.model_dump(),
+            "database": self.database.model_dump(),
+            "sync": self.sync.model_dump(),
+            "model": self.model.model_dump(),
+            "security": self.security.model_dump(),
+            "logging": self.logging.model_dump()
         }
 
 # 全局配置实例

@@ -1,32 +1,113 @@
 """
-SarcNeuro Edge 报告生成器
+综合测试报告生成函数 - 使用医院标准模板
 """
-import os
-import json
+from typing import List, Dict, Any
+from core.analyzer import PatientInfo
 from datetime import datetime
-from typing import Dict, Any, Optional
 from jinja2 import Template
-from pathlib import Path
 
-from core.analyzer import SarcopeniaAnalysis, PatientInfo
-
-class ReportGenerator:
-    """专业医疗报告生成器"""
+async def generate_comprehensive_report(patient: PatientInfo, all_results: List[dict], test_type: str, report_id: str) -> str:
+    """生成综合测试报告 - 使用医院标准模板"""
     
-    def __init__(self):
-        self.template_dir = Path(__file__).parent.parent / "templates"
-        self.template_dir.mkdir(exist_ok=True)
+    # 计算综合数据
+    total_score = 0
+    total_data_points = 0
+    risk_levels = []
+    all_abnormalities = []
+    all_recommendations = set()
     
-    async def generate_html_report(
-        self, 
-        analysis: SarcopeniaAnalysis,
-        patient: PatientInfo,
-        test_info: Dict[str, Any]
-    ) -> str:
-        """生成HTML医疗报告"""
+    # 收集所有测试的平均数据
+    avg_walking_speed = 0
+    avg_step_length = 0
+    avg_cadence = 0
+    avg_stance_phase = 0
+    avg_cop_displacement = 0
+    avg_sway_area = 0
+    avg_fall_risk = 0
+    
+    # 收集每个测试的数据
+    test_summaries = []
+    
+    for result in all_results:
+        analysis = result['analysis']
+        gait = analysis.gait_analysis
+        balance = analysis.balance_analysis
         
-        # 报告模板
-        template_content = """
+        # 累加分数
+        total_score += analysis.overall_score
+        total_data_points += result['data_points']
+        risk_levels.append(analysis.risk_level)
+        all_abnormalities.extend(analysis.abnormalities)
+        all_recommendations.update(analysis.recommendations)
+        
+        # 累加步态数据
+        avg_walking_speed += gait.walking_speed
+        avg_step_length += gait.step_length
+        avg_cadence += gait.cadence
+        avg_stance_phase += gait.stance_phase
+        
+        # 累加平衡数据
+        avg_cop_displacement += balance.cop_displacement
+        avg_sway_area += balance.sway_area
+        avg_fall_risk += balance.fall_risk_score
+        
+        # 保存测试摘要
+        test_summaries.append({
+            'name': result['test_name'],
+            'score': analysis.overall_score,
+            'risk': analysis.risk_level
+        })
+    
+    # 计算平均值
+    num_tests = len(all_results)
+    avg_score = total_score / num_tests if num_tests > 0 else 0
+    avg_walking_speed /= num_tests if num_tests > 0 else 1
+    avg_step_length /= num_tests if num_tests > 0 else 1
+    avg_cadence /= num_tests if num_tests > 0 else 1
+    avg_stance_phase /= num_tests if num_tests > 0 else 1
+    avg_cop_displacement /= num_tests if num_tests > 0 else 1
+    avg_sway_area /= num_tests if num_tests > 0 else 1
+    avg_fall_risk /= num_tests if num_tests > 0 else 1
+    
+    # 确定最高风险等级
+    risk_priority = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'CRITICAL': 4}
+    highest_risk = max(risk_levels, key=lambda x: risk_priority.get(x, 0)) if risk_levels else 'LOW'
+    
+    # 风险等级显示
+    risk_level_display = {
+        'LOW': '低风险',
+        'MEDIUM': '中度风险', 
+        'HIGH': '高风险',
+        'CRITICAL': '严重风险'
+    }.get(highest_risk, '未知')
+    
+    risk_level_class = {
+        'LOW': 'normal',
+        'MEDIUM': 'warning',
+        'HIGH': 'danger',
+        'CRITICAL': 'danger'
+    }.get(highest_risk, 'normal')
+    
+    # 生成报告编号
+    report_number = f"SNE-{report_id[:8].upper()}"
+    generation_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    # 测试类型显示
+    test_type_display = "综合评估（多项测试）"
+    
+    # 生成综合解释
+    interpretation = f"""基于{num_tests}项测试的综合分析，该患者的运动功能评估显示：
+整体功能评分为{avg_score:.1f}分，风险等级为{risk_level_display}。"""
+    
+    if highest_risk in ['HIGH', 'CRITICAL']:
+        interpretation += "存在明显的运动功能障碍，建议及时进行专业康复评估和干预。"
+    elif highest_risk == 'MEDIUM':
+        interpretation += "存在轻度运动功能异常，建议加强运动锻炼并定期复查。"
+    else:
+        interpretation += "运动功能基本正常，建议保持现有运动习惯。"
+    
+    # 使用医院标准模板
+    template_content = '''
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -171,6 +252,26 @@ class ReportGenerator:
             color: red;
         }
         
+        /* 测试项目汇总 */
+        .test-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11pt;
+            margin-top: 20px;
+        }
+        
+        .test-summary-table th,
+        .test-summary-table td {
+            border: 1px solid black;
+            padding: 6px;
+            text-align: center;
+        }
+        
+        .test-summary-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        
         /* 评估结论 */
         .conclusion-section {
             margin: 30px 0;
@@ -304,7 +405,7 @@ class ReportGenerator:
         <div class="report-header">
             <div class="report-number">{{ report_number }}</div>
             <h1 class="hospital-name">肌智神护 AI 平台</h1>
-            <h2 class="report-title">肌少症智能分析报告</h2>
+            <h2 class="report-title">肌少症智能分析报告（综合）</h2>
             
             <!-- 患者基本信息 -->
             <div class="patient-info-header">
@@ -329,7 +430,7 @@ class ReportGenerator:
                 <div class="info-row">
                     <div class="info-item">
                         <span class="label">就诊号</span>
-                        <span class="value">{{ test_info.report_id[:8] }}</span>
+                        <span class="value">{{ report_id[:8] }}</span>
                     </div>
                     <div class="info-item">
                         <span class="label">科室</span>
@@ -341,10 +442,43 @@ class ReportGenerator:
                     </div>
                     <div class="info-item">
                         <span class="label">数据点</span>
-                        <span class="value">{{ test_info.data_points }}个</span>
+                        <span class="value">{{ total_data_points }}个</span>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- 测试项目汇总 -->
+        <div class="analysis-table-section">
+            <h3 class="section-header">测试项目汇总</h3>
+            <table class="test-summary-table">
+                <thead>
+                    <tr>
+                        <th>测试项目</th>
+                        <th>评分</th>
+                        <th>风险等级</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for test in test_summaries %}
+                    <tr>
+                        <td>{{ test.name }}</td>
+                        <td class="measured-value">{{ "%.1f"|format(test.score) }}</td>
+                        <td>{{ test.risk }}</td>
+                        <td>
+                            {% if test.score >= 80 %}
+                                <span class="status-normal">正常</span>
+                            {% elif test.score >= 60 %}
+                                <span class="status-warning">轻度异常</span>
+                            {% else %}
+                                <span class="status-danger">异常</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
 
         <!-- 综合评估结果 -->
@@ -362,12 +496,12 @@ class ReportGenerator:
                 <tbody>
                     <tr>
                         <td class="parameter-name">综合评分</td>
-                        <td class="measured-value">{{ "%.1f"|format(analysis.overall_score) }}</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_score) }}</td>
                         <td class="reference-range">[80-100]</td>
                         <td>
-                            {% if analysis.overall_score >= 80 %}
+                            {% if avg_score >= 80 %}
                                 <span class="status-normal">正常</span>
-                            {% elif analysis.overall_score >= 60 %}
+                            {% elif avg_score >= 60 %}
                                 <span class="status-warning">轻度异常</span>
                             {% else %}
                                 <span class="status-danger">异常</span>
@@ -380,25 +514,25 @@ class ReportGenerator:
                         <td class="reference-range">-</td>
                         <td>
                             <span class="status-{{ risk_level_class }}">
-                                {{ '需关注' if analysis.risk_level != 'LOW' else '正常' }}
+                                {{ '需关注' if highest_risk != 'LOW' else '正常' }}
                             </span>
                         </td>
                     </tr>
                     <tr>
-                        <td class="parameter-name">分析置信度</td>
-                        <td class="measured-value">{{ "%.1f"|format(analysis.confidence * 100) }}%</td>
-                        <td class="reference-range">[>90%]</td>
+                        <td class="parameter-name">测试项目数</td>
+                        <td class="measured-value">{{ num_tests }}</td>
+                        <td class="reference-range">-</td>
                         <td>
-                            <span class="status-normal">可靠</span>
+                            <span class="status-normal">完成</span>
                         </td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <!-- 步态分析结果 -->
+        <!-- 步态分析结果（平均值） -->
         <div class="analysis-table-section">
-            <h3 class="section-header">步态分析结果</h3>
+            <h3 class="section-header">步态分析结果（平均值）</h3>
             <table class="analysis-table">
                 <thead>
                     <tr>
@@ -412,64 +546,39 @@ class ReportGenerator:
                 <tbody>
                     <tr>
                         <td class="parameter-name">步行速度</td>
-                        <td class="measured-value">{{ "%.2f"|format(gait.walking_speed) }}</td>
-                        <td class="reference-range">[0.8-1.6]</td>
+                        <td class="measured-value">{{ "%.2f"|format(avg_walking_speed) }}</td>
+                        <td class="reference-range">[1.0-1.6]</td>
                         <td>m/s</td>
-                        <td>{{ '↓ 偏低' if gait.walking_speed < 0.8 else ('↑ 偏高' if gait.walking_speed > 1.8 else '正常') }}</td>
+                        <td>{{ '↓ 偏低' if avg_walking_speed < 1.0 else '正常' }}</td>
                     </tr>
                     <tr>
                         <td class="parameter-name">步长</td>
-                        <td class="measured-value">{{ "%.1f"|format(gait.step_length) }}</td>
-                        <td class="reference-range">[45-85]</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_step_length) }}</td>
+                        <td class="reference-range">[50-80]</td>
                         <td>cm</td>
-                        <td>{{ '↓ 偏短' if gait.step_length < 45 else ('↑ 偏长' if gait.step_length > 85 else '正常') }}</td>
+                        <td>{{ '正常' if 50 <= avg_step_length <= 80 else '异常' }}</td>
                     </tr>
                     <tr>
                         <td class="parameter-name">步频</td>
-                        <td class="measured-value">{{ "%.1f"|format(gait.cadence) }}</td>
-                        <td class="reference-range">[80-130]</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_cadence) }}</td>
+                        <td class="reference-range">[90-120]</td>
                         <td>步/分钟</td>
-                        <td>{{ '↓ 偏低' if gait.cadence < 80 else ('↑ 偏高' if gait.cadence > 130 else '正常') }}</td>
+                        <td>{{ '正常' if 90 <= avg_cadence <= 120 else '异常' }}</td>
                     </tr>
                     <tr>
                         <td class="parameter-name">站立相</td>
-                        <td class="measured-value">{{ "%.1f"|format(gait.stance_phase) }}</td>
-                        <td class="reference-range">[58-65]</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_stance_phase) }}</td>
+                        <td class="reference-range">[60-65]</td>
                         <td>%</td>
-                        <td>{{ '↓ 偏短' if gait.stance_phase < 58 else ('↑ 延长' if gait.stance_phase > 68 else '正常') }}</td>
-                    </tr>
-                    {% if gait.left_step_height %}
-                    <tr>
-                        <td class="parameter-name">左脚步高</td>
-                        <td class="measured-value">{{ "%.1f"|format(gait.left_step_height * 100) }}</td>
-                        <td class="reference-range">[10-15]</td>
-                        <td>cm</td>
-                        <td>{{ '正常' if 0.10 <= gait.left_step_height <= 0.15 else '异常' }}</td>
-                    </tr>
-                    {% endif %}
-                    {% if gait.right_step_height %}
-                    <tr>
-                        <td class="parameter-name">右脚步高</td>
-                        <td class="measured-value">{{ "%.1f"|format(gait.right_step_height * 100) }}</td>
-                        <td class="reference-range">[10-15]</td>
-                        <td>cm</td>
-                        <td>{{ '正常' if 0.10 <= gait.right_step_height <= 0.15 else '异常' }}</td>
-                    </tr>
-                    {% endif %}
-                    <tr>
-                        <td class="parameter-name">不对称指数</td>
-                        <td class="measured-value">{{ "%.3f"|format(gait.asymmetry_index) }}</td>
-                        <td class="reference-range">[<0.08]</td>
-                        <td>-</td>
-                        <td>{{ '↑ 异常' if gait.asymmetry_index > 0.08 else '正常' }}</td>
+                        <td>{{ '↑ 延长' if avg_stance_phase > 65 else '正常' }}</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <!-- 平衡分析结果 -->
+        <!-- 平衡分析结果（平均值） -->
         <div class="analysis-table-section">
-            <h3 class="section-header">平衡分析结果</h3>
+            <h3 class="section-header">平衡分析结果（平均值）</h3>
             <table class="analysis-table">
                 <thead>
                     <tr>
@@ -483,24 +592,24 @@ class ReportGenerator:
                 <tbody>
                     <tr>
                         <td class="parameter-name">压力中心位移</td>
-                        <td class="measured-value">{{ "%.1f"|format(balance.cop_displacement) }}</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_cop_displacement) }}</td>
                         <td class="reference-range">[<15]</td>
                         <td>mm</td>
-                        <td>{{ '↑ 异常' if balance.cop_displacement > 15 else '正常' }}</td>
+                        <td>{{ '↑ 异常' if avg_cop_displacement > 15 else '正常' }}</td>
                     </tr>
                     <tr>
                         <td class="parameter-name">摆动面积</td>
-                        <td class="measured-value">{{ "%.1f"|format(balance.sway_area) }}</td>
+                        <td class="measured-value">{{ "%.1f"|format(avg_sway_area) }}</td>
                         <td class="reference-range">[<300]</td>
                         <td>mm²</td>
-                        <td>{{ '↑ 增大' if balance.sway_area > 300 else '正常' }}</td>
+                        <td>{{ '↑ 增大' if avg_sway_area > 300 else '正常' }}</td>
                     </tr>
                     <tr>
                         <td class="parameter-name">跌倒风险评分</td>
-                        <td class="measured-value">{{ "%.3f"|format(balance.fall_risk_score) }}</td>
+                        <td class="measured-value">{{ "%.2f"|format(avg_fall_risk) }}</td>
                         <td class="reference-range">[<0.3]</td>
                         <td>-</td>
-                        <td>{{ '↑ 高风险' if balance.fall_risk_score > 0.3 else '低风险' }}</td>
+                        <td>{{ '↑ 高风险' if avg_fall_risk > 0.3 else '低风险' }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -510,11 +619,11 @@ class ReportGenerator:
         <div class="conclusion-section">
             <div class="conclusion-title">评估结论：</div>
             <div class="conclusion-content">
-                <p>{{ analysis.interpretation }}</p>
-                {% if analysis.abnormalities %}
+                <p>{{ interpretation }}</p>
+                {% if all_abnormalities %}
                 <p><strong>主要异常发现：</strong></p>
                 <ul>
-                {% for abnormality in analysis.abnormalities %}
+                {% for abnormality in set(all_abnormalities) %}
                     <li>{{ abnormality }}</li>
                 {% endfor %}
                 </ul>
@@ -523,11 +632,11 @@ class ReportGenerator:
         </div>
 
         <!-- 医学建议 -->
-        {% if analysis.recommendations %}
+        {% if all_recommendations %}
         <div class="recommendations">
             <h4>医学建议</h4>
             <ul class="recommendation-list">
-            {% for recommendation in analysis.recommendations %}
+            {% for recommendation in all_recommendations %}
                 <li>{{ recommendation }}</li>
             {% endfor %}
             </ul>
@@ -538,71 +647,48 @@ class ReportGenerator:
         <div class="signature-section">
             <div class="signature-item">
                 <div class="signature-line"></div>
-                <p>检查医师：AI智能分析</p>
+                <p>主治医师</p>
             </div>
             <div class="signature-item">
                 <div class="signature-line"></div>
-                <p>审核医师：</p>
+                <p>报告医师</p>
             </div>
             <div class="signature-item">
                 <div class="signature-line"></div>
-                <p>报告日期：{{ generation_time }}</p>
+                <p>审核医师</p>
             </div>
         </div>
     </div>
 </body>
 </html>
-        """
-        
-        # 准备模板数据
-        template_data = {
-            "report_number": test_info.get("report_id", "R2025001"),
-            "patient": patient,
-            "analysis": analysis,
-            "gait": analysis.gait_analysis,
-            "balance": analysis.balance_analysis,
-            "test_info": test_info,
-            "generation_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "test_type_display": self._get_test_type_display(test_info.get("test_type", "COMPREHENSIVE")),
-            "risk_level_display": self._get_risk_level_display(analysis.risk_level),
-            "risk_level_class": self._get_risk_level_class(analysis.risk_level)
-        }
-        
-        # 渲染模板
-        template = Template(template_content)
-        return template.render(**template_data)
+'''
     
-    def _get_test_type_display(self, test_type: str) -> str:
-        """获取测试类型显示名称"""
-        type_map = {
-            "COMPREHENSIVE": "综合评估",
-            "WALK_4_LAPS": "步道4圈",
-            "WALK_7_LAPS": "步道7圈",
-            "STAND_LEFT": "左脚站立",
-            "STAND_RIGHT": "右脚站立",
-            "TANDEM_STANCE": "前后脚站立",
-            "HEEL_TOE": "脚跟脚尖",
-            "SIT_TO_STAND_5": "起坐5次",
-            "STATIC_SITTING": "静坐10s"
-        }
-        return type_map.get(test_type, test_type)
+    # 使用Jinja2模板渲染
+    template = Template(template_content)
+    html = template.render(
+        patient=patient,
+        report_number=report_number,
+        report_id=report_id,
+        generation_time=generation_time,
+        test_type_display=test_type_display,
+        total_data_points=total_data_points,
+        test_summaries=test_summaries,
+        avg_score=avg_score,
+        risk_level_display=risk_level_display,
+        risk_level_class=risk_level_class,
+        highest_risk=highest_risk,
+        num_tests=num_tests,
+        avg_walking_speed=avg_walking_speed,
+        avg_step_length=avg_step_length,
+        avg_cadence=avg_cadence,
+        avg_stance_phase=avg_stance_phase,
+        avg_cop_displacement=avg_cop_displacement,
+        avg_sway_area=avg_sway_area,
+        avg_fall_risk=avg_fall_risk,
+        interpretation=interpretation,
+        all_abnormalities=all_abnormalities,
+        all_recommendations=all_recommendations,
+        set=set  # 传递set函数到模板
+    )
     
-    def _get_risk_level_display(self, risk_level: str) -> str:
-        """获取风险等级显示"""
-        level_map = {
-            "LOW": "低风险",
-            "MEDIUM": "中风险", 
-            "HIGH": "高风险",
-            "CRITICAL": "严重风险"
-        }
-        return level_map.get(risk_level.upper(), risk_level)
-    
-    def _get_risk_level_class(self, risk_level: str) -> str:
-        """获取风险等级样式类"""
-        class_map = {
-            "LOW": "normal",
-            "MEDIUM": "warning",
-            "HIGH": "danger",
-            "CRITICAL": "danger"
-        }
-        return class_map.get(risk_level.upper(), "normal")
+    return html

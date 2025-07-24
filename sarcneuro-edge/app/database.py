@@ -87,16 +87,10 @@ class DatabaseManager:
     def create_tables(self):
         """创建所有数据表"""
         try:
-            if self.engine is None:
-                raise Exception("数据库引擎未初始化，无法创建表")
-            
-            print("正在创建数据表...")
             Base.metadata.create_all(bind=self.engine)
             print("数据表创建成功")
         except Exception as e:
             print(f"数据表创建失败: {e}")
-            if hasattr(e, '__class__'):
-                print(f"错误类型: {e.__class__.__name__}")
             raise
     
     def drop_tables(self):
@@ -122,41 +116,11 @@ class DatabaseManager:
     def check_connection(self) -> bool:
         """检查数据库连接"""
         try:
-            # 检查引擎是否初始化
-            if self.engine is None:
-                print("数据库引擎未初始化")
-                return False
-            
-            # 如果是SQLite，检查数据库目录和文件权限
-            if config.database.url.startswith("sqlite"):
-                db_path = Path(config.database_path)
-                db_dir = db_path.parent
-                
-                # 确保目录存在
-                if not db_dir.exists():
-                    print(f"创建数据库目录: {db_dir}")
-                    db_dir.mkdir(parents=True, exist_ok=True)
-                
-                # 检查目录权限
-                if not os.access(db_dir, os.W_OK):
-                    print(f"数据库目录无写入权限: {db_dir}")
-                    return False
-                
-                print(f"数据库路径: {db_path}")
-            
-            # 尝试连接数据库
             with self.engine.connect() as connection:
-                result = connection.execute(text("SELECT 1"))
-                result.fetchone()
-            
-            print("数据库连接检查成功")
+                connection.execute(text("SELECT 1"))
             return True
-            
         except Exception as e:
             print(f"数据库连接检查失败: {e}")
-            print(f"数据库URL: {config.database.url}")
-            if hasattr(e, '__class__'):
-                print(f"错误类型: {e.__class__.__name__}")
             return False
     
     def get_database_info(self) -> dict:
@@ -165,7 +129,7 @@ class DatabaseManager:
             with self.engine.connect() as connection:
                 if config.database.url.startswith("sqlite"):
                     # SQLite信息
-                    result = connection.execute("PRAGMA database_list")
+                    result = connection.execute(text("PRAGMA database_list"))
                     db_info = result.fetchall()
                     
                     # 获取数据库大小
@@ -203,7 +167,7 @@ class DatabaseManager:
         
         try:
             with self.engine.connect() as connection:
-                connection.execute("VACUUM")
+                connection.execute(text("VACUUM"))
             print("数据库优化完成")
         except Exception as e:
             print(f"数据库优化失败: {e}")
@@ -273,25 +237,15 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_database():
     """初始化数据库"""
-    try:
-        print("正在初始化数据库...")
-        print(f"配置的数据库URL: {config.database.url}")
-        
-        # 检查连接
-        if not db_manager.check_connection():
-            raise Exception("数据库连接失败")
-        
-        # 创建表
-        db_manager.create_tables()
-        
-        print("数据库初始化成功!")
-        
-    except Exception as e:
-        print(f"数据库初始化失败: {e}")
-        if hasattr(e, '__class__'):
-            print(f"错误类型: {e.__class__.__name__}")
-        raise Exception(f"数据库初始化失败: {str(e)}")
-        
+    print("正在初始化数据库...")
+    
+    # 检查连接
+    if not db_manager.check_connection():
+        raise Exception("数据库连接失败")
+    
+    # 创建表
+    db_manager.create_tables()
+    
     # 初始化系统状态
     _initialize_system_status()
     
@@ -303,7 +257,8 @@ def _initialize_system_status():
     import uuid
     
     try:
-        with db_manager.get_session() as session:
+        session = db_manager.SessionLocal()
+        try:
             # 检查是否已有系统状态记录
             existing = session.query(SystemStatus).first()
             
@@ -319,6 +274,12 @@ def _initialize_system_status():
                 print(f"系统状态初始化完成，设备ID: {system_status.edge_device_id}")
             else:
                 print(f"系统状态已存在，设备ID: {existing.edge_device_id}")
+                
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
                 
     except Exception as e:
         print(f"系统状态初始化失败: {e}")

@@ -7,8 +7,6 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 from datetime import datetime
 import logging
-import os
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,11 +97,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 静态文件服务 - 确保目录存在
-static_dirs = ["./static", "./reports"]
-for dir_path in static_dirs:
-    Path(dir_path).mkdir(parents=True, exist_ok=True)
-
+# 静态文件服务
 app.mount("/static", StaticFiles(directory="./static"), name="static")
 app.mount("/reports", StaticFiles(directory="./reports"), name="reports")
 

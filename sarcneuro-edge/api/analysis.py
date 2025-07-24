@@ -24,7 +24,7 @@ router = APIRouter()
 class PatientCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=50, description="患者姓名")
     age: int = Field(..., ge=0, le=120, description="患者年龄")
-    gender: str = Field(..., pattern="^(MALE|FEMALE)$", description="患者性别")
+    gender: str = Field(..., regex="^(MALE|FEMALE)$", description="患者性别")
     height: Optional[float] = Field(None, ge=50, le=250, description="身高(cm)")
     weight: Optional[float] = Field(None, ge=10, le=200, description="体重(kg)")
     phone: Optional[str] = Field(None, max_length=20, description="联系电话")
@@ -33,8 +33,8 @@ class PatientCreateRequest(BaseModel):
 class AnalysisRequest(BaseModel):
     patient_id: Optional[int] = Field(None, description="患者ID，不提供则自动创建")
     patient_info: Optional[PatientCreateRequest] = Field(None, description="患者信息，用于创建新患者")
-    test_type: str = Field("COMPREHENSIVE", pattern="^(STATIC|DYNAMIC|BALANCE|COMPREHENSIVE)$", description="测试类型")
-    test_mode: str = Field("UPLOAD", pattern="^(REAL_TIME|UPLOAD)$", description="测试模式")
+    test_type: str = Field("COMPREHENSIVE", regex="^(STATIC|DYNAMIC|BALANCE|COMPREHENSIVE)$", description="测试类型")
+    test_mode: str = Field("UPLOAD", regex="^(REAL_TIME|UPLOAD)$", description="测试模式")
     csv_data: str = Field(..., description="CSV格式的压力数据")
     parameters: Optional[Dict[str, Any]] = Field(None, description="测试参数")
 

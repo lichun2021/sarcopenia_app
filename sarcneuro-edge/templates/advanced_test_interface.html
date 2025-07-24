@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SarcNeuro Edge - 高级测试界面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .feature-card {
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid #667eea;
+        }
+        
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .upload-section {
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 2px dashed #667eea;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .file-upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f0f4ff;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .file-upload-area:hover {
+            background: #e8f0fe;
+            border-color: #5a67d8;
+        }
+        
+        .file-upload-area.dragover {
+            background: #d4edda;
+            border-color: #28a745;
+        }
+        
+        .file-list {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        
+        .file-item .file-name {
+            font-weight: bold;
+        }
+        
+        .file-item .file-size {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .file-item .remove-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-right: 10px;
+        }
+        
+        .btn:hover {
+            background: #5a67d8;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .progress-section {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .progress-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .progress-item {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        .progress-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .progress-item .value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .results-section {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 10px;
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .results-grid {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .result-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        
+        .result-item.success {
+            border-left: 4px solid #28a745;
+        }
+        
+        .result-item.error {
+            border-left: 4px solid #dc3545;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .result-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .result-stat {
+            text-align: center;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .result-stat .label {
+            font-size: 0.8em;
+            color: #666;
+        }
+        
+        .result-stat .value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .demo-section {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .demo-section h3 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .instructions h3 {
+            color: #1976d2;
+            margin-bottom: 15px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-pending {
+            background: #ffc107;
+        }
+        
+        .status-processing {
+            background: #007bff;
+            animation: pulse 1s infinite;
+        }
+        
+        .status-completed {
+            background: #28a745;
+        }
+        
+        .status-failed {
+            background: #dc3545;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 SarcNeuro Edge - 高级测试界面</h1>
+            <p>肌少症智能分析系统 - 多文件批量处理 | 实时进度监控 | 专业分析报告</p>
+        </div>
+        
+        <div class="content">
+            <!-- 功能特性展示 -->
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h3>📤 多文件上传</h3>
+                    <p>支持同时选择多个CSV文件，一次性批量处理</p>
+                </div>
+                <div class="feature-card">
+                    <h3>📊 实时进度</h3>
+                    <p>实时显示分析进度，每个文件处理状态可见</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🚀 并行处理</h3>
+                    <p>后台异步处理，不阻塞界面操作</p>
+                </div>
+                <div class="feature-card">
+                    <h3>📋 批量报告</h3>
+                    <p>自动生成每个文件的专业医疗分析报告</p>
+                </div>
+            </div>
+            
+            <!-- 使用说明 -->
+            <div class="instructions">
+                <h3>📋 使用说明</h3>
+                <ol>
+                    <li>填写患者基本信息（姓名、年龄、性别为必填项）</li>
+                    <li>选择多个CSV格式的压力数据文件，或使用演示数据</li>
+                    <li>选择测试类型（默认：综合评估）</li>
+                    <li>点击"🚀 开始批量分析"进行智能分析</li>
+                    <li>实时查看分析进度和每个文件的处理状态</li>
+                    <li>分析完成后查看所有报告和下载结果</li>
+                </ol>
+            </div>
+            
+            <!-- 演示数据 -->
+            <div class="demo-section">
+                <h3>🎯 演示数据</h3>
+                <p>如果您没有测试数据，可以使用我们生成的演示数据来体验系统功能。</p>
+                <button type="button" class="btn btn-secondary" onclick="generateMultipleDemoFiles()">
+                    生成多个演示文件
+                </button>
+            </div>
+            
+            <!-- 上传表单 -->
+            <div class="upload-section">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="patient_name">患者姓名 *</label>
+                            <input type="text" id="patient_name" name="patient_name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="patient_age">年龄 *</label>
+                            <input type="number" id="patient_age" name="patient_age" min="1" max="120" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="patient_gender">性别 *</label>
+                            <select id="patient_gender" name="patient_gender" required>
+                                <option value="">请选择</option>
+                                <option value="MALE">男</option>
+                                <option value="FEMALE">女</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="test_type">测试类型</label>
+                            <select id="test_type" name="test_type">
+                                <option value="COMPREHENSIVE">综合评估</option>
+                                <option value="WALK_4_LAPS">步道4圈</option>
+                                <option value="WALK_7_LAPS">步道7圈</option>
+                                <option value="STAND_LEFT">左脚站立</option>
+                                <option value="STAND_RIGHT">右脚站立</option>
+                                <option value="SIT_TO_STAND_5">起坐5次</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="patient_height">身高 (cm)</label>
+                            <input type="number" id="patient_height" name="patient_height" min="50" max="250" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="patient_weight">体重 (kg)</label>
+                            <input type="number" id="patient_weight" name="patient_weight" min="10" max="300" step="0.1">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>压力数据文件 (CSV格式) *</label>
+                        <div class="file-upload-area" id="fileUploadArea">
+                            <input type="file" id="files" name="files" accept=".csv" multiple required style="display: none;">
+                            <div class="upload-text">
+                                <h3>📁 拖拽多个CSV文件到此处 或 点击选择文件</h3>
+                                <p>支持同时选择多个文件进行批量分析</p>
+                            </div>
+                        </div>
+                        <div id="fileList" class="file-list"></div>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="submitBtn">🚀 开始批量分析</button>
+                    <button type="button" class="btn btn-secondary" onclick="resetForm()">重置表单</button>
+                </form>
+            </div>
+            
+            <!-- 分析进度 -->
+            <div id="progressSection" class="progress-section">
+                <div class="progress-header">
+                    <h3>📊 分析进度</h3>
+                    <button class="btn btn-secondary" onclick="refreshProgress()">刷新状态</button>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-info">
+                    <div class="progress-item">
+                        <div class="label">任务状态</div>
+                        <div class="value" id="taskStatus">等待中</div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="label">当前进度</div>
+                        <div class="value" id="taskProgress">0%</div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="label">处理文件</div>
+                        <div class="value" id="currentFile">0/0</div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="label">耗时</div>
+                        <div class="value" id="elapsedTime">00:00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 分析结果 -->
+            <div id="resultsSection" class="results-section">
+                <div class="results-header">
+                    <h3>✅ 分析完成！</h3>
+                    <button class="btn" onclick="downloadAllReports()">📥 下载所有报告</button>
+                </div>
+                <div id="resultsGrid" class="results-grid"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let selectedFiles = [];
+        let currentTaskId = null;
+        let progressInterval = null;
+        
+        // 文件上传区域事件
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        const fileInput = document.getElementById('files');
+        const fileList = document.getElementById('fileList');
+        
+        fileUploadArea.addEventListener('click', () => fileInput.click());
+        
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+        
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('dragover');
+        });
+        
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            
+            const files = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.csv'));
+            addFiles(files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            addFiles(files);
+        });
+        
+        function addFiles(files) {
+            files.forEach(file => {
+                if (!selectedFiles.find(f => f.name === file.name)) {
+                    selectedFiles.push(file);
+                }
+            });
+            updateFileList();
+        }
+        
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+        }
+        
+        function updateFileList() {
+            fileList.innerHTML = '';
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <div>
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-size">${(file.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                    <button type="button" class="remove-btn" onclick="removeFile(${index})">移除</button>
+                `;
+                fileList.appendChild(fileItem);
+            });
+        }
+        
+        // 表单提交
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (selectedFiles.length === 0) {
+                alert('请选择至少一个CSV文件');
+                return;
+            }
+            
+            const formData = new FormData();
+            
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            formData.append('patient_name', document.getElementById('patient_name').value);
+            formData.append('patient_age', document.getElementById('patient_age').value);
+            formData.append('patient_gender', document.getElementById('patient_gender').value);
+            formData.append('test_type', document.getElementById('test_type').value);
+            
+            const height = document.getElementById('patient_height').value;
+            const weight = document.getElementById('patient_weight').value;
+            if (height) formData.append('patient_height', height);
+            if (weight) formData.append('patient_weight', weight);
+            
+            try {
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('submitBtn').textContent = '提交中...';
+                
+                const response = await fetch('/upload-multiple', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    currentTaskId = data.task_id;
+                    showProgressSection();
+                    startProgressMonitoring();
+                    alert(`成功提交 ${data.total_files} 个文件进行批量分析！`);
+                } else {
+                    throw new Error(data.detail || '提交失败');
+                }
+            } catch (error) {
+                alert('提交失败: ' + error.message);
+            } finally {
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').textContent = '🚀 开始批量分析';
+            }
+        });
+        
+        function showProgressSection() {
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+        
+        function showResultsSection() {
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'block';
+        }
+        
+        function startProgressMonitoring() {
+            if (progressInterval) clearInterval(progressInterval);
+            
+            progressInterval = setInterval(async () => {
+                if (currentTaskId) {
+                    await updateProgress();
+                }
+            }, 1000);
+        }
+        
+        async function updateProgress() {
+            try {
+                const response = await fetch(`/task-status/${currentTaskId}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    updateProgressDisplay(data);
+                    
+                    if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+                        clearInterval(progressInterval);
+                        if (data.status === 'COMPLETED') {
+                            showResults(data);
+                        } else {
+                            alert('分析失败: ' + (data.error_message || '未知错误'));
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('更新进度失败:', error);
+            }
+        }
+        
+        function updateProgressDisplay(data) {
+            const statusMap = {
+                'PENDING': '等待中',
+                'PROCESSING': '处理中',
+                'COMPLETED': '已完成',
+                'FAILED': '失败'
+            };
+            
+            document.getElementById('taskStatus').textContent = statusMap[data.status] || data.status;
+            document.getElementById('taskProgress').textContent = data.progress + '%';
+            document.getElementById('currentFile').textContent = `${data.current_file}/${data.total_files}`;
+            document.getElementById('progressFill').style.width = data.progress + '%';
+            
+            // 计算耗时
+            if (data.start_time) {
+                const startTime = new Date(data.start_time);
+                const now = data.end_time ? new Date(data.end_time) : new Date();
+                const elapsed = Math.floor((now - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('elapsedTime').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+        
+        function showResults(data) {
+            showResultsSection();
+            
+            const resultsGrid = document.getElementById('resultsGrid');
+            resultsGrid.innerHTML = '';
+            
+            data.results.forEach(result => {
+                const resultItem = document.createElement('div');
+                resultItem.className = `result-item ${result.status === 'SUCCESS' ? 'success' : 'error'}`;
+                
+                if (result.status === 'SUCCESS') {
+                    resultItem.innerHTML = `
+                        <div class="result-header">
+                            <h4>${result.filename}</h4>
+                            <a href="${result.report_url}" target="_blank" class="btn">查看报告</a>
+                        </div>
+                        <div class="result-stats">
+                            <div class="result-stat">
+                                <div class="label">数据点</div>
+                                <div class="value">${result.data_points}</div>
+                            </div>
+                            <div class="result-stat">
+                                <div class="label">综合评分</div>
+                                <div class="value">${result.analysis_summary.overall_score.toFixed(1)}</div>
+                            </div>
+                            <div class="result-stat">
+                                <div class="label">风险等级</div>
+                                <div class="value">${result.analysis_summary.risk_level}</div>
+                            </div>
+                            <div class="result-stat">
+                                <div class="label">置信度</div>
+                                <div class="value">${(result.analysis_summary.confidence * 100).toFixed(1)}%</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultItem.innerHTML = `
+                        <div class="result-header">
+                            <h4>${result.filename}</h4>
+                            <span style="color: #dc3545;">❌ 处理失败</span>
+                        </div>
+                        <p style="color: #dc3545; margin-top: 10px;">错误信息: ${result.error}</p>
+                    `;
+                }
+                
+                resultsGrid.appendChild(resultItem);
+            });
+        }
+        
+        async function refreshProgress() {
+            if (currentTaskId) {
+                await updateProgress();
+            }
+        }
+        
+        function downloadAllReports() {
+            // 这里可以实现批量下载功能
+            alert('批量下载功能开发中...');
+        }
+        
+        async function generateMultipleDemoFiles() {
+            try {
+                const fileCount = prompt('请输入要生成的演示文件数量:', '5');
+                const count = parseInt(fileCount);
+                
+                if (!count || count < 1 || count > 20) {
+                    alert('请输入1-20之间的数字');
+                    return;
+                }
+                
+                const response = await fetch('/demo-data');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // 清空当前文件列表
+                    selectedFiles = [];
+                    
+                    // 生成指定数量的演示文件
+                    for (let i = 1; i <= count; i++) {
+                        // 为每个文件添加一些变化，使数据略有不同
+                        let modifiedContent = data.csv_content;
+                        
+                        // 创建虚拟文件对象
+                        const blob = new Blob([modifiedContent], { type: 'text/csv' });
+                        const file = new File([blob], `demo_pressure_data_${i}.csv`, { type: 'text/csv' });
+                        
+                        selectedFiles.push(file);
+                        
+                        // 同时下载到本地
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = `demo_pressure_data_${i}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                        
+                        // 添加小延迟避免浏览器阻止多文件下载
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    // 更新文件列表显示
+                    updateFileList();
+                    
+                    alert(`已生成 ${count} 个演示数据文件！\\n- 已添加到上传列表\\n- 已下载到本地\\n\\n数据点数: ${data.data_points}\\n描述: ${data.description}`);
+                } else {
+                    alert('生成演示数据失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('生成演示数据失败: ' + error.message);
+            }
+        }
+        
+        function resetForm() {
+            document.getElementById('uploadForm').reset();
+            selectedFiles = [];
+            updateFileList();
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'none';
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+            currentTaskId = null;
+        }
+    </script>
+</body>
+</html>

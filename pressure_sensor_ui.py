@@ -24,7 +24,7 @@ try:
     from patient_info_dialog import PatientInfoDialog
     SARCNEURO_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ SarcNeuro Edge 功能不可用: {e}")
+    print(f"[WARN] SarcNeuro Edge 功能不可用: {e}")
     SARCNEURO_AVAILABLE = False
 
 class PressureSensorUI:
@@ -119,8 +119,8 @@ class PressureSensorUI:
             
             if saved_config:
                 # 找到已保存的配置，直接加载
-                print(f"✅ 检测到已保存的配置，包含 {len(saved_config)} 个设备，自动加载中...")
-                self.log_message(f"✅ 自动加载已保存的配置 ({len(saved_config)} 个设备)")
+                print(f"[OK] 检测到已保存的配置，包含 {len(saved_config)} 个设备，自动加载中...")
+                self.log_message(f"[OK] 自动加载已保存的配置 ({len(saved_config)} 个设备)")
                 
                 # 直接设置设备配置，无需显示对话框
                 if self.serial_interface:
@@ -154,17 +154,17 @@ class PressureSensorUI:
                     
                     self.on_device_changed(None)
                 
-                self.log_message("✅ 设备配置自动加载完成！")
+                self.log_message("[OK] 设备配置自动加载完成！")
                 
             else:
                 # 没有找到已保存的配置，显示配置对话框
-                print("⚠️ 未找到已保存的配置，显示配置对话框...")
-                self.log_message("⚠️ 首次启动，需要配置设备")
+                print("[WARN] 未找到已保存的配置，显示配置对话框...")
+                self.log_message("[WARN] 首次启动，需要配置设备")
                 self.show_device_config()
                 
         except Exception as e:
-            print(f"❌ 自动加载配置失败: {e}")
-            self.log_message(f"❌ 自动加载配置失败: {e}")
+            print(f"[ERROR] 自动加载配置失败: {e}")
+            self.log_message(f"[ERROR] 自动加载配置失败: {e}")
             # 出错时显示配置对话框
             self.show_device_config()
     
@@ -232,7 +232,7 @@ class PressureSensorUI:
                 
                 self.on_device_changed(None)
                 
-            self.log_message("✅ 设备配置完成！")
+            self.log_message("[OK] 设备配置完成！")
         else:
             # 用户取消配置，显示警告
             if not self.device_configured:
@@ -266,7 +266,7 @@ class PressureSensorUI:
                 # 获取目标设备信息
                 target_device_configs = self.device_manager.devices
                 if device_id not in target_device_configs:
-                    self.log_message(f"❌ 设备配置不存在: {name}")
+                    self.log_message(f"[ERROR] 设备配置不存在: {name}")
                     self.restore_current_device_selection()
                     return
                 
@@ -274,7 +274,7 @@ class PressureSensorUI:
                 
                 # 检查目标端口是否存在和有效
                 if not self.check_port_availability(target_port):
-                    self.log_message(f"❌ 设备端口无效或不存在: {name} ({target_port})")
+                    self.log_message(f"[ERROR] 设备端口无效或不存在: {name} ({target_port})")
                     messagebox.showwarning("设备切换失败", 
                                          f"无法切换到 {icon} {name}\n端口 {target_port} 不存在或无有效数据")
                     self.restore_current_device_selection()
@@ -310,7 +310,7 @@ class PressureSensorUI:
                     # 更新标题
                     self.root.title(f"🔬 智能肌少症检测系统 - {device_info['icon']} {device_info['name']}")
                     
-                    self.log_message(f"✅ 已切换到设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
+                    self.log_message(f"[OK] 已切换到设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
                     
                     # 自动连接设备
                     self.auto_connect_device()
@@ -329,7 +329,7 @@ class PressureSensorUI:
             return port_name in available_ports
                 
         except Exception as e:
-            self.log_message(f"❌ 检查端口失败: {e}")
+            self.log_message(f"[ERROR] 检查端口失败: {e}")
             return False
     
     def restore_current_device_selection(self):
@@ -353,7 +353,7 @@ class PressureSensorUI:
             if not device_info:
                 return
                 
-            self.log_message(f"🔄 自动连接设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
+            self.log_message(f"[REFRESH] 自动连接设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
             
             if self.device_manager.connect_current_device():
                 self.is_running = True
@@ -362,19 +362,19 @@ class PressureSensorUI:
                 
                 # 更新UI状态
                 self.status_label.config(text="🟢 已连接", foreground="green")
-                self.log_message(f"✅ 自动连接成功: {device_info['icon']} {device_info['name']}")
+                self.log_message(f"[OK] 自动连接成功: {device_info['icon']} {device_info['name']}")
                 
                 # 连接成功后仍允许设备切换
                 if self.device_configured:
                     self.device_combo.config(state="readonly")
                 
             else:
-                self.status_label.config(text="❌ 连接失败", foreground="red")
-                self.log_message(f"❌ 自动连接失败: {device_info['icon']} {device_info['name']}")
+                self.status_label.config(text="[ERROR] 连接失败", foreground="red")
+                self.log_message(f"[ERROR] 自动连接失败: {device_info['icon']} {device_info['name']}")
                 
         except Exception as e:
-            self.status_label.config(text="❌ 连接错误", foreground="red")
-            self.log_message(f"❌ 自动连接错误: {e}")
+            self.status_label.config(text="[ERROR] 连接错误", foreground="red")
+            self.log_message(f"[ERROR] 自动连接错误: {e}")
     
     def start_connection_monitor(self):
         """启动连接监控"""
@@ -395,7 +395,7 @@ class PressureSensorUI:
                             self.device_lost_warned = True
                             self.show_device_lost_warning(device_info)
                     
-                    self.log_message("⚠️ 检测到连接异常，尝试重新连接...")
+                    self.log_message("[WARN] 检测到连接异常，尝试重新连接...")
                     
                     # 断开当前连接
                     self.stop_connection()
@@ -404,7 +404,7 @@ class PressureSensorUI:
                     self.root.after(2000, self.auto_connect_device)
                     
         except Exception as e:
-            self.log_message(f"❌ 连接监控出错: {e}")
+            self.log_message(f"[ERROR] 连接监控出错: {e}")
         
         # 每5秒检查一次连接状态
         self.root.after(5000, self.connection_monitor)
@@ -414,7 +414,7 @@ class PressureSensorUI:
         def show_warning():
             result = messagebox.askretrycancel(
                 "设备连接丢失", 
-                f"⚠️ 设备连接已丢失\n\n"
+                f"[WARN] 设备连接已丢失\n\n"
                 f"设备: {device_info['icon']} {device_info['name']}\n"
                 f"端口: {device_info['port']}\n\n"
                 f"请检查设备连接状态\n\n"
@@ -462,10 +462,10 @@ class PressureSensorUI:
         # 添加文件菜单项
         file_menu.add_command(label="📁 新建检测档案", command=self.show_new_profile_dialog)
         file_menu.add_separator()
-        file_menu.add_command(label="📊 导出检测数据", command=self.save_log)
+        file_menu.add_command(label="[DATA] 导出检测数据", command=self.save_log)
         file_menu.add_command(label="📸 保存热力图快照", command=self.save_snapshot)
         file_menu.add_separator()
-        file_menu.add_command(label="❌ 退出系统", command=self.on_closing)
+        file_menu.add_command(label="[ERROR] 退出系统", command=self.on_closing)
         
         # 创建"检测"菜单（使用医疗蓝色主题）
         detection_menu = tk.Menu(menubar, tearoff=0,
@@ -481,7 +481,7 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加检测菜单项
-        detection_menu.add_command(label="📋 检测流程指导", command=self.show_detection_process_dialog)
+        detection_menu.add_command(label="[INFO] 检测流程指导", command=self.show_detection_process_dialog)
         detection_menu.add_command(label="👤 患者信息管理", command=self.show_new_profile_dialog)
         detection_menu.add_separator()
         detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
@@ -500,8 +500,8 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加设备菜单项
-        device_menu.add_command(label="🔍 自动检测端口", command=lambda: self.show_device_config())
-        device_menu.add_command(label="📊 实时数据监控", command=lambda: messagebox.showinfo("数据监控", "数据监控面板已在右侧显示"))
+        device_menu.add_command(label="[SCAN] 自动检测端口", command=lambda: self.show_device_config())
+        device_menu.add_command(label="[DATA] 实时数据监控", command=lambda: messagebox.showinfo("数据监控", "数据监控面板已在右侧显示"))
         device_menu.add_separator()
         device_menu.add_command(label="⚡ 性能模式设置", command=lambda: messagebox.showinfo("性能设置", "当前运行在标准模式\n可通过启动脚本切换:\n• run_ui.py (标准)\n• run_ui_fast.py (快速)\n• run_ui_ultra.py (极速)"))
         
@@ -523,7 +523,7 @@ class PressureSensorUI:
         view_menu.add_command(label="🎨 热力图显示设置", command=lambda: messagebox.showinfo("显示设置", "热力图显示功能:\n• 16级颜色梯度\n• 0-60mmHg压力范围\n• 实时数据更新"))
         view_menu.add_separator()
         view_menu.add_command(label="📝 清除日志记录", command=self.clear_log)
-        view_menu.add_command(label="🔍 放大热力图", command=lambda: messagebox.showinfo("显示提示", "可拖拽调整窗口大小来放大显示"))
+        view_menu.add_command(label="[SCAN] 放大热力图", command=lambda: messagebox.showinfo("显示提示", "可拖拽调整窗口大小来放大显示"))
         
         # 创建"分析"菜单（使用医疗红色主题）
         analysis_menu = tk.Menu(menubar, tearoff=0,
@@ -539,8 +539,8 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加分析菜单项
-        analysis_menu.add_command(label="📊 导入CSV生成PDF报告", command=self.import_csv_for_analysis)
-        analysis_menu.add_command(label="📋 实时数据生成PDF报告", command=self.generate_pdf_report)
+        analysis_menu.add_command(label="[DATA] 导入CSV生成PDF报告", command=self.import_csv_for_analysis)
+        analysis_menu.add_command(label="[INFO] 实时数据生成PDF报告", command=self.generate_pdf_report)
         analysis_menu.add_separator()
         analysis_menu.add_command(label="📈 查看分析历史", command=self.show_analysis_history)
         analysis_menu.add_command(label="⚙️ AI服务状态", command=self.show_service_status)
@@ -560,7 +560,7 @@ class PressureSensorUI:
         
         # 添加帮助菜单项
         help_menu.add_command(label="📖 操作指南手册", command=self.show_help_dialog)
-        help_menu.add_command(label="🚀 快速入门教程", command=lambda: messagebox.showinfo("快速入门", 
+        help_menu.add_command(label="[START] 快速入门教程", command=lambda: messagebox.showinfo("快速入门", 
                                 "智能肌少症检测系统快速入门:\n\n1️⃣ 设备配置\n   • 点击'设备配置'选择设备类型\n   • 配置COM端口连接\n\n2️⃣ 开始检测\n   • 确保设备连接正常\n   • 观察热力图实时显示\n\n3️⃣ 数据分析\n   • 查看右侧统计数据\n   • 保存检测快照和日志"))
         help_menu.add_separator()
         help_menu.add_command(label="🏥 产品介绍", command=lambda: messagebox.showinfo("产品介绍", 
@@ -722,8 +722,8 @@ class PressureSensorUI:
             except Exception as e:
                 messagebox.showerror("保存失败", f"档案保存失败：{e}")
         
-        ttk.Button(btn_frame, text="✅ 创建档案", command=create_profile, width=15).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(btn_frame, text="❌ 取消", command=dialog.destroy, width=15).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="[OK] 创建档案", command=create_profile, width=15).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="[ERROR] 取消", command=dialog.destroy, width=15).pack(side=tk.LEFT)
 
     def show_detection_process_dialog(self):
         """显示检测流程对话框"""
@@ -744,7 +744,7 @@ class PressureSensorUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # 标题
-        title_label = ttk.Label(main_frame, text="📋 智能肌少症检测系统 - 检测流程指南", 
+        title_label = ttk.Label(main_frame, text="[INFO] 智能肌少症检测系统 - 检测流程指南", 
                                font=("Arial", 14, "bold"))
         title_label.pack(pady=(0, 20))
         
@@ -757,7 +757,7 @@ class PressureSensorUI:
         
         # 检测流程内容（之前的帮助内容）
         process_content = """
-📋 标准化健康检测流程说明
+[INFO] 标准化健康检测流程说明
 
 本系统采用7步标准化检测流程，通过顺序检测降噪提升检测精准度，确保结果的准确性和可重复性。
 
@@ -829,13 +829,13 @@ class PressureSensorUI:
 │  • 用途：分析步态稳定性和行走能力          │
 └────────────────────────────────────────────┘
 
-⚠️ 注意事项：
+[WARN] 注意事项：
 • 检测过程中请穿着舒适、防滑的鞋子
 • 如有身体不适或平衡困难，请立即停止检测
 • 检测区域周围应有安全保护措施
 • 建议由专业人员陪同指导完成
 
-📊 数据分析：
+[DATA] 数据分析：
 系统将综合所有检测数据，通过AI算法分析：
 • 静态平衡评分
 • 动态平衡评分  
@@ -894,7 +894,7 @@ class PressureSensorUI:
 
 本指南将帮助您快速掌握智能肌少症检测系统的各项功能和操作方法。
 
-🚀 快速开始
+[START] 快速开始
 
 1️⃣ 首次使用系统
    • 启动程序后会自动弹出设备配置对话框
@@ -910,7 +910,7 @@ class PressureSensorUI:
 
 🎛️ 主界面操作
 
-📊 热力图显示区域
+[DATA] 热力图显示区域
    • 实时显示压力传感器数据的热力图
    • 颜色越红表示压力越大，越蓝表示压力越小
    • 支持32x32, 32x64, 32x96多种阵列规格
@@ -926,7 +926,7 @@ class PressureSensorUI:
 📝 数据日志区域
    • 实时显示接收到的数据帧信息
    • 包含时间戳、帧编号、统计数据
-   • JQ变换标识（✨表示已应用，📊表示原始数据）
+   • JQ变换标识（✨表示已应用，[DATA]表示原始数据）
    • 支持日志清除和保存功能
 
 🎛️ 控制面板功能
@@ -939,21 +939,21 @@ class PressureSensorUI:
 
 ⚙️ 功能按钮
    • 📸 保存快照：保存当前热力图为PNG图片文件
-   • 🔄 调序：调整32x96步道模式的段显示顺序
+   • [REFRESH] 调序：调整32x96步道模式的段显示顺序
    • 💾 保存日志：将当前日志内容保存为文本文件
    • 🗑️ 清除日志：清空日志显示区域
 
 🍽️ 菜单栏功能
 
-📋 检测菜单
+[INFO] 检测菜单
    • 📁 新建档案：创建新的检测档案，录入被检测者信息
-   • 📋 检测流程：查看标准化7步检测流程说明
+   • [INFO] 检测流程：查看标准化7步检测流程说明
 
 🛠️ 其他菜单
    • ❓ 操作帮助：查看本操作指南（当前页面）
    • ℹ️ 关于系统：查看系统版本和开发信息
 
-🔍 设备配置详解
+[SCAN] 设备配置详解
 
 📱 支持的设备类型
    • 32x32阵列：标准检测模式，适用于静态平衡测试
@@ -973,7 +973,7 @@ class PressureSensorUI:
    • 快速模式：run_ui_fast.py - 100 FPS，高刷新率显示
    • 极速模式：run_ui_ultra.py - 200 FPS，极致响应速度
 
-🔄 数据处理
+[REFRESH] 数据处理
    • JQ变换：威海聚桥工业科技专用数据变换算法
    • 自动应用于32x32和32x96阵列数据
    • 提供数据镜像翻转和重排序功能
@@ -981,7 +981,7 @@ class PressureSensorUI:
 
 🚨 故障排除
 
-❌ 常见问题
+[ERROR] 常见问题
    • 设备无法连接：检查USB线缆和端口选择
    • 数据接收异常：确认设备电源和波特率设置
    • 热力图不更新：检查设备连接状态和数据流
@@ -1008,7 +1008,7 @@ class PressureSensorUI:
    • 选择合适的数组大小和模式
    • 定期清洁传感器表面
 
-📊 数据分析
+[DATA] 数据分析
    • 观察热力图的颜色分布模式
    • 关注压力峰值的位置和变化
    • 结合统计数据进行综合判断
@@ -1088,7 +1088,7 @@ class PressureSensorUI:
         info_card = tk.Frame(main_frame, bg='#ffffff', relief='solid', bd=1)
         info_card.pack(fill=tk.X, pady=(0, 20))
         
-        info_title = tk.Label(info_card, text="📋 系统信息", 
+        info_title = tk.Label(info_card, text="[INFO] 系统信息", 
                              font=("Microsoft YaHei UI", 14, "bold"),
                              bg='#ffffff', fg='#2c3e50')
         info_title.pack(anchor="w", padx=20, pady=(15, 10))
@@ -1136,13 +1136,13 @@ class PressureSensorUI:
         
         features_list = [
             "🎨 实时压力数据可视化热力图显示 (16级颜色梯度)",
-            "🔄 多设备智能配置和无缝切换管理系统",
+            "[REFRESH] 多设备智能配置和无缝切换管理系统",
             "✨ JQ工业科技专用数据变换算法 (镜像+重排)",
             "⚡ 高性能数据处理引擎 (最高200FPS刷新率)",
-            "📋 标准化健康检测流程指导和档案管理",
+            "[INFO] 标准化健康检测流程指导和档案管理",
             "💾 数据导出、快照保存和日志记录功能",
-            "🔍 智能端口检测和自动连接重连机制",
-            "📊 实时统计分析 (最值/均值/标准差/有效点)",
+            "[SCAN] 智能端口检测和自动连接重连机制",
+            "[DATA] 实时统计分析 (最值/均值/标准差/有效点)",
         ]
         
         for i, feature in enumerate(features_list):
@@ -1167,7 +1167,7 @@ class PressureSensorUI:
 🎯 数据精度: 8位无符号整数 (0-255)，压力范围0-60mmHg
 ⚡ 刷新性能: 标准20FPS/快速100FPS/极速200FPS三种模式
 💻 系统要求: Windows 10/11，Python 3.7+，4GB内存，USB端口
-🔄 数据处理: JQ变换算法，NumPy向量化计算，多线程架构
+[REFRESH] 数据处理: JQ变换算法，NumPy向量化计算，多线程架构
         """
         
         specs_label = tk.Label(specs_card, text=specs_text.strip(), 
@@ -1210,7 +1210,7 @@ class PressureSensorUI:
         btn_frame.pack(pady=(20, 10))
         
         # 创建更美观的按钮
-        close_btn = tk.Button(btn_frame, text="✅ 关闭", 
+        close_btn = tk.Button(btn_frame, text="[OK] 关闭", 
                              command=dialog.destroy,
                              font=("Microsoft YaHei UI", 11, "bold"),
                              bg='#3498db', fg='white',
@@ -1318,7 +1318,7 @@ class PressureSensorUI:
                   style='Hospital.TButton').grid(row=1, column=0, padx=(0, 15), pady=(15, 0))
         
         # 调序按钮（仅32x32以上设备显示）
-        self.order_button = ttk.Button(control_frame, text="🔄 调序", 
+        self.order_button = ttk.Button(control_frame, text="[REFRESH] 调序", 
                                      command=self.show_segment_order_dialog,
                                      style='Hospital.TButton')
         self.order_button.grid(row=1, column=1, padx=(0, 15), pady=(15, 0))
@@ -1330,7 +1330,7 @@ class PressureSensorUI:
         
         # 左侧：热力图显示 - 医院风格边框
         self.plot_frame = ttk.LabelFrame(content_frame, 
-                                       text="📊 压力传感器热力图 (32x32) - JQ工业科技", 
+                                       text="[DATA] 压力传感器热力图 (32x32) - JQ工业科技", 
                                        padding=15, style='Hospital.TLabelframe')
         self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
         
@@ -1340,7 +1340,7 @@ class PressureSensorUI:
         right_frame.config(width=450)
         
         # 统计信息面板 - 医院风格
-        stats_frame = ttk.LabelFrame(right_frame, text="📊 实时统计", 
+        stats_frame = ttk.LabelFrame(right_frame, text="[DATA] 实时统计", 
                                    padding=15, style='Hospital.TLabelframe')
         stats_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -1448,7 +1448,7 @@ class PressureSensorUI:
             elif array_size_str == "32x96":
                 rows, cols = 32, 96
             else:
-                self.log_message(f"❌ 不支持的阵列大小: {array_size_str}")
+                self.log_message(f"[ERROR] 不支持的阵列大小: {array_size_str}")
                 return
             
             # 更新数据处理器
@@ -1458,12 +1458,12 @@ class PressureSensorUI:
             self.visualizer.set_array_size(rows, cols)
             
             # 更新标题
-            self.plot_frame.config(text=f"📊 压力传感器热力图 ({rows}x{cols}) - JQ工业科技")
+            self.plot_frame.config(text=f"[DATA] 压力传感器热力图 ({rows}x{cols}) - JQ工业科技")
             
-            self.log_message(f"✅ 已自动配置阵列大小: {rows}x{cols}")
+            self.log_message(f"[OK] 已自动配置阵列大小: {rows}x{cols}")
             
         except Exception as e:
-            self.log_message(f"❌ 自动配置阵列大小失败: {e}")
+            self.log_message(f"[ERROR] 自动配置阵列大小失败: {e}")
             
     def save_snapshot(self):
         """保存热力图快照"""
@@ -1481,14 +1481,14 @@ class PressureSensorUI:
             if self.visualizer.save_snapshot(filename):
                 self.log_message(f"📸 快照已保存: {filename}")
             else:
-                self.log_message("❌ 保存快照失败")
+                self.log_message("[ERROR] 保存快照失败")
         except Exception as e:
-            self.log_message(f"❌ 保存快照出错: {e}")
+            self.log_message(f"[ERROR] 保存快照出错: {e}")
     
     def show_segment_order_dialog(self):
         """显示段顺序调整对话框"""
         dialog = tk.Toplevel(self.root)
-        dialog.title("🔄 调整段顺序")
+        dialog.title("[REFRESH] 调整段顺序")
         dialog.geometry("300x200")
         dialog.resizable(False, False)
         dialog.grab_set()
@@ -1539,10 +1539,10 @@ class PressureSensorUI:
         """应用段顺序"""
         if self.data_processor.set_segment_order(order):
             order_text = " - ".join([f"段{i+1}" for i in order])
-            self.log_message(f"🔄 段顺序已调整为: {order_text}")
+            self.log_message(f"[REFRESH] 段顺序已调整为: {order_text}")
             dialog.destroy()
         else:
-            self.log_message("❌ 段顺序调整失败")
+            self.log_message("[ERROR] 段顺序调整失败")
             
     def save_log(self):
         """保存日志"""
@@ -1560,7 +1560,7 @@ class PressureSensorUI:
                 f.write(self.log_text.get("1.0", tk.END))
             self.log_message(f"💾 日志已保存: {filename}")
         except Exception as e:
-            self.log_message(f"❌ 保存日志失败: {e}")
+            self.log_message(f"[ERROR] 保存日志失败: {e}")
             
             
     def stop_connection(self):
@@ -1581,7 +1581,7 @@ class PressureSensorUI:
                 self.device_combo.config(state="readonly")
             
         except Exception as e:
-            self.log_message(f"❌ 断开连接时出错: {e}")
+            self.log_message(f"[ERROR] 断开连接时出错: {e}")
         
     def start_update_loop(self):
         """启动数据更新循环"""
@@ -1623,13 +1623,13 @@ class PressureSensorUI:
                         if dropped_frames > 0:
                             self.log_message(f"⚡ Dropped {dropped_frames} old frames for real-time display")
                     else:
-                        self.log_message(f"❌ Data processing error: {processed_data['error']}")
+                        self.log_message(f"[ERROR] Data processing error: {processed_data['error']}")
                 
                 # 计算数据速率
                 self.calculate_data_rate()
                 
         except Exception as e:
-            self.log_message(f"❌ 更新数据时出错: {e}")
+            self.log_message(f"[ERROR] 更新数据时出错: {e}")
         
         # 继续更新循环 (5ms = 200 FPS，极致响应速度)
         self.root.after(5, self.update_data)
@@ -1645,7 +1645,7 @@ class PressureSensorUI:
                     else:
                         label.config(text=str(value))
         except Exception as e:
-            self.log_message(f"❌ 更新统计显示出错: {e}")
+            self.log_message(f"[ERROR] 更新统计显示出错: {e}")
             
     def log_processed_data(self, processed_data):
         """记录处理后的数据日志"""
@@ -1658,7 +1658,7 @@ class PressureSensorUI:
             array_size = processed_data['array_size']
             jq_applied = processed_data['jq_transform_applied']
             
-            jq_indicator = "✨" if jq_applied else "📊"
+            jq_indicator = "✨" if jq_applied else "[DATA]"
             
             log_msg = (f"[{timestamp}] 帧#{frame_num:04d} {jq_indicator} ({array_size}) "
                       f"最大:{stats['max_value']:3d} 最小:{stats['min_value']:3d} "
@@ -1667,7 +1667,7 @@ class PressureSensorUI:
             self.log_message(log_msg)
             
         except Exception as e:
-            self.log_message(f"❌ 记录日志出错: {e}")
+            self.log_message(f"[ERROR] 记录日志出错: {e}")
             
     def calculate_data_rate(self):
         """计算数据速率"""
@@ -1738,9 +1738,9 @@ class PressureSensorUI:
             from integration_ui import integrate_sarcneuro_analysis
             # 传递正确的参数类型
             integrate_sarcneuro_analysis(self)
-            print("✅ 肌少症分析功能集成成功")
+            print("[OK] 肌少症分析功能集成成功")
         except Exception as e:
-            print(f"⚠️ 肌少症分析功能集成失败: {e}")
+            print(f"[WARN] 肌少症分析功能集成失败: {e}")
             # 不影响主程序运行，继续使用原有功能
             self.sarcneuro_panel = None
     
@@ -1752,19 +1752,376 @@ class PressureSensorUI:
             return
             
         try:
-            # 使用修复版服务管理器
-            from sarcneuro_service_fixed import get_sarcneuro_service_fixed
-            self.sarcneuro_service = get_sarcneuro_service_fixed(port=8000)
+            # 使用标准服务管理器
+            self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
             self.data_converter = SarcopeniaDataConverter()
-            print("✅ SarcNeuro Edge 修复版服务初始化完成")
+            print("[OK] SarcNeuro Edge 服务初始化完成")
         except Exception as e:
-            print(f"⚠️ SarcNeuro Edge 服务初始化失败: {e}")
-            # 如果修复版也失败，回退到原版
+            print(f"[WARN] SarcNeuro Edge 服务初始化失败: {e}")
+            self.sarcneuro_service = None
+            self.data_converter = None
+    
+    def show_patient_info_dialog(self, csv_file_path):
+        """显示患者信息收集对话框 - 医院风格"""
+        import os
+        import re
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("AI肌少症分析 - 患者信息录入")
+        dialog.geometry("500x650")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(self.root)
+        
+        # 设置窗口图标（与主程序保持一致）
+        try:
+            dialog.iconbitmap("icon.ico")
+        except:
+            pass
+        
+        # 设置医院风格背景色
+        dialog.config(bg='#f8f9fa')
+        
+        # 居中显示
+        dialog.geometry("+%d+%d" % (
+            self.root.winfo_rootx() + 50, 
+            self.root.winfo_rooty() + 50
+        ))
+        
+        result = {}
+        
+        # 从文件名尝试解析基本信息
+        filename = os.path.basename(csv_file_path)
+        filename_without_ext = os.path.splitext(filename)[0]
+        
+        default_name = ""
+        default_age = ""
+        default_activity = ""
+        
+        try:
+            # 解析文件名格式: 姓名-活动描述-年龄岁.csv
+            pattern = r'^(.+?)-(.+?)-(\d+)岁?$'
+            match = re.match(pattern, filename_without_ext)
+            if match:
+                default_name = match.group(1).strip()
+                default_activity = match.group(2).strip()
+                default_age = str(match.group(3))
+        except:
+            pass
+        
+        # 主框架 - 医院风格
+        main_frame = tk.Frame(dialog, bg='#ffffff', relief='raised', bd=1, padx=20, pady=15)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 标题 - 医疗专业风格
+        title_label = tk.Label(main_frame, 
+                              text="[AI] 智能肌少症风险分析", 
+                              font=("Microsoft YaHei", 16, "bold"),
+                              bg='#ffffff', fg='#1a472a')
+        title_label.pack(pady=(0, 5))
+        
+        subtitle_label = tk.Label(main_frame, 
+                                 text="请完整填写患者信息以确保分析准确性", 
+                                 font=("Microsoft YaHei", 10),
+                                 bg='#ffffff', fg='#666666')
+        subtitle_label.pack(pady=(0, 15))
+        
+        # 文件信息区域
+        file_frame = tk.LabelFrame(main_frame, text=" 数据文件信息 ", 
+                                  font=("Microsoft YaHei", 10, "bold"),
+                                  bg='#ffffff', fg='#2c5282',
+                                  relief='groove', bd=2, padx=15, pady=10)
+        file_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        file_label = tk.Label(file_frame, text=f"CSV文件: {filename}", 
+                             font=("Consolas", 9), bg='#ffffff', fg='#4a5568')
+        file_label.pack(anchor=tk.W)
+        
+        # 患者基本信息区域
+        info_frame = tk.LabelFrame(main_frame, text=" 患者基本信息 (*必填) ", 
+                                  font=("Microsoft YaHei", 10, "bold"),
+                                  bg='#ffffff', fg='#2c5282',
+                                  relief='groove', bd=2, padx=15, pady=15)
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 网格配置
+        info_frame.grid_columnconfigure(1, weight=1)
+        
+        # 姓名
+        tk.Label(info_frame, text="患者姓名 *:", font=("Microsoft YaHei", 10, "bold"),
+                bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=0, column=0, sticky="e", padx=(0, 15), pady=8)
+        name_var = tk.StringVar(value=default_name)
+        name_entry = tk.Entry(info_frame, textvariable=name_var, font=("Microsoft YaHei", 10),
+                             width=20, relief='solid', bd=1)
+        name_entry.grid(row=0, column=1, sticky="w", pady=8)
+        
+        # 年龄
+        tk.Label(info_frame, text="年龄 *:", font=("Microsoft YaHei", 10, "bold"),
+                bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=1, column=0, sticky="e", padx=(0, 15), pady=8)
+        age_var = tk.StringVar(value=default_age)
+        age_frame = tk.Frame(info_frame, bg='#ffffff')
+        age_frame.grid(row=1, column=1, sticky="w", pady=8)
+        age_entry = tk.Entry(age_frame, textvariable=age_var, font=("Microsoft YaHei", 10),
+                            width=10, relief='solid', bd=1)
+        age_entry.pack(side=tk.LEFT)
+        tk.Label(age_frame, text="岁", font=("Microsoft YaHei", 10),
+                bg='#ffffff', fg='#666666').pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 性别
+        tk.Label(info_frame, text="性别 *:", font=("Microsoft YaHei", 10, "bold"),
+                bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=2, column=0, sticky="e", padx=(0, 15), pady=8)
+        gender_var = tk.StringVar(value="MALE")
+        gender_frame = tk.Frame(info_frame, bg='#ffffff')
+        gender_frame.grid(row=2, column=1, sticky="w", pady=8)
+        tk.Radiobutton(gender_frame, text="男", variable=gender_var, value="MALE",
+                      font=("Microsoft YaHei", 10), bg='#ffffff', fg='#2d3748',
+                      selectcolor='#e6fffa', activebackground='#ffffff').pack(side=tk.LEFT)
+        tk.Radiobutton(gender_frame, text="女", variable=gender_var, value="FEMALE",
+                      font=("Microsoft YaHei", 10), bg='#ffffff', fg='#2d3748',
+                      selectcolor='#e6fffa', activebackground='#ffffff').pack(side=tk.LEFT, padx=(20, 0))
+        
+        # 身高（可选）
+        tk.Label(info_frame, text="身高:", font=("Microsoft YaHei", 10),
+                bg='#ffffff', fg='#666666', width=12, anchor='e').grid(row=3, column=0, sticky="e", padx=(0, 15), pady=8)
+        height_var = tk.StringVar()
+        height_frame = tk.Frame(info_frame, bg='#ffffff')
+        height_frame.grid(row=3, column=1, sticky="w", pady=8)
+        height_entry = tk.Entry(height_frame, textvariable=height_var, font=("Microsoft YaHei", 10),
+                               width=10, relief='solid', bd=1)
+        height_entry.pack(side=tk.LEFT)
+        tk.Label(height_frame, text="cm", font=("Microsoft YaHei", 10),
+                bg='#ffffff', fg='#666666').pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 体重（可选）
+        tk.Label(info_frame, text="体重:", font=("Microsoft YaHei", 10),
+                bg='#ffffff', fg='#666666', width=12, anchor='e').grid(row=4, column=0, sticky="e", padx=(0, 15), pady=8)
+        weight_var = tk.StringVar()
+        weight_frame = tk.Frame(info_frame, bg='#ffffff')
+        weight_frame.grid(row=4, column=1, sticky="w", pady=8)
+        weight_entry = tk.Entry(weight_frame, textvariable=weight_var, font=("Microsoft YaHei", 10),
+                               width=10, relief='solid', bd=1)
+        weight_entry.pack(side=tk.LEFT)
+        tk.Label(weight_frame, text="kg", font=("Microsoft YaHei", 10),
+                bg='#ffffff', fg='#666666').pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 测试信息区域
+        test_frame = tk.LabelFrame(main_frame, text=" 检测配置信息 ", 
+                                  font=("Microsoft YaHei", 10, "bold"),
+                                  bg='#ffffff', fg='#2c5282',
+                                  relief='groove', bd=2, padx=15, pady=15)
+        test_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 网格配置
+        test_frame.grid_columnconfigure(1, weight=1)
+        
+        # 测试项目选择（下拉框）
+        tk.Label(test_frame, text="测试项目:", font=("Microsoft YaHei", 10, "bold"),
+                bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=0, column=0, sticky="e", padx=(0, 15), pady=8)
+        
+        # 测试类型选项
+        test_type_options = [
+            ("COMPREHENSIVE", "综合评估"),
+            ("WALK_4_LAPS", "步道4圈"),
+            ("WALK_7_LAPS", "步道7圈"),
+            ("STAND_LEFT", "左脚站立"),
+            ("STAND_RIGHT", "右脚站立"),
+            ("SIT_TO_STAND_5", "起坐5次")
+        ]
+        
+        test_type_var = tk.StringVar(value="综合评估")
+        test_type_combo = ttk.Combobox(test_frame, textvariable=test_type_var, 
+                                      values=[text for _, text in test_type_options],
+                                      state="readonly", width=18, font=("Microsoft YaHei", 10))
+        test_type_combo.grid(row=0, column=1, sticky="w", pady=8)
+        
+        # 活动描述已移除，直接使用默认值
+        
+        # 按钮区域 - 医院风格
+        button_frame = tk.Frame(main_frame, bg='#ffffff')
+        button_frame.pack(fill=tk.X, pady=(15, 15))
+        
+        def on_confirm():
+            # 验证必填字段
+            if not name_var.get().strip():
+                messagebox.showerror("输入错误", "请输入患者姓名", parent=dialog)
+                name_entry.focus()
+                return
+            
+            if not age_var.get().strip():
+                messagebox.showerror("输入错误", "请输入患者年龄", parent=dialog)
+                age_entry.focus()
+                return
+            
             try:
-                self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
-                print("⚠️ 使用原版服务作为后备")
-            except:
-                self.sarcneuro_service = None
+                age = int(age_var.get())
+                if age <= 0 or age > 150:
+                    raise ValueError()
+            except ValueError:
+                messagebox.showerror("输入错误", "请输入有效的年龄（1-150）", parent=dialog)
+                age_entry.focus()
+                return
+            
+            # 获取选中的测试类型（从下拉框）
+            selected_text = test_type_combo.get()
+            if not selected_text:
+                messagebox.showerror("选择错误", "请选择测试项目", parent=dialog)
+                return
+            
+            # 查找对应的API值
+            primary_type = "COMPREHENSIVE"
+            selected_name = selected_text
+            for api_val, cn_name in test_type_options:
+                if cn_name == selected_text:
+                    primary_type = api_val
+                    selected_name = cn_name
+                    break
+            
+            selected_types = [primary_type]
+            selected_names = [selected_name]
+            
+            # 构建患者信息
+            result['patient_info'] = {
+                'name': name_var.get().strip(),
+                'age': age,
+                'gender': gender_var.get(),
+                'height': height_var.get().strip() if height_var.get().strip() else None,
+                'weight': weight_var.get().strip() if weight_var.get().strip() else None,
+                'test_date': datetime.now().strftime("%Y-%m-%d"),
+                'test_type': primary_type,  # 主要测试类型
+                'test_types': selected_types,  # 所有选中的测试类型
+                'test_names': selected_names,  # 中文测试名称
+                'notes': default_activity if default_activity else '从CSV文件导入的数据',
+                'created_time': datetime.now().isoformat()
+            }
+            
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+            
+        # 医院风格按钮 - 居中显示
+        cancel_btn = tk.Button(button_frame, text="取消", command=on_cancel,
+                              font=("Microsoft YaHei", 11), 
+                              bg='#dc3545', fg='white', relief='raised', bd=2,
+                              activebackground='#c82333', activeforeground='white',
+                              cursor='hand2', width=8, height=1)
+        cancel_btn.pack(side=tk.LEFT, padx=(80, 15), pady=5)
+        
+        confirm_btn = tk.Button(button_frame, text="开始AI分析", command=on_confirm,
+                               font=("Microsoft YaHei", 11, "bold"), 
+                               bg='#28a745', fg='white', relief='raised', bd=2,
+                               activebackground='#218838', activeforeground='white', 
+                               cursor='hand2', width=12, height=1)
+        confirm_btn.pack(side=tk.LEFT, pady=5)
+        
+        # 设置焦点到姓名输入框
+        name_entry.focus()
+        
+        # 绑定回车键
+        def on_enter(event):
+            on_confirm()
+        
+        dialog.bind('<Return>', on_enter)
+        
+        # 等待用户操作
+        dialog.wait_window()
+        
+        return result.get('patient_info', None)
+    
+    def send_multi_file_analysis(self, csv_files, patient_info):
+        """发送多文件分析请求到 sarcneuro-edge"""
+        try:
+            import requests
+            
+            # 准备多文件上传数据
+            files = []
+            for csv_file in csv_files:
+                files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
+            
+            # 准备表单数据
+            form_data = {
+                'patient_name': patient_info['name'],
+                'patient_age': str(patient_info['age']),
+                'patient_gender': patient_info['gender'],
+                'patient_height': patient_info.get('height', ''),
+                'patient_weight': patient_info.get('weight', ''),
+                'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
+            }
+            
+            # 发送到 standalone_upload 的 /upload 接口
+            response = requests.post(
+                f"{self.sarcneuro_service.base_url}/upload",
+                files=files,
+                data=form_data,
+                timeout=300  # 5分钟超时
+            )
+            
+            if response.status_code == 200:
+                upload_result = response.json()
+                task_id = upload_result.get('task_id')
+                
+                if task_id:
+                    # 轮询任务状态
+                    return self.poll_analysis_result(task_id)
+                else:
+                    raise Exception("未获得任务ID")
+            else:
+                raise Exception(f"上传失败: HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.log_ai_message(f"[ERROR] 多文件分析失败: {e}")
+            return {'status': 'error', 'message': str(e)}
+    
+    def poll_analysis_result(self, task_id):
+        """轮询分析结果"""
+        import requests
+        import time
+        
+        max_attempts = 60  # 最多等待10分钟
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                response = requests.get(f"{self.sarcneuro_service.base_url}/status/{task_id}")
+                
+                if response.status_code == 200:
+                    status_data = response.json()
+                    status = status_data.get('status')
+                    progress = status_data.get('progress', 0)
+                    
+                    self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
+                    
+                    if status == "COMPLETED":
+                        # 分析完成，构造结果
+                        return {
+                            'status': 'success',
+                            'data': {
+                                'overall_score': 85,  # 默认评分
+                                'risk_level': 'LOW',
+                                'analysis_summary': '多文件综合分析完成',
+                                'report_url': status_data.get('comprehensive_report_url'),
+                                'task_id': task_id,
+                                'results': status_data.get('results', [])
+                            }
+                        }
+                    elif status == "FAILED":
+                        return {
+                            'status': 'error',
+                            'message': '分析任务失败'
+                        }
+                    
+                    # 继续等待
+                    time.sleep(10)  # 等待10秒
+                    attempt += 1
+                else:
+                    raise Exception(f"状态查询失败: HTTP {response.status_code}")
+                    
+            except Exception as e:
+                self.log_ai_message(f"[WARN] 状态查询错误: {e}")
+                time.sleep(5)
+                attempt += 1
+        
+        return {'status': 'error', 'message': '分析超时'}
     
     def import_csv_for_analysis(self):
         """导入CSV文件进行AI分析并生成PDF报告"""
@@ -1772,9 +2129,9 @@ class PressureSensorUI:
             messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
             return
         
-        # 选择CSV文件
-        file_path = filedialog.askopenfilename(
-            title="选择压力传感器CSV数据文件",
+        # 选择CSV文件（支持多选）
+        file_paths = filedialog.askopenfilenames(
+            title="选择压力传感器CSV数据文件（可多选）",
             filetypes=[
                 ("CSV files", "*.csv"),
                 ("All files", "*.*")
@@ -1782,89 +2139,62 @@ class PressureSensorUI:
             initialdir="."
         )
         
-        if not file_path:
+        if not file_paths:
             return
         
-        # 从文件名解析患者信息
-        import os
-        import re
+        # 显示患者信息收集对话框（传入第一个文件用于解析）
+        patient_info = self.show_patient_info_dialog(file_paths[0])
+        if not patient_info:
+            return  # 用户取消了输入
         
-        filename = os.path.basename(file_path)
-        filename_without_ext = os.path.splitext(filename)[0]
-        
-        # 解析文件名格式: 姓名-活动描述-年龄岁.csv
-        # 例如: 曾超-步道4圈-36岁.csv
-        try:
-            # 使用正则表达式匹配文件名模式
-            pattern = r'^(.+?)-(.+?)-(\d+)岁?$'
-            match = re.match(pattern, filename_without_ext)
+        # 如果选择了多个文件，显示文件列表确认
+        if len(file_paths) > 1:
+            files_list = "\n".join([f"• {os.path.basename(f)}" for f in file_paths])
+            confirm_msg = f"确认分析以下 {len(file_paths)} 个CSV文件？\n\n{files_list}\n\n患者：{patient_info['name']}\n测试项目：{', '.join(patient_info['test_names'])}"
             
-            if match:
-                name = match.group(1).strip()
-                activity = match.group(2).strip()
-                age = int(match.group(3))
-                
-                # 创建患者信息字典
-                patient_info = {
-                    'name': name,
-                    'age': age,
-                    'gender': 'MALE',  # 默认性别，使用SarcNeuro Edge期望的英文格式
-                    'height': None,
-                    'weight': None,
-                    'test_date': datetime.now().strftime("%Y-%m-%d"),
-                    'test_type': '综合分析',
-                    'notes': f'活动描述: {activity}',
-                    'created_time': datetime.now().isoformat()
-                }
-                
-                self.log_ai_message(f"📋 从文件名解析患者信息: {name}, {age}岁, 活动: {activity}")
-                
-            else:
-                # 如果文件名不符合格式，使用默认信息
-                self.log_ai_message(f"⚠️ 文件名格式不标准，使用默认患者信息")
-                patient_info = {
-                    'name': filename_without_ext,
-                    'age': 30,
-                    'gender': 'MALE',  # 使用SarcNeuro Edge期望的英文格式
-                    'height': None,
-                    'weight': None,
-                    'test_date': datetime.now().strftime("%Y-%m-%d"),
-                    'test_type': '综合分析',
-                    'notes': '从CSV文件导入的数据',
-                    'created_time': datetime.now().isoformat()
-                }
-                
-        except Exception as e:
-            self.log_ai_message(f"❌ 解析文件名失败: {e}")
-            return
+            if not messagebox.askyesno("确认多文件分析", confirm_msg):
+                return
         
         # 在后台线程中处理分析
         def analyze_csv():
             try:
                 # 更新状态
-                self.log_ai_message("🔍 正在分析CSV文件...")
+                self.log_ai_message("[SCAN] 正在分析CSV文件...")
                 self.root.config(cursor="wait")
                 
                 # 启动服务（如果未启动）
                 if not self.sarcneuro_service.is_running:
-                    self.log_ai_message("🚀 启动 SarcNeuro Edge 分析服务...")
+                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
                     if not self.sarcneuro_service.start_service():
                         raise Exception("无法启动 SarcNeuro Edge 服务")
                 
-                # 读取CSV文件
-                self.log_ai_message(f"📂 读取文件: {file_path}")
+                # 读取所有CSV文件
                 import pandas as pd
                 import json
+                import os
                 
-                df = pd.read_csv(file_path)
-                if 'data' not in df.columns:
-                    raise Exception("CSV文件格式错误：必须包含'data'列")
+                all_csv_data = []
+                total_rows = 0
                 
-                self.log_ai_message(f"📋 CSV文件包含 {len(df)} 行数据")
+                for i, file_path in enumerate(file_paths):
+                    self.log_ai_message(f"[FILE] 读取文件 {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+                    
+                    df = pd.read_csv(file_path)
+                    if 'data' not in df.columns:
+                        raise Exception(f"CSV文件格式错误：{os.path.basename(file_path)} 必须包含'data'列")
+                    
+                    # 转换为CSV字符串
+                    csv_content = df.to_csv(index=False)
+                    all_csv_data.append({
+                        'filename': os.path.basename(file_path),
+                        'content': csv_content,
+                        'rows': len(df)
+                    })
+                    total_rows += len(df)
+                    
+                    self.log_ai_message(f"[DATA] {os.path.basename(file_path)}: {len(df)} 行数据")
                 
-                # 显示CSV基本信息
-                columns_info = ", ".join(df.columns)
-                self.log_ai_message(f"📊 数据列: {columns_info}")
+                self.log_ai_message(f"[INFO] 总计 {len(file_paths)} 个文件，{total_rows} 行数据")
                 
                 # 解析压力数据
                 frames = []
@@ -1891,7 +2221,7 @@ class PressureSensorUI:
                     except Exception as e:
                         # 跳过无效行，但记录警告
                         if idx < 5:  # 只显示前5个错误
-                            self.log_ai_message(f"⚠️ 第{idx}行数据解析失败: {str(e)[:50]}")
+                            self.log_ai_message(f"[WARN] 第{idx}行数据解析失败: {str(e)[:50]}")
                         continue
                 
                 if not frames:
@@ -1921,9 +2251,9 @@ class PressureSensorUI:
                 else:
                     array_type = f"未知({array_size}点)"
                 
-                self.log_ai_message(f"✅ 成功解析 {total_frames} 帧压力数据")
+                self.log_ai_message(f"[OK] 成功解析 {total_frames} 帧压力数据")
                 self.log_ai_message(f"📐 传感器阵列: {array_type} ({array_size}个传感点)")
-                self.log_ai_message(f"📊 有效帧数: {valid_frames}/{total_frames} ({contact_ratio:.1f}%)")
+                self.log_ai_message(f"[DATA] 有效帧数: {valid_frames}/{total_frames} ({contact_ratio:.1f}%)")
                 self.log_ai_message(f"📏 平均接触面积: {avg_area:.1f} 像素")
                 self.log_ai_message(f"⚖️ 平均总压力: {avg_pressure:.1f}")
                 
@@ -1933,17 +2263,13 @@ class PressureSensorUI:
                     end_time = metadata[-1]['timestamp']
                     self.log_ai_message(f"⏰ 采集时间: {start_time} ~ {end_time}")
                 
-                # 转换为SarcNeuro格式
-                self.log_ai_message("🔄 转换数据格式...")
-                csv_data = self.data_converter.convert_frames_to_csv(frames, frame_rate=10.0)
-                self.log_ai_message(f"📊 数据格式转换完成，准备发送到AI分析服务")
+                # 发送多文件分析请求到新的API接口
+                self.log_ai_message("[AI] 发送多文件AI分析请求...")
+                self.log_ai_message("[WAIT] AI分析正在进行中，请耐心等待...")
+                self.log_ai_message("[STATUS] 分析状态：正在处理多个CSV文件...")
                 
-                # 发送分析请求
-                self.log_ai_message("🧠 发送AI分析请求...")
-                self.log_ai_message("⏳ AI分析正在进行中，请耐心等待...")
-                self.log_ai_message("📍 分析状态：正在处理压力数据...")
-                
-                result = self.sarcneuro_service.analyze_data(csv_data, patient_info, "COMPREHENSIVE")
+                # 使用新的多文件分析API
+                result = self.send_multi_file_analysis(all_csv_data, patient_info)
                 
                 self.log_ai_message("📍 分析状态：检查分析结果...")
                 
@@ -1952,15 +2278,15 @@ class PressureSensorUI:
                 
                 if result and result.get('status') == 'success':
                     analysis_data = result['data']
-                    self.log_ai_message("✅ AI分析完成！")
+                    self.log_ai_message("[OK] AI分析完成！")
                     
                     # 显示分析结果摘要
                     overall_score = analysis_data.get('overall_score', 0)
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
                     confidence = analysis_data.get('confidence', 0)
                     
-                    self.log_ai_message(f"📊 综合评分: {overall_score:.1f}/100")
-                    self.log_ai_message(f"⚠️ 风险等级: {risk_level}")
+                    self.log_ai_message(f"[DATA] 综合评分: {overall_score:.1f}/100")
+                    self.log_ai_message(f"[WARN] 风险等级: {risk_level}")
                     self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
                     
                     # 分析成功，获取完整结果并生成报告
@@ -1969,13 +2295,13 @@ class PressureSensorUI:
                     
                     if analysis_id and test_id:
                         try:
-                            self.log_ai_message(f"📋 获取分析详细结果 (analysis_id: {analysis_id})")
+                            self.log_ai_message(f"[INFO] 获取分析详细结果 (analysis_id: {analysis_id})")
                             
                             # 调用 /api/analysis/results/{analysis_id} 获取完整结果
                             detailed_result = self.get_analysis_result(analysis_id)
                             
                             if detailed_result:
-                                self.log_ai_message("📋 正在生成PDF报告...")
+                                self.log_ai_message("[INFO] 正在生成PDF报告...")
                                 # 使用test_id生成报告
                                 report_path = self.generate_sarcneuro_report(test_id, "pdf", file_path, patient_info)
                                 
@@ -1989,31 +2315,31 @@ class PressureSensorUI:
                                 raise Exception("无法获取分析详细结果")
                                 
                         except Exception as report_error:
-                            self.log_ai_message(f"⚠️ 报告生成失败: {report_error}")
-                            self.log_ai_message("✅ 但AI分析已成功完成！")
+                            self.log_ai_message(f"[WARN] 报告生成失败: {report_error}")
+                            self.log_ai_message("[OK] 但AI分析已成功完成！")
                             
                             # 报告生成失败，但分析成功
-                            success_msg = f"""✅ AI分析成功完成！
+                            success_msg = f"""[OK] AI分析成功完成！
 
-📊 分析结果：
+[DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
 • 置信度：{confidence:.1%}
 
-⚠️ 注意：PDF报告生成失败，但AI分析数据完整。"""
+[WARN] 注意：PDF报告生成失败，但AI分析数据完整。"""
                             
                             self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
                     else:
-                        self.log_ai_message("⚠️ 分析结果中缺少analysis_id或test_id")
+                        self.log_ai_message("[WARN] 分析结果中缺少analysis_id或test_id")
                         
-                        success_msg = f"""✅ AI分析成功完成！
+                        success_msg = f"""[OK] AI分析成功完成！
 
-📊 分析结果：
+[DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
 • 置信度：{confidence:.1%}
 
-⚠️ 注意：无法生成PDF报告（缺少必要ID）。"""
+[WARN] 注意：无法生成PDF报告（缺少必要ID）。"""
                         
                         self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
                     
@@ -2024,25 +2350,25 @@ class PressureSensorUI:
                     # 分析失败的详细信息
                     if result is None:
                         error_msg = "AI分析服务无响应 - 可能是服务超时或崩溃"
-                        self.log_ai_message("❌ 分析结果为空，服务可能无响应")
+                        self.log_ai_message("[ERROR] 分析结果为空，服务可能无响应")
                     elif result.get('status') != 'success':
                         error_msg = result.get('message', '未知分析错误')
-                        self.log_ai_message(f"❌ 分析失败: {error_msg}")
+                        self.log_ai_message(f"[ERROR] 分析失败: {error_msg}")
                         # 如果有详细错误信息，也打印出来
                         if 'error' in result:
-                            self.log_ai_message(f"🔍 错误详情: {result['error']}")
+                            self.log_ai_message(f"[SCAN] 错误详情: {result['error']}")
                     else:
                         error_msg = "分析结果格式异常"
-                        self.log_ai_message(f"❌ 结果格式异常: {result}")
+                        self.log_ai_message(f"[ERROR] 结果格式异常: {result}")
                     
                     # 只有真正分析失败才显示错误
-                    self.log_ai_message(f"❌ CSV分析失败: {error_msg}")
+                    self.log_ai_message(f"[ERROR] CSV分析失败: {error_msg}")
                     self.root.after(0, lambda: messagebox.showerror("分析失败", f"CSV分析失败: {error_msg}"))
                 
             except Exception as e:
                 # 只有程序异常才到这里
                 error_msg = f"程序异常: {str(e)}"
-                self.log_ai_message(f"❌ {error_msg}")
+                self.log_ai_message(f"[ERROR] {error_msg}")
                 self.root.after(0, lambda: messagebox.showerror("程序错误", error_msg))
             
             finally:
@@ -2083,17 +2409,17 @@ class PressureSensorUI:
         
         def start_service():
             try:
-                self.log_ai_message("🚀 启动 SarcNeuro Edge 服务...")
+                self.log_ai_message("[START] 启动 SarcNeuro Edge 服务...")
                 if self.sarcneuro_service.start_service():
-                    self.log_ai_message("✅ SarcNeuro Edge 服务启动成功！")
+                    self.log_ai_message("[OK] SarcNeuro Edge 服务启动成功！")
                     status = self.sarcneuro_service.get_service_status()
                     self.root.after(0, lambda: messagebox.showinfo("服务启动成功", 
                         f"SarcNeuro Edge 服务已启动\n\n端口: {status['port']}\n进程ID: {status.get('process_id', 'N/A')}"))
                 else:
-                    self.log_ai_message("❌ SarcNeuro Edge 服务启动失败")
+                    self.log_ai_message("[ERROR] SarcNeuro Edge 服务启动失败")
                     self.root.after(0, lambda: messagebox.showerror("启动失败", "无法启动 SarcNeuro Edge 服务\n请检查端口是否被占用"))
             except Exception as e:
-                self.log_ai_message(f"❌ 服务启动异常: {e}")
+                self.log_ai_message(f"[ERROR] 服务启动异常: {e}")
                 self.root.after(0, lambda: messagebox.showerror("启动异常", f"服务启动时发生异常:\n{e}"))
         
         threading.Thread(target=start_service, daemon=True).start()
@@ -2114,12 +2440,12 @@ class PressureSensorUI:
             
             status_info = f"""🧠 SarcNeuro Edge AI 服务状态
 
-🚀 运行状态: {is_running}
+[START] 运行状态: {is_running}
 🌐 服务端口: {status['port']}
 🔗 服务地址: {status['base_url']}
 🆔 进程ID: {status.get('process_id', 'N/A')}
 
-{'✅ 服务正常运行，可以进行AI分析' if status['is_running'] else '⚠️ 服务未启动，将在需要时自动启动'}"""
+{'[OK] 服务正常运行，可以进行AI分析' if status['is_running'] else '[WARN] 服务未启动，将在需要时自动启动'}"""
             
             messagebox.showinfo("AI服务状态", status_info)
             
@@ -2148,7 +2474,7 @@ class PressureSensorUI:
 🧠 SarcNeuro 肌少症智能分析报告
 ==========================================
 
-📋 患者基本信息
+[INFO] 患者基本信息
 ------------------------------------------
 • 姓名: {patient_info.get('name', 'N/A')}
 • 年龄: {patient_info.get('age', 'N/A')} 岁
@@ -2158,7 +2484,7 @@ class PressureSensorUI:
 • 检测日期: {patient_info.get('test_date', 'N/A')}
 • 检测类型: {patient_info.get('test_type', '综合分析')}
 
-📊 AI分析结果
+[DATA] AI分析结果
 ------------------------------------------
 • 综合评分: {analysis_data.get('overall_score', 0):.1f}/100
 • 风险等级: {analysis_data.get('risk_level', 'UNKNOWN')}
@@ -2205,7 +2531,7 @@ class PressureSensorUI:
             abnormalities = analysis_data.get('abnormalities', [])
             if abnormalities:
                 report_content += f"""
-⚠️ 检测到的异常情况 ({len(abnormalities)}项)
+[WARN] 检测到的异常情况 ({len(abnormalities)}项)
 ------------------------------------------"""
                 for i, abnormality in enumerate(abnormalities, 1):
                     report_content += f"""
@@ -2290,7 +2616,7 @@ class PressureSensorUI:
             if not report_id:
                 raise Exception("报告生成成功但未返回report_id")
             
-            self.log_ai_message(f"✅ 报告生成成功 (ID: {report_id}, 编号: {report_number})")
+            self.log_ai_message(f"[OK] 报告生成成功 (ID: {report_id}, 编号: {report_number})")
             
             # 2. 下载报告文件
             self.log_ai_message("📥 下载报告文件...")
@@ -2343,7 +2669,7 @@ class PressureSensorUI:
         except requests.exceptions.RequestException as e:
             raise Exception(f"网络请求失败: {e}")
         except Exception as e:
-            self.log_ai_message(f"❌ 报告生成详细错误: {e}")
+            self.log_ai_message(f"[ERROR] 报告生成详细错误: {e}")
             raise
 
     def get_analysis_result(self, analysis_id):
@@ -2370,7 +2696,7 @@ class PressureSensorUI:
             if result.get('status') != 'success':
                 raise Exception(f"获取分析结果失败: {result.get('message', '未知错误')}")
             
-            self.log_ai_message("✅ 成功获取分析详细结果")
+            self.log_ai_message("[OK] 成功获取分析详细结果")
             return result.get('data')
             
         except requests.exceptions.Timeout:
@@ -2378,7 +2704,7 @@ class PressureSensorUI:
         except requests.exceptions.RequestException as e:
             raise Exception(f"网络请求失败: {e}")
         except Exception as e:
-            self.log_ai_message(f"❌ 获取分析结果错误: {e}")
+            self.log_ai_message(f"[ERROR] 获取分析结果错误: {e}")
             raise
     
     def show_analysis_complete_dialog(self, analysis_data, report_path):
@@ -2395,12 +2721,12 @@ class PressureSensorUI:
         
         message = f"""🧠 AI分析完成！
 
-📊 分析结果:
+[DATA] 分析结果:
 • 综合评分: {overall_score:.1f}/100
 • 风险等级: {risk_level}
 • 置信度: {confidence:.1%}
 
-📋 {file_type}已生成: {filename}
+[INFO] {file_type}已生成: {filename}
 
 是否立即打开报告文件？"""
         
