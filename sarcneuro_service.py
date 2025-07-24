@@ -24,7 +24,20 @@ class SarcNeuroEdgeService:
     
     def __init__(self, port: int = 8000, service_dir: str = "sarcneuro-edge"):
         self.port = port
-        self.service_dir = Path(service_dir)
+        
+        # 处理打包后的路径问题
+        if getattr(sys, 'frozen', False):
+            # 打包后的环境
+            base_path = Path(sys._MEIPASS)
+            self.service_dir = base_path / service_dir
+            # 在打包环境中，需要设置日志和数据目录到可写路径
+            self.data_dir = Path.cwd() / "sarcneuro_data"
+            self.data_dir.mkdir(exist_ok=True)
+        else:
+            # 开发环境
+            self.service_dir = Path(service_dir)
+            self.data_dir = self.service_dir
+            
         self.process = None
         self.base_url = f"http://127.0.0.1:{port}"
         self.is_running = False
@@ -67,7 +80,9 @@ class SarcNeuroEdgeService:
             # 设置环境变量
             env = os.environ.copy()
             env["PYTHONPATH"] = str(self.service_dir)
-            # 不强制设置端口，让SarcNeuro Edge使用默认配置
+            # 打包后需要设置数据目录
+            if getattr(sys, 'frozen', False):
+                env["SARCNEURO_DATA_DIR"] = str(self.data_dir)
             
             # 启动子进程
             startupinfo = None

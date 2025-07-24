@@ -2096,11 +2096,14 @@ class PressureSensorUI:
                         return {
                             'status': 'success',
                             'data': {
-                                'overall_score': 85,  # 默认评分
-                                'risk_level': 'LOW',
+                                'overall_score': status_data.get('overall_score', 85),
+                                'risk_level': status_data.get('risk_level', 'LOW'),
+                                'confidence': status_data.get('confidence', 0.75),
                                 'analysis_summary': '多文件综合分析完成',
                                 'report_url': status_data.get('comprehensive_report_url'),
                                 'task_id': task_id,
+                                'analysis_id': status_data.get('comprehensive_report_id', task_id),
+                                'test_id': task_id,
                                 'results': status_data.get('results', [])
                             }
                         }
@@ -2301,16 +2304,23 @@ class PressureSensorUI:
                             detailed_result = self.get_analysis_result(analysis_id)
                             
                             if detailed_result:
-                                self.log_ai_message("[INFO] 正在生成PDF报告...")
-                                # 使用test_id生成报告
-                                report_path = self.generate_sarcneuro_report(test_id, "pdf", file_path, patient_info)
-                                
-                                if report_path:
-                                    self.log_ai_message(f"📄 PDF报告已生成: {report_path}")
-                                    # 显示成功对话框
-                                    self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path))
+                                # 检查是否已有报告URL
+                                report_url = detailed_result.get('report_url')
+                                if report_url:
+                                    self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
+                                    # 下载HTML内容并保存到我们的目录结构
+                                    local_report_path = self.download_and_save_html_report(report_url, patient_info)
+                                    if local_report_path:
+                                        self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
+                                        # 显示成功对话框，传递本地报告路径
+                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, local_report_path))
+                                    else:
+                                        self.log_ai_message("[WARN] HTML报告保存失败")
+                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                                 else:
-                                    raise Exception("报告生成失败")
+                                    self.log_ai_message("[WARN] 未找到报告链接")
+                                    # 仍然显示分析完成，但没有报告
+                                    self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                             else:
                                 raise Exception("无法获取分析详细结果")
                                 
@@ -2671,6 +2681,63 @@ class PressureSensorUI:
         except Exception as e:
             self.log_ai_message(f"[ERROR] 报告生成详细错误: {e}")
             raise
+    
+    def download_and_save_html_report(self, report_url, patient_info):
+        """下载HTML报告并保存到我们的目录结构"""
+        try:
+            import requests
+            from datetime import datetime
+            import os
+            
+            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
+                raise Exception("SarcNeuro Edge服务未运行")
+            
+            # 构建完整的下载URL
+            base_url = self.sarcneuro_service.base_url
+            full_url = f"{base_url}{report_url}"
+            
+            self.log_ai_message(f"🔗 下载HTML报告: {full_url}")
+            
+            # 下载HTML内容
+            response = requests.get(full_url, timeout=30)
+            if response.status_code != 200:
+                raise Exception(f"下载失败: HTTP {response.status_code}")
+            
+            html_content = response.text
+            
+            # 创建按日期组织的目录结构
+            today = datetime.now().strftime("%Y-%m-%d")
+            report_dir = os.path.join(today)
+            os.makedirs(report_dir, exist_ok=True)
+            
+            # 生成本地文件名
+            patient_name = patient_info.get('name', '未知患者')
+            test_type_raw = patient_info.get('test_type', 'COMPREHENSIVE')
+            
+            # 将英文测试类型转换为中文
+            test_type_map = {
+                'COMPREHENSIVE': '综合分析',
+                'BALANCE': '平衡测试', 
+                'GAIT': '步态分析',
+                'STRENGTH': '力量测试',
+                'FLEXIBILITY': '柔韧性测试'
+            }
+            test_type = test_type_map.get(test_type_raw, test_type_raw)
+            
+            timestamp = datetime.now().strftime("%H%M%S")
+            filename = f"{patient_name}-{test_type}-综合报告-{timestamp}.html"
+            
+            # 保存到本地
+            local_path = os.path.join(report_dir, filename)
+            with open(local_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            self.log_ai_message(f"💾 HTML报告已保存到: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            self.log_ai_message(f"[ERROR] HTML报告保存失败: {e}")
+            return None
 
     def get_analysis_result(self, analysis_id):
         """调用sarcneuro-edge API获取分析详细结果"""
@@ -2697,7 +2764,7 @@ class PressureSensorUI:
                 raise Exception(f"获取分析结果失败: {result.get('message', '未知错误')}")
             
             self.log_ai_message("[OK] 成功获取分析详细结果")
-            return result.get('data')
+            return result
             
         except requests.exceptions.Timeout:
             raise Exception("获取分析结果请求超时")

@@ -1,0 +1,25 @@
+# 手动打包步骤
+
+1. 打开PowerShell或CMD，进入项目目录：
+   cd D:\sarcopenia_app
+
+2. 检查Python版本：
+   python --version
+
+3. 安装PyInstaller：
+   pip install pyinstaller
+
+4. 安装项目依赖：
+   pip install -r requirements.txt
+
+5. 清理旧文件：
+   rmdir /s /q build
+   rmdir /s /q dist
+
+6. 执行打包：
+   pyinstaller SarcopeniaApp.spec --clean --noconfirm
+
+7. 检查结果：
+   dir dist
+
+如果成功，会在 dist 目录下生成 SarcopeniaApp.exe

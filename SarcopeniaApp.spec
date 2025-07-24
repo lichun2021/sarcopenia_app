@@ -16,8 +16,17 @@ datas = [
     # SarcNeuro Edge 整个目录
     (str(project_root / 'sarcneuro-edge'), 'sarcneuro-edge'),
     
+    # 主程序所需的Python模块文件
+    (str(project_root / 'sarcneuro_service.py'), '.'),
+    (str(project_root / 'data_converter.py'), '.'),
+    (str(project_root / 'patient_info_dialog.py'), '.'),
+    (str(project_root / 'serial_interface.py'), '.'),
+    (str(project_root / 'data_processor.py'), '.'),
+    (str(project_root / 'visualization.py'), '.'),
+    (str(project_root / 'device_config.py'), '.'),
+    (str(project_root / 'integration_ui.py'), '.'),
+    
     # 主系统配置文件
-    (str(project_root / 'device_config.json'), '.'),
     (str(project_root / 'requirements.txt'), '.'),
     
     # 图标文件
