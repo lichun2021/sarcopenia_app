@@ -18,7 +18,8 @@ try:
     from fastapi.staticfiles import StaticFiles
 except ImportError as e:
     print(f"请安装依赖: pip install fastapi uvicorn python-multipart")
-    exit(1)
+    import sys
+    sys.exit(1)
 
 # 尝试导入分析器和报告生成器
 try:

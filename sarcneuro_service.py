@@ -15,15 +15,89 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
+# 配置文件读取
+import configparser
+import os
+
+def load_config():
+    """加载配置文件"""
+    config = configparser.ConfigParser()
+    
+    # 默认配置
+    defaults = {
+        'enable_debug': 'false',
+        'show_console': 'false', 
+        'verbose_logging': 'false',
+        'save_logs': 'true',
+        'reports_dir': 'reports',
+        'logs_dir': 'logs',
+        'service_port': '8000',
+        'startup_timeout': '60'
+    }
+    
+    # 尝试读取配置文件
+    config_file = 'config.ini'
+    if os.path.exists(config_file):
+        config.read(config_file, encoding='utf-8')
+    
+    # 获取配置值，如果不存在则使用默认值
+    cfg = {}
+    for key, default_value in defaults.items():
+        if key.startswith('enable_') or key.startswith('show_') or key.startswith('verbose_') or key.startswith('save_'):
+            cfg[key] = config.getboolean('DEBUG', key.replace('_', '_'), fallback=default_value.lower() == 'true')
+        elif key.endswith('_port') or key.endswith('_timeout'):
+            cfg[key] = config.getint('SARCNEURO' if 'service_' in key or 'startup_' in key else 'PATHS', 
+                                   key, fallback=int(default_value))
+        else:
+            cfg[key] = config.get('PATHS', key, fallback=default_value)
+    
+    return cfg
+
+# 加载配置
+app_config = load_config()
+
 # 配置日志
-logging.basicConfig(level=logging.DEBUG)
+if app_config['save_logs']:
+    log_dir = app_config['logs_dir']
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "sarcneuro_debug.log")
+    
+    handlers = [logging.FileHandler(log_file, encoding='utf-8')]
+    if app_config['verbose_logging']:
+        handlers.append(logging.StreamHandler())
+    
+    logging.basicConfig(
+        level=logging.DEBUG if app_config['enable_debug'] else logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=handlers
+    )
+else:
+    logging.basicConfig(level=logging.CRITICAL)  # 基本禁用日志
+
 logger = logging.getLogger(__name__)
+
+# 可配置的日志函数
+def force_log(message):
+    """可配置的日志记录"""
+    if app_config['save_logs']:
+        logger.info(message)
+    
+    if app_config['enable_debug']:
+        print(f"[DEBUG] {message}")
+    
+    if app_config['save_logs'] and app_config['enable_debug']:
+        debug_file = os.path.join(app_config['logs_dir'], "startup_debug.log")
+        with open(debug_file, 'a', encoding='utf-8') as f:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] {message}\n")
+            f.flush()
 
 class SarcNeuroEdgeService:
     """SarcNeuro Edge 服务管理器"""
     
-    def __init__(self, port: int = 8000, service_dir: str = "sarcneuro-edge"):
-        self.port = port
+    def __init__(self, port: int = None, service_dir: str = "sarcneuro-edge"):
+        self.port = port or app_config['service_port']
         
         # 处理打包后的路径问题
         if getattr(sys, 'frozen', False):
@@ -39,9 +113,9 @@ class SarcNeuroEdgeService:
             self.data_dir = self.service_dir
             
         self.process = None
-        self.base_url = f"http://127.0.0.1:{port}"
+        self.base_url = f"http://127.0.0.1:{self.port}"
         self.is_running = False
-        self.startup_timeout = 60  # 60秒启动超时
+        self.startup_timeout = app_config['startup_timeout']
         self.health_check_interval = 30  # 30秒健康检查间隔
         self._monitor_thread = None
         self._stop_monitor = False
@@ -50,15 +124,22 @@ class SarcNeuroEdgeService:
         # 检查服务目录
         if not self.service_dir.exists():
             raise FileNotFoundError(f"SarcNeuro Edge 服务目录不存在: {self.service_dir}")
+        
+        # 检查关键文件
+        standalone_script = self.service_dir / "standalone_upload.py"
+        if not standalone_script.exists():
+            raise FileNotFoundError(f"standalone_upload.py 不存在: {standalone_script}")
             
     def start_service(self) -> bool:
         """启动 SarcNeuro Edge 服务"""
         try:
+            # 强制打印调试信息
+            force_log(f"start_service called, is_running={self.is_running}")
             if self.is_running:
-                logger.info("服务已在运行中")
+                force_log("服务已在运行中")
                 return True
                 
-            logger.info(f"正在启动 SarcNeuro Edge 服务 (端口 {self.port})...")
+            force_log(f"正在启动 SarcNeuro Edge 服务 (端口 {self.port})...")
             
             # 检查端口是否被占用
             if self._is_port_in_use():
@@ -71,36 +152,93 @@ class SarcNeuroEdgeService:
                     logger.error("现有服务无响应")
                     return False
             
-            # 直接使用 standalone_upload.py（兼容8000端口）
-            python_exe = sys.executable
-            cmd = [python_exe, "standalone_upload.py"]
-            # 保持原有端口8000，standalone_upload.py已修改为使用8000端口
-            logger.info(f"使用 standalone_upload.py 启动服务，端口: {self.port}")
+            # 启动前检查
+            force_log(f"服务目录: {self.service_dir}")
+            force_log(f"数据目录: {getattr(self, 'data_dir', 'N/A')}")
+            force_log(f"Python可执行文件: {sys.executable}")
+            force_log(f"当前工作目录: {os.getcwd()}")
+            force_log(f"是否打包环境: {getattr(sys, 'frozen', False)}")
             
-            # 设置环境变量
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(self.service_dir)
-            # 打包后需要设置数据目录
+            # 对于打包环境，尝试直接在主进程中启动服务
             if getattr(sys, 'frozen', False):
-                env["SARCNEURO_DATA_DIR"] = str(self.data_dir)
-            
-            # 启动子进程
-            startupinfo = None
-            if sys.platform.startswith('win'):
-                # Windows下隐藏控制台窗口
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            self.process = subprocess.Popen(
-                cmd,
-                cwd=str(self.service_dir),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
-            )
+                force_log(f"打包环境：尝试在主进程中启动服务，端口: {self.port}")
+                try:
+                    # 设置环境变量
+                    os.environ["SARCNEURO_DATA_DIR"] = str(self.data_dir)
+                    force_log(f"设置环境变量 SARCNEURO_DATA_DIR = {self.data_dir}")
+                    
+                    # 添加sarcneuro-edge到Python路径
+                    if str(self.service_dir) not in sys.path:
+                        sys.path.insert(0, str(self.service_dir))
+                    
+                    force_log(f"导入路径已添加: {self.service_dir}")
+                    
+                    # 在线程中启动FastAPI服务
+                    import threading
+                    def run_fastapi():
+                        try:
+                            force_log("开始导入standalone_upload...")
+                            from standalone_upload import app
+                            force_log("成功导入app")
+                            
+                            import uvicorn
+                            force_log(f"启动uvicorn服务器在端口 {self.port}")
+                            
+                            # 在打包环境中禁用uvicorn的日志配置
+                            if getattr(sys, 'frozen', False):
+                                # 完全禁用uvicorn日志配置
+                                uvicorn.run(
+                                    app, 
+                                    host="127.0.0.1", 
+                                    port=self.port, 
+                                    log_config=None,  # 禁用日志配置
+                                    access_log=False,  # 禁用访问日志
+                                    use_colors=False   # 禁用颜色
+                                )
+                            else:
+                                # 开发环境正常启动
+                                uvicorn.run(app, host="127.0.0.1", port=self.port, log_level="error")
+                        except Exception as e:
+                            force_log(f"FastAPI启动失败: {e}")
+                            import traceback
+                            error_trace = traceback.format_exc()
+                            force_log(f"错误堆栈: {error_trace}")
+                    
+                    server_thread = threading.Thread(target=run_fastapi, daemon=True)
+                    server_thread.start()
+                    self.process = server_thread
+                    force_log("FastAPI服务线程已启动")
+                    
+                except Exception as e:
+                    force_log(f"主进程启动失败: {e}")
+                    return False
+                
+            else:
+                # 开发环境使用子进程
+                logger.info(f"开发环境：使用子进程启动服务，端口: {self.port}")
+                python_exe = sys.executable
+                cmd = [python_exe, "standalone_upload.py"]
+                
+                # 设置环境变量
+                env = os.environ.copy()
+                env["PYTHONPATH"] = str(self.service_dir)
+                
+                # 启动子进程
+                startupinfo = None
+                if sys.platform.startswith('win'):
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                
+                self.process = subprocess.Popen(
+                    cmd,
+                    cwd=str(self.service_dir),
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+                )
             
             # 等待服务启动
             logger.info("等待服务启动...")
@@ -112,15 +250,25 @@ class SarcNeuroEdgeService:
                 elapsed = time.time() - start_time
                 
                 # 检查进程是否还在运行
-                if self.process.poll() is not None:
-                    # 进程已退出，获取输出
-                    stdout, stderr = self.process.communicate()
-                    logger.error(f"服务启动失败，进程已退出")
-                    if stdout:
-                        logger.info(f"标准输出: {stdout.decode('utf-8', errors='ignore')}")
-                    if stderr:
-                        logger.error(f"错误输出: {stderr.decode('utf-8', errors='ignore')}")
-                    return False
+                if getattr(sys, 'frozen', False):
+                    # 打包环境检查线程状态
+                    if hasattr(self.process, 'is_alive') and not self.process.is_alive():
+                        logger.error("服务线程已退出")
+                        return False
+                else:
+                    # 开发环境检查进程状态
+                    if self.process.poll() is not None:
+                        stdout, stderr = self.process.communicate()
+                        exit_code = self.process.returncode
+                        logger.error(f"服务启动失败，进程已退出 (退出码: {exit_code})")
+                        logger.error(f"使用的命令: {' '.join(cmd)}")
+                        logger.error(f"工作目录: {str(self.service_dir)}")
+                        logger.error(f"环境变量 PYTHONPATH: {env.get('PYTHONPATH')}")
+                        if stdout:
+                            logger.info(f"标准输出: {stdout.decode('utf-8', errors='ignore')}")
+                        if stderr:
+                            logger.error(f"错误输出: {stderr.decode('utf-8', errors='ignore')}")
+                        return False
                 
                 # 每10秒打印一次进度
                 if check_count % 5 == 0:
@@ -155,7 +303,9 @@ class SarcNeuroEdgeService:
             return False
             
         except Exception as e:
-            logger.error(f"启动服务时发生异常: {e}")
+            force_log(f"启动服务时发生异常: {e}")
+            import traceback
+            force_log(f"异常堆栈: {traceback.format_exc()}")
             return False
     
     def stop_service(self):

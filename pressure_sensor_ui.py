@@ -2167,7 +2167,7 @@ class PressureSensorUI:
                 
                 # 启动服务（如果未启动）
                 if not self.sarcneuro_service.is_running:
-                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
+                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务 2...")
                     if not self.sarcneuro_service.start_service():
                         raise Exception("无法启动 SarcNeuro Edge 服务")
                 
@@ -2705,9 +2705,18 @@ class PressureSensorUI:
             
             html_content = response.text
             
+            # 获取exe所在目录
+            if getattr(sys, 'frozen', False):
+                # 打包后的环境，使用exe所在目录
+                exe_dir = os.path.dirname(sys.executable)
+                base_dir = exe_dir
+            else:
+                # 开发环境
+                base_dir = os.getcwd()
+            
             # 创建按日期组织的目录结构
             today = datetime.now().strftime("%Y-%m-%d")
-            report_dir = os.path.join(today)
+            report_dir = os.path.join(base_dir, today)
             os.makedirs(report_dir, exist_ok=True)
             
             # 生成本地文件名
