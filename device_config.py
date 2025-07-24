@@ -9,7 +9,7 @@ from tkinter import ttk, messagebox
 import threading
 import time
 import queue
-import json
+import sqlite3
 import os
 from datetime import datetime
 from serial_interface import SerialInterface
@@ -39,8 +39,9 @@ class DeviceConfigDialog:
         # 线程安全的更新队列
         self.update_queue = queue.Queue()
         
-        # 配置文件路径
-        self.config_file = "device_config.json"
+        # 配置数据库路径
+        self.config_db = "device_config.db"
+        self.init_database()
         
     def show_dialog(self):
         """显示配置对话框"""
@@ -135,23 +136,60 @@ class DeviceConfigDialog:
         except:
             pass
     
-    def load_saved_config(self):
-        """加载保存的配置"""
+    def init_database(self):
+        """初始化SQLite数据库"""
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    file_data = json.load(f)
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
+            
+            # 创建配置表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS device_configs (
+                    device_id TEXT PRIMARY KEY,
+                    port TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    icon TEXT NOT NULL,
+                    array_size TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"初始化数据库失败: {e}")
+
+    def load_saved_config(self):
+        """从SQLite加载保存的配置"""
+        try:
+            if not os.path.exists(self.config_db):
+                return None
+                
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
+            rows = cursor.fetchall()
+            
+            conn.close()
+            
+            if rows:
+                config_data = {}
+                for row in rows:
+                    device_id, port, name, icon, array_size = row
+                    config_data[device_id] = {
+                        'port': port,
+                        'name': name,
+                        'icon': icon,
+                        'array_size': array_size
+                    }
+                
+                # 验证配置数据的有效性
+                if self.validate_config_data(config_data):
+                    return config_data
                     
-                    # 处理新格式（包含时间戳）
-                    if 'devices' in file_data:
-                        config_data = file_data['devices']
-                    else:
-                        # 兼容旧格式
-                        config_data = file_data
-                    
-                    # 验证配置数据的有效性
-                    if self.validate_config_data(config_data):
-                        return config_data
         except Exception as e:
             print(f"加载配置失败: {e}")
         return None
@@ -277,19 +315,27 @@ class DeviceConfigDialog:
     
     
     def save_config(self, config_data):
-        """保存配置到文件"""
+        """保存配置到SQLite数据库"""
         try:
-            # 添加时间戳
-            config_to_save = {
-                'timestamp': datetime.now().isoformat(),
-                'devices': config_data
-            }
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
             
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_to_save, f, ensure_ascii=False, indent=2)
-                
-            print(f"配置已保存到: {self.config_file}")
+            # 清空现有配置
+            cursor.execute('DELETE FROM device_configs')
+            
+            # 插入新配置
+            for device_id, config in config_data.items():
+                cursor.execute('''
+                    INSERT INTO device_configs (device_id, port, name, icon, array_size)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (device_id, config['port'], config['name'], config['icon'], config['array_size']))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"配置已保存到数据库: {self.config_db}")
             return True
+            
         except Exception as e:
             print(f"保存配置失败: {e}")
             return False
@@ -713,23 +759,17 @@ class DeviceConfigDialog:
             messagebox.showwarning("配置警告", "请至少配置一个设备！")
             return
         
-        # 确认配置
-        msg = f"确定要配置 {configured_count} 个设备吗？\n\n"
-        for device_id, config in config_result.items():
-            msg += f"{config['icon']} {config['name']}: {config['port']} ({config['array_size']})\n"
-            
-        if messagebox.askyesno("确认配置", msg):
-            # 保存配置
-            if self.save_config(config_result):
-                messagebox.showinfo("保存成功", "设备配置已保存，下次启动时将自动加载。")
-            
-            self.result = config_result
-            self.scanning = False
-            try:
-                if self.dialog and self.dialog.winfo_exists():
-                    self.dialog.destroy()
-            except:
-                pass
+        # 直接保存配置，不弹确认对话框
+        if self.save_config(config_result):
+            print(f"✅ 已保存 {configured_count} 个设备配置")
+        
+        self.result = config_result
+        self.scanning = False
+        try:
+            if self.dialog and self.dialog.winfo_exists():
+                self.dialog.destroy()
+        except:
+            pass
     
     def cancel_config(self):
         """取消配置"""
