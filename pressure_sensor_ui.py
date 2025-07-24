@@ -83,51 +83,37 @@ class PressureSensorUI:
         self.root.after(500, self.show_device_config)
     
     def show_device_config(self):
-        """显示设备配置对话框或加载已保存的配置"""
-        # 首先尝试加载已保存的配置
+        """显示设备配置对话框"""
         config_dialog = DeviceConfigDialog(self.root)
-        saved_config = config_dialog.load_saved_config()
+        device_configs = config_dialog.show_dialog()
         
-        if saved_config:
-            # 存在已保存的配置，直接加载
-            self.log_message("🔍 检测到已保存的设备配置，正在自动加载...")
-            self.load_and_setup_devices(saved_config)
+        if device_configs:
+            # 设置设备配置
+            self.device_manager.setup_devices(device_configs)
+            self.device_configured = True
+            
+            # 更新设备选择列表
+            self.update_device_list()
+            
+            # 自动选择第一个设备
+            device_list = self.device_manager.get_device_list()
+            if device_list:
+                first_device_id = device_list[0][0]
+                self.device_var.set(f"{device_configs[first_device_id]['icon']} {device_configs[first_device_id]['name']}")
+                
+                # 获取串口接口并设置步道模式
+                self.serial_interface = self.device_manager.get_current_serial_interface()
+                if device_configs[first_device_id]['array_size'] == '32x96':
+                    self.serial_interface.set_walkway_mode(True)
+                
+                self.on_device_changed(None)
+                
+            self.log_message("✅ 设备配置完成！")
         else:
-            # 没有保存的配置，显示配置对话框
-            self.log_message("⚙️ 首次使用，显示设备配置对话框...")
-            device_configs = config_dialog.show_dialog()
-            
-            if device_configs:
-                self.load_and_setup_devices(device_configs)
-            else:
-                # 用户取消配置，显示警告
-                if not self.device_configured:
-                    messagebox.showwarning("配置取消", "需要配置设备才能使用系统！")
-                    self.root.after(2000, self.root.quit)  # 2秒后退出
-    
-    def load_and_setup_devices(self, device_configs):
-        """加载并设置设备配置"""
-        # 设置设备配置
-        self.device_manager.setup_devices(device_configs)
-        self.device_configured = True
-        
-        # 更新设备选择列表
-        self.update_device_list()
-        
-        # 自动选择第一个设备
-        device_list = self.device_manager.get_device_list()
-        if device_list:
-            first_device_id = device_list[0][0]
-            self.device_var.set(f"{device_configs[first_device_id]['icon']} {device_configs[first_device_id]['name']}")
-            
-            # 获取串口接口并设置步道模式
-            self.serial_interface = self.device_manager.get_current_serial_interface()
-            if device_configs[first_device_id]['array_size'] == '32x96':
-                self.serial_interface.set_walkway_mode(True)
-            
-            self.on_device_changed(None)
-            
-        self.log_message("✅ 设备配置完成！")
+            # 用户取消配置，显示警告
+            if not self.device_configured:
+                messagebox.showwarning("配置取消", "需要配置设备才能使用系统！")
+                self.root.after(2000, self.root.quit)  # 2秒后退出
     
     def update_device_list(self):
         """更新设备选择列表"""
@@ -1643,14 +1629,19 @@ class PressureSensorUI:
             return
             
         try:
-            # 使用原版SarcNeuro Edge服务
-            self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
+            # 使用修复版服务管理器
+            from sarcneuro_service_fixed import get_sarcneuro_service_fixed
+            self.sarcneuro_service = get_sarcneuro_service_fixed(port=8000)
             self.data_converter = SarcopeniaDataConverter()
-            print("✅ SarcNeuro Edge 原版服务初始化完成")
+            print("✅ SarcNeuro Edge 修复版服务初始化完成")
         except Exception as e:
-            print(f"⚠️ SarcNeuro Edge 原版服务初始化失败: {e}")
-            # 如果原版失败，设置为None
-            self.sarcneuro_service = None
+            print(f"⚠️ SarcNeuro Edge 服务初始化失败: {e}")
+            # 如果修复版也失败，回退到原版
+            try:
+                self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
+                print("⚠️ 使用原版服务作为后备")
+            except:
+                self.sarcneuro_service = None
     
     def import_csv_for_analysis(self):
         """导入CSV文件进行AI分析并生成PDF报告"""
@@ -1889,7 +1880,6 @@ class PressureSensorUI:
 ⚠️ 注意：PDF报告生成失败，但AI分析数据完整。"""
                             
                             self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
-                            return  # 防止继续执行到错误处理分支
                     else:
                         self.log_ai_message("⚠️ 分析结果中缺少analysis_id或test_id")
                         
