@@ -9,7 +9,7 @@ from tkinter import ttk, messagebox
 import threading
 import time
 import queue
-import json
+import sqlite3
 import os
 from datetime import datetime
 from serial_interface import SerialInterface
@@ -17,7 +17,7 @@ from serial_interface import SerialInterface
 class DeviceConfigDialog:
     """设备配置引导对话框"""
     
-    def __init__(self, parent):
+    def __init__(self, parent, skip_port_detection=None):
         self.parent = parent
         self.result = None
         self.dialog = None
@@ -36,11 +36,15 @@ class DeviceConfigDialog:
         self.available_ports = []
         self.port_data_status = {}  # 端口数据状态
         
+        # 跳过检测的端口列表（已被主程序占用）
+        self.skip_port_detection = skip_port_detection or []
+        
         # 线程安全的更新队列
         self.update_queue = queue.Queue()
         
-        # 配置文件路径
-        self.config_file = "device_config.json"
+        # SQLite数据库路径
+        self.config_db = "device_config.db"
+        self.init_database()
         
     def show_dialog(self):
         """显示配置对话框"""
@@ -59,11 +63,12 @@ class DeviceConfigDialog:
         
         self.setup_dialog_ui()
         
-        # 尝试加载已保存的配置作为默认值显示
+        # 自动检测并加载已保存的配置
         saved_config = self.load_saved_config()
         if saved_config:
-            # 延迟应用保存的配置作为默认值（等UI完全初始化后）
+            # 延迟应用保存的配置（等UI完全初始化后）
             self.dialog.after(500, lambda: self.apply_saved_config_to_ui(saved_config))
+            print(f"检测到已保存的配置，包含 {len(saved_config)} 个设备")
         
         self.start_port_scanning()
         self.start_ui_update_loop()
@@ -135,25 +140,70 @@ class DeviceConfigDialog:
         except:
             pass
     
-    def load_saved_config(self):
-        """加载保存的配置"""
+    def init_database(self):
+        """初始化SQLite数据库"""
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    file_data = json.load(f)
-                    
-                    # 处理新格式（包含时间戳）
-                    if 'devices' in file_data:
-                        config_data = file_data['devices']
-                    else:
-                        # 兼容旧格式
-                        config_data = file_data
-                    
-                    # 验证配置数据的有效性
-                    if self.validate_config_data(config_data):
-                        return config_data
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
+            
+            # 创建设备配置表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS device_configs (
+                    device_id TEXT PRIMARY KEY,
+                    port TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    icon TEXT NOT NULL,
+                    array_size TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            ''')
+            
+            # 创建配置元数据表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS config_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
         except Exception as e:
-            print(f"加载配置失败: {e}")
+            print(f"初始化数据库失败: {e}")
+    
+    def load_saved_config(self):
+        """从SQLite数据库加载保存的配置"""
+        try:
+            if not os.path.exists(self.config_db):
+                return None
+                
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
+            
+            # 查询所有设备配置
+            cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
+            rows = cursor.fetchall()
+            
+            config_data = {}
+            for row in rows:
+                device_id, port, name, icon, array_size = row
+                config_data[device_id] = {
+                    'port': port,
+                    'name': name,
+                    'icon': icon,
+                    'array_size': array_size
+                }
+            
+            conn.close()
+            
+            # 验证配置数据的有效性
+            if config_data and self.validate_config_data(config_data):
+                return config_data
+                
+        except Exception as e:
+            print(f"从数据库加载配置失败: {e}")
         return None
     
     def validate_config_data(self, config_data):
@@ -277,21 +327,44 @@ class DeviceConfigDialog:
     
     
     def save_config(self, config_data):
-        """保存配置到文件"""
+        """保存配置到SQLite数据库"""
         try:
-            # 添加时间戳
-            config_to_save = {
-                'timestamp': datetime.now().isoformat(),
-                'devices': config_data
-            }
+            conn = sqlite3.connect(self.config_db)
+            cursor = conn.cursor()
             
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_to_save, f, ensure_ascii=False, indent=2)
-                
-            print(f"配置已保存到: {self.config_file}")
+            # 清空现有配置
+            cursor.execute('DELETE FROM device_configs')
+            
+            # 插入新配置
+            current_time = datetime.now().isoformat()
+            for device_id, config in config_data.items():
+                cursor.execute('''
+                    INSERT INTO device_configs 
+                    (device_id, port, name, icon, array_size, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    device_id,
+                    config['port'],
+                    config['name'],
+                    config['icon'],
+                    config['array_size'],
+                    current_time,
+                    current_time
+                ))
+            
+            # 更新元数据
+            cursor.execute('''
+                INSERT OR REPLACE INTO config_metadata (key, value, updated_at)
+                VALUES (?, ?, ?)
+            ''', ('last_save_timestamp', current_time, current_time))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"配置已保存到数据库: {self.config_db}")
             return True
         except Exception as e:
-            print(f"保存配置失败: {e}")
+            print(f"保存配置到数据库失败: {e}")
             return False
         
     def setup_dialog_ui(self):
@@ -425,6 +498,10 @@ class DeviceConfigDialog:
         
     def check_port_validity_1024(self, port_name):
         """检测端口是否有1024字节的有效数据帧"""
+        # 如果端口在跳过列表中，直接返回使用中状态
+        if port_name in self.skip_port_detection:
+            return "⚠️ 端口使用中（主程序占用）"
+            
         try:
             import serial
             import time
@@ -469,7 +546,8 @@ class DeviceConfigDialog:
         except Exception as e:
             error_msg = str(e)
             if "Access is denied" in error_msg or "PermissionError" in error_msg:
-                return "❌ 端口被占用"
+                # 端口被占用可能是正常的（主程序正在使用）
+                return "⚠️ 端口使用中（可能正常）"
             elif "could not open port" in error_msg:
                 return "❌ 端口不存在"
             else:
@@ -495,6 +573,11 @@ class DeviceConfigDialog:
                     status = self.port_data_status.get(port, "未检测")
                     if "✅ 1024字节有效数据" in status:
                         simple_status = "有效"
+                    elif "⚠️ 端口使用中" in status:
+                        if "主程序占用" in status:
+                            simple_status = "使用中"
+                        else:
+                            simple_status = "占用"
                     elif "❌" in status:
                         simple_status = "无效"
                     elif "⚠️" in status:
@@ -544,6 +627,11 @@ class DeviceConfigDialog:
             
             if "✅ 1024字节有效数据" in data_status:
                 status_label.config(text="✅ 有效", foreground="green")
+            elif "⚠️ 端口使用中" in data_status:
+                if "主程序占用" in data_status:
+                    status_label.config(text="✅ 使用中", foreground="green")
+                else:
+                    status_label.config(text="⚠️ 使用中", foreground="orange")
             elif "未检测" in data_status:
                 status_label.config(text="⏳ 未检测", foreground="blue")
             elif "❌" in data_status:
@@ -713,23 +801,23 @@ class DeviceConfigDialog:
             messagebox.showwarning("配置警告", "请至少配置一个设备！")
             return
         
-        # 确认配置
-        msg = f"确定要配置 {configured_count} 个设备吗？\n\n"
-        for device_id, config in config_result.items():
-            msg += f"{config['icon']} {config['name']}: {config['port']} ({config['array_size']})\n"
-            
-        if messagebox.askyesno("确认配置", msg):
-            # 保存配置
-            if self.save_config(config_result):
-                messagebox.showinfo("保存成功", "设备配置已保存，下次启动时将自动加载。")
-            
-            self.result = config_result
-            self.scanning = False
-            try:
-                if self.dialog and self.dialog.winfo_exists():
-                    self.dialog.destroy()
-            except:
-                pass
+        # 直接保存配置，无需确认对话框
+        if self.save_config(config_result):
+            # 简短提示保存成功
+            self.scan_status_label.config(text=f"✅ 已保存 {configured_count} 个设备配置", foreground="green")
+            print(f"设备配置已自动保存，包含 {configured_count} 个设备")
+        else:
+            messagebox.showerror("保存失败", "配置保存失败，请检查文件权限。")
+            return
+        
+        self.result = config_result
+        self.scanning = False
+        try:
+            if self.dialog and self.dialog.winfo_exists():
+                # 延迟关闭对话框，让用户看到保存成功的提示
+                self.dialog.after(800, self.dialog.destroy)
+        except:
+            pass
     
     def cancel_config(self):
         """取消配置"""
@@ -753,9 +841,25 @@ class DeviceManager:
         """设置设备配置"""
         self.devices = device_configs
         
-        # 为每个设备创建串口接口
+        # 为每个设备创建串口接口，但避免重复创建已连接的接口
         for device_id, config in device_configs.items():
-            self.serial_interfaces[device_id] = SerialInterface(baudrate=1000000)
+            port_name = config['port']
+            
+            # 检查是否已经有连接到此端口的串口接口
+            existing_interface = None
+            for existing_id, interface in self.serial_interfaces.items():
+                if interface and interface.get_current_port() == port_name:
+                    existing_interface = interface
+                    break
+            
+            if existing_interface:
+                # 重用已连接的接口
+                self.serial_interfaces[device_id] = existing_interface
+                print(f"重用端口 {port_name} 的现有连接 (设备: {config['name']})")
+            else:
+                # 创建新的串口接口
+                self.serial_interfaces[device_id] = SerialInterface(baudrate=1000000)
+                print(f"为 {config['name']} 创建新的串口接口 (端口: {port_name})")
             
         # 设置默认设备
         if self.devices:

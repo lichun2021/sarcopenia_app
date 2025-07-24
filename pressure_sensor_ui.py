@@ -79,15 +79,139 @@ class PressureSensorUI:
         # 集成肌少症分析功能
         self.integrate_sarcneuro_analysis()
         
-        # 显示设备配置对话框
-        self.root.after(500, self.show_device_config)
+        # 检测并加载已保存的配置，如果没有则显示配置对话框
+        self.root.after(500, self.auto_load_or_show_config)
+    
+    def auto_load_or_show_config(self):
+        """自动加载已保存的配置，如果没有则显示配置对话框"""
+        try:
+            # 直接加载配置数据，无需创建完整的对话框实例
+            from device_config import DeviceConfigDialog
+            import sqlite3
+            import os
+            
+            config_db = "device_config.db"
+            saved_config = None
+            
+            # 直接从数据库加载配置
+            if os.path.exists(config_db):
+                try:
+                    conn = sqlite3.connect(config_db)
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
+                    rows = cursor.fetchall()
+                    
+                    if rows:
+                        saved_config = {}
+                        for row in rows:
+                            device_id, port, name, icon, array_size = row
+                            saved_config[device_id] = {
+                                'port': port,
+                                'name': name,
+                                'icon': icon,
+                                'array_size': array_size
+                            }
+                    
+                    conn.close()
+                except Exception as e:
+                    print(f"加载配置数据库失败: {e}")
+                    saved_config = None
+            
+            if saved_config:
+                # 找到已保存的配置，直接加载
+                print(f"✅ 检测到已保存的配置，包含 {len(saved_config)} 个设备，自动加载中...")
+                self.log_message(f"✅ 自动加载已保存的配置 ({len(saved_config)} 个设备)")
+                
+                # 直接设置设备配置，无需显示对话框
+                if self.serial_interface:
+                    current_port = self.serial_interface.get_current_port()
+                    if current_port:
+                        # 找到使用此端口的设备配置
+                        for device_id, config in saved_config.items():
+                            if config['port'] == current_port:
+                                # 将现有接口添加到设备管理器
+                                self.device_manager.serial_interfaces[device_id] = self.serial_interface
+                                print(f"重用现有连接 {current_port} (设备: {config['name']})")
+                                break
+                
+                # 设置设备配置
+                self.device_manager.setup_devices(saved_config)
+                self.device_configured = True
+                
+                # 更新设备选择列表
+                self.update_device_list()
+                
+                # 自动选择第一个设备
+                device_list = self.device_manager.get_device_list()
+                if device_list:
+                    first_device_id = device_list[0][0]
+                    self.device_var.set(f"{saved_config[first_device_id]['icon']} {saved_config[first_device_id]['name']}")
+                    
+                    # 获取串口接口并设置步道模式
+                    self.serial_interface = self.device_manager.get_current_serial_interface()
+                    if saved_config[first_device_id]['array_size'] == '32x96':
+                        self.serial_interface.set_walkway_mode(True)
+                    
+                    self.on_device_changed(None)
+                
+                self.log_message("✅ 设备配置自动加载完成！")
+                
+            else:
+                # 没有找到已保存的配置，显示配置对话框
+                print("⚠️ 未找到已保存的配置，显示配置对话框...")
+                self.log_message("⚠️ 首次启动，需要配置设备")
+                self.show_device_config()
+                
+        except Exception as e:
+            print(f"❌ 自动加载配置失败: {e}")
+            self.log_message(f"❌ 自动加载配置失败: {e}")
+            # 出错时显示配置对话框
+            self.show_device_config()
     
     def show_device_config(self):
         """显示设备配置对话框"""
-        config_dialog = DeviceConfigDialog(self.root)
+        # 获取当前正在使用的端口，避免重复检测
+        skip_ports = []
+        
+        # 方法1：从设备管理器获取已配置的端口
+        if self.device_configured and self.device_manager:
+            current_device_info = self.device_manager.get_current_device_info()
+            if current_device_info:
+                skip_ports.append(current_device_info['port'])
+        
+        # 方法2：从串口接口获取当前连接的端口
+        if self.serial_interface:
+            current_port = self.serial_interface.get_current_port()
+            if current_port and current_port not in skip_ports:
+                skip_ports.append(current_port)
+        
+        # 方法3：从设备管理器的所有串口接口获取端口
+        if self.device_manager and hasattr(self.device_manager, 'serial_interfaces'):
+            for serial_interface in self.device_manager.serial_interfaces.values():
+                if serial_interface:
+                    current_port = serial_interface.get_current_port()
+                    if current_port and current_port not in skip_ports:
+                        skip_ports.append(current_port)
+        
+        if skip_ports:
+            print(f"跳过检测端口: {skip_ports} (主程序正在使用)")
+        
+        config_dialog = DeviceConfigDialog(self.root, skip_port_detection=skip_ports)
         device_configs = config_dialog.show_dialog()
         
         if device_configs:
+            # 如果已有串口连接，将其传递给设备管理器以便重用
+            if self.serial_interface:
+                current_port = self.serial_interface.get_current_port()
+                if current_port:
+                    # 找到使用此端口的设备配置
+                    for device_id, config in device_configs.items():
+                        if config['port'] == current_port:
+                            # 将现有接口添加到设备管理器
+                            self.device_manager.serial_interfaces[device_id] = self.serial_interface
+                            print(f"传递现有连接 {current_port} 给设备管理器 (设备: {config['name']})")
+                            break
+            
             # 设置设备配置
             self.device_manager.setup_devices(device_configs)
             self.device_configured = True
@@ -361,7 +485,6 @@ class PressureSensorUI:
         detection_menu.add_command(label="👤 患者信息管理", command=self.show_new_profile_dialog)
         detection_menu.add_separator()
         detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
-        detection_menu.add_command(label="🔄 重新连接设备", command=self.auto_connect_device)
         
         # 创建"设备"菜单（使用淡紫色医疗主题）
         device_menu = tk.Menu(menubar, tearoff=0,

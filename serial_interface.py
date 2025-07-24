@@ -75,6 +75,12 @@ class SerialInterface:
         except Exception as e:
             raise Exception(f"连接失败: {e}")
     
+    def get_current_port(self):
+        """获取当前连接的端口名称"""
+        if self.serial_port and self.serial_port.is_open:
+            return self.serial_port.name
+        return None
+    
     def disconnect(self):
         """断开连接"""
         self.is_running = False
