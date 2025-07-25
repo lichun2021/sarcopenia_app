@@ -6,7 +6,10 @@
       "Bash(pip3 install:*)",
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(rm:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(sqlite3:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }

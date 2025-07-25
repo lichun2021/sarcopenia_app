@@ -1,0 +1,630 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+检测向导界面组件 - 翻页式检测流程
+用于6步检测流程的连续界面显示
+"""
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
+import time
+import os
+from datetime import datetime
+from sarcopenia_database import db
+
+class DetectionWizardDialog:
+    """检测向导对话框 - 翻页式6步检测"""
+    
+    def __init__(self, parent, patient_info, session_info):
+        self.parent = parent
+        self.patient_info = patient_info
+        self.session_info = session_info
+        self.current_step = 1
+        self.total_steps = 6
+        self.step_results = {}
+        self.is_running = False
+        self.start_time = None
+        self.timer_thread = None
+        self.auto_finish = False
+        
+        # 6步检测配置
+        self.steps_config = {
+            1: {
+                "name": "静坐检测",
+                "device": "坐垫", 
+                "duration": 10,
+                "auto_finish": True,
+                "description": "请患者在坐垫上保持静坐姿势，身体放松，双脚平放在地面上。\n此步骤用于测量静态坐位时的压力分布。"
+            },
+            2: {
+                "name": "起坐测试",
+                "device": "坐垫",
+                "duration": 30, 
+                "auto_finish": False,
+                "description": "请患者进行5次起坐动作，从坐位到站立再到坐位。\n动作要缓慢平稳，测量动态起坐过程中的压力变化。"
+            },
+            3: {
+                "name": "静态站立",
+                "device": "脚垫",
+                "duration": 10,
+                "auto_finish": True,
+                "description": "请患者在脚垫上保持自然站立姿势，双脚分开与肩同宽。\n此步骤用于测量静态站立时的压力分布和平衡能力。"
+            },
+            4: {
+                "name": "前后脚站立", 
+                "device": "脚垫",
+                "duration": 10,
+                "auto_finish": True,
+                "description": "请患者在脚垫上采用前后脚站立姿势（一脚在前，一脚在后）。\n此步骤用于测量非对称站立时的平衡控制能力。"
+            },
+            5: {
+                "name": "双脚前后站立",
+                "device": "脚垫", 
+                "duration": 10,
+                "auto_finish": True,
+                "description": "请患者在脚垫上采用双脚前后站立姿势，脚跟对脚尖排列。\n此步骤用于测量更高难度的平衡控制能力。"
+            },
+            6: {
+                "name": "4.5米步道折返",
+                "device": "步道",
+                "duration": 60,
+                "auto_finish": False,
+                "description": "请患者在4.5米长的步道上来回行走，保持正常步行速度。\n此步骤用于测量步态参数和行走过程中的压力分布。"
+            }
+        }
+        
+        # 创建对话框窗口
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title(f"🔬 肌少症检测向导 - {patient_info['name']}")
+        self.dialog.geometry("800x700")
+        self.dialog.resizable(False, False)
+        self.dialog.grab_set()  # 模态对话框
+        
+        # 居中显示
+        self.dialog.transient(parent)
+        self.center_window()
+        
+        # 设置图标
+        try:
+            self.dialog.iconbitmap("icon.ico")
+        except:
+            pass
+        
+        # 创建界面
+        self.create_ui()
+        self.update_step_content()
+        
+        # 绑定关闭事件
+        self.dialog.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # 等待对话框关闭
+        self.dialog.wait_window()
+    
+    def center_window(self):
+        """居中显示窗口"""
+        self.dialog.update_idletasks()
+        screen_width = self.dialog.winfo_screenwidth()
+        screen_height = self.dialog.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 700) // 2
+        self.dialog.geometry(f"800x700+{x}+{y}")
+    
+    def create_ui(self):
+        """创建用户界面"""
+        # 主框架
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill="both", expand=True)
+        
+        # 顶部患者信息和进度
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        # 患者信息
+        patient_label = ttk.Label(header_frame, 
+                                 text=f"👤 患者: {self.patient_info['name']} ({self.patient_info['gender']}, {self.patient_info['age']}岁)",
+                                 font=('Microsoft YaHei UI', 12, 'bold'))
+        patient_label.pack(side="left")
+        
+        # 进度显示
+        self.progress_label = ttk.Label(header_frame, 
+                                       text=f"第 {self.current_step}/{self.total_steps} 步",
+                                       font=('Microsoft YaHei UI', 14, 'bold'),
+                                       foreground="#2196f3")
+        self.progress_label.pack(side="right")
+        
+        # 进度条
+        progress_frame = ttk.Frame(main_frame)
+        progress_frame.pack(fill="x", pady=(0, 20))
+        
+        self.step_progress = ttk.Progressbar(progress_frame, mode='determinate', 
+                                           length=600, style="TProgressbar")
+        self.step_progress.pack(fill="x")
+        self.step_progress['maximum'] = self.total_steps
+        self.step_progress['value'] = self.current_step
+        
+        # 步骤内容区域
+        content_frame = ttk.LabelFrame(main_frame, text="检测步骤", padding="20")
+        content_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # 步骤标题
+        self.step_title = ttk.Label(content_frame, 
+                                   text="",
+                                   font=('Microsoft YaHei UI', 16, 'bold'))
+        self.step_title.pack(pady=(0, 15))
+        
+        # 设备信息
+        device_frame = ttk.Frame(content_frame)
+        device_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(device_frame, text="🔧 检测设备:", 
+                 font=('Microsoft YaHei UI', 11, 'bold')).pack(side="left")
+        self.device_label = ttk.Label(device_frame, text="", 
+                                     font=('Microsoft YaHei UI', 11),
+                                     foreground="#ff5722")
+        self.device_label.pack(side="left", padx=(10, 0))
+        
+        ttk.Label(device_frame, text="⏱️ 检测时长:", 
+                 font=('Microsoft YaHei UI', 11, 'bold')).pack(side="left", padx=(30, 0))
+        self.duration_label = ttk.Label(device_frame, text="", 
+                                       font=('Microsoft YaHei UI', 11),
+                                       foreground="#4caf50")
+        self.duration_label.pack(side="left", padx=(10, 0))
+        
+        # 检测说明
+        desc_frame = ttk.LabelFrame(content_frame, text="检测说明", padding="15")
+        desc_frame.pack(fill="x", pady=(0, 20))
+        
+        self.description_text = tk.Text(desc_frame, height=4, width=70,
+                                       font=('Microsoft YaHei UI', 10),
+                                       wrap=tk.WORD, relief='solid', borderwidth=1,
+                                       bg='#f8f9fa', fg='#495057', state='disabled')
+        self.description_text.pack(fill="x")
+        
+        # 状态和计时区域
+        status_frame = ttk.LabelFrame(content_frame, text="检测状态", padding="15")
+        status_frame.pack(fill="x", pady=(0, 20))
+        
+        # 状态标签
+        self.status_label = ttk.Label(status_frame, text="⏸️ 等待开始", 
+                                     font=('Microsoft YaHei UI', 14, 'bold'),
+                                     foreground="#2196f3")
+        self.status_label.pack(pady=(0, 10))
+        
+        # 时间显示
+        time_frame = ttk.Frame(status_frame)
+        time_frame.pack(fill="x")
+        
+        ttk.Label(time_frame, text="已用时间:", 
+                 font=('Microsoft YaHei UI', 11)).pack(side="left")
+        self.elapsed_label = ttk.Label(time_frame, text="00:00", 
+                                      font=('Microsoft YaHei UI', 14, 'bold'),
+                                      foreground="#ff5722")
+        self.elapsed_label.pack(side="left", padx=(10, 30))
+        
+        ttk.Label(time_frame, text="剩余时间:", 
+                 font=('Microsoft YaHei UI', 11)).pack(side="left")
+        self.remaining_label = ttk.Label(time_frame, text="", 
+                                        font=('Microsoft YaHei UI', 14, 'bold'),
+                                        foreground="#4caf50")
+        self.remaining_label.pack(side="left", padx=(10, 0))
+        
+        # 时间进度条
+        self.time_progress = ttk.Progressbar(status_frame, mode='determinate', 
+                                           length=500, style="TProgressbar")
+        self.time_progress.pack(fill="x", pady=(10, 0))
+        
+        # 数据收集信息
+        data_frame = ttk.LabelFrame(content_frame, text="数据记录", padding="10")
+        data_frame.pack(fill="x", pady=(0, 15))
+        
+        self.data_info_label = ttk.Label(data_frame, 
+                                        text="📊 数据记录：未开始",
+                                        font=('Microsoft YaHei UI', 10))
+        self.data_info_label.pack()
+        
+        # 底部按钮区域
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        # 左侧导航按钮
+        nav_frame = ttk.Frame(button_frame)
+        nav_frame.pack(side="left")
+        
+        self.prev_btn = ttk.Button(nav_frame, text="◀️ 上一步", 
+                                  command=self.prev_step, state="disabled")
+        self.prev_btn.pack(side="left", padx=(0, 10))
+        
+        self.next_btn = ttk.Button(nav_frame, text="下一步 ▶️", 
+                                  command=self.next_step, state="disabled")
+        self.next_btn.pack(side="left")
+        
+        # 中间控制按钮
+        control_frame = ttk.Frame(button_frame)
+        control_frame.pack(side="none", expand=True)
+        
+        self.start_btn = ttk.Button(control_frame, text="🚀 开始检测", 
+                                   command=self.start_current_step,
+                                   style="Success.TButton")
+        self.start_btn.pack(side="left", padx=(0, 10))
+        
+        self.pause_btn = ttk.Button(control_frame, text="⏸️ 暂停", 
+                                   command=self.pause_current_step,
+                                   state="disabled")
+        self.pause_btn.pack(side="left", padx=(0, 10))
+        
+        self.finish_btn = ttk.Button(control_frame, text="✅ 完成此步", 
+                                    command=self.finish_current_step,
+                                    state="disabled")
+        self.finish_btn.pack(side="left")
+        
+        # 右侧退出按钮
+        exit_frame = ttk.Frame(button_frame)
+        exit_frame.pack(side="right")
+        
+        ttk.Button(exit_frame, text="跳过", 
+                  command=self.skip_current_step).pack(side="left", padx=(0, 10))
+        
+        ttk.Button(exit_frame, text="❌ 退出", 
+                  command=self.exit_wizard).pack(side="left")
+    
+    def update_step_content(self):
+        """更新当前步骤的内容显示"""
+        step_config = self.steps_config[self.current_step]
+        
+        # 更新进度标签
+        self.progress_label.config(text=f"第 {self.current_step}/{self.total_steps} 步")
+        self.step_progress['value'] = self.current_step
+        
+        # 更新步骤标题
+        self.step_title.config(text=f"第{self.current_step}步：{step_config['name']}")
+        
+        # 更新设备和时长信息
+        self.device_label.config(text=step_config['device'])
+        self.duration_label.config(text=f"{step_config['duration']}秒")
+        
+        # 更新描述
+        self.description_text.config(state='normal')
+        self.description_text.delete(1.0, tk.END)
+        self.description_text.insert(1.0, step_config['description'])
+        self.description_text.config(state='disabled')
+        
+        # 重置状态
+        self.status_label.config(text="⏸️ 等待开始", foreground="#2196f3")
+        self.elapsed_label.config(text="00:00")
+        self.remaining_label.config(text=f"{step_config['duration']//60:02d}:{step_config['duration']%60:02d}")
+        self.time_progress['maximum'] = step_config['duration']
+        self.time_progress['value'] = 0
+        self.data_info_label.config(text="📊 数据记录：未开始")
+        
+        # 更新按钮状态
+        self.prev_btn.config(state="normal" if self.current_step > 1 else "disabled")
+        self.next_btn.config(state="disabled")
+        self.start_btn.config(state="normal", text="🚀 开始检测")
+        self.pause_btn.config(state="disabled")
+        self.finish_btn.config(state="disabled")
+        
+        # 重置运行状态
+        self.is_running = False
+        self.start_time = None
+        self.auto_finish = step_config.get('auto_finish', False)
+    
+    def start_current_step(self):
+        """开始当前步骤"""
+        try:
+            self.is_running = True
+            self.start_time = datetime.now()
+            
+            # 更新数据库
+            session_steps = db.get_session_steps(self.session_info['id'])
+            step_id = None
+            for step in session_steps:
+                if step['step_number'] == self.current_step:
+                    step_id = step['id']
+                    break
+            
+            if step_id:
+                db.update_test_step_status(
+                    step_id, 
+                    'in_progress', 
+                    start_time=self.start_time.isoformat()
+                )
+            
+            # 更新界面状态
+            self.status_label.config(text="🔄 检测进行中", foreground="#ff9800")
+            self.start_btn.config(state="disabled")
+            self.pause_btn.config(state="normal")
+            self.finish_btn.config(state="normal")
+            self.data_info_label.config(text="📊 数据记录：进行中...")
+            
+            # 创建数据文件
+            self.create_data_file()
+            
+            # 启动计时器
+            self.start_timer()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"开始检测失败：{e}")
+            print(f"[ERROR] 开始检测失败: {e}")
+    
+    def pause_current_step(self):
+        """暂停当前步骤"""
+        if self.is_running:
+            self.is_running = False
+            self.pause_btn.config(text="▶️ 继续")
+            self.status_label.config(text="⏸️ 检测暂停", foreground="#2196f3")
+            self.data_info_label.config(text="📊 数据记录：已暂停")
+        else:
+            self.is_running = True
+            self.pause_btn.config(text="⏸️ 暂停")
+            self.status_label.config(text="🔄 检测进行中", foreground="#ff9800")
+            self.data_info_label.config(text="📊 数据记录：进行中...")
+    
+    def finish_current_step(self):
+        """完成当前步骤"""
+        try:
+            self.is_running = False
+            end_time = datetime.now()
+            
+            # 更新数据库
+            session_steps = db.get_session_steps(self.session_info['id'])
+            step_id = None
+            for step in session_steps:
+                if step['step_number'] == self.current_step:
+                    step_id = step['id']
+                    break
+            
+            if step_id:
+                data_file_path = getattr(self, 'current_data_file', None)
+                db.update_test_step_status(
+                    step_id, 
+                    'completed', 
+                    data_file_path=data_file_path,
+                    end_time=end_time.isoformat(),
+                    notes=f"手动完成，用时：{(end_time - self.start_time).seconds}秒"
+                )
+            
+            # 记录结果
+            self.step_results[self.current_step] = {
+                'status': 'completed',
+                'start_time': self.start_time,
+                'end_time': end_time,
+                'data_file': getattr(self, 'current_data_file', None)
+            }
+            
+            # 更新界面状态
+            self.status_label.config(text="✅ 步骤完成", foreground="#4caf50")
+            self.time_progress['value'] = self.time_progress['maximum']
+            self.data_info_label.config(text=f"📊 数据记录：已保存 {getattr(self, 'current_data_file', 'N/A')}")
+            
+            # 更新按钮状态
+            self.start_btn.config(state="disabled")
+            self.pause_btn.config(state="disabled")
+            self.finish_btn.config(state="disabled")
+            
+            # 启用下一步按钮或显示完成
+            if self.current_step < self.total_steps:
+                self.next_btn.config(state="normal")
+                messagebox.showinfo("步骤完成", f"第{self.current_step}步检测完成！\n\n请点击\"下一步\"继续。")
+            else:
+                messagebox.showinfo("检测完成", "🎉 所有检测步骤已完成！\n\n即将生成分析报告。")
+                self.complete_all_steps()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"完成步骤失败：{e}")
+            print(f"[ERROR] 完成步骤失败: {e}")
+    
+    def skip_current_step(self):
+        """跳过当前步骤"""
+        if messagebox.askyesno("确认跳过", f"确定要跳过第{self.current_step}步检测吗？"):
+            try:
+                # 更新数据库
+                session_steps = db.get_session_steps(self.session_info['id'])
+                step_id = None
+                for step in session_steps:
+                    if step['step_number'] == self.current_step:
+                        step_id = step['id']
+                        break
+                
+                if step_id:
+                    db.update_test_step_status(
+                        step_id, 
+                        'skipped', 
+                        notes="用户选择跳过此步骤"
+                    )
+                
+                # 记录结果
+                self.step_results[self.current_step] = {
+                    'status': 'skipped',
+                    'start_time': None,
+                    'end_time': None,
+                    'data_file': None
+                }
+                
+                # 停止当前计时
+                self.is_running = False
+                
+                # 下一步或完成
+                if self.current_step < self.total_steps:
+                    self.next_step()
+                else:
+                    self.complete_all_steps()
+                    
+            except Exception as e:
+                messagebox.showerror("错误", f"跳过步骤失败：{e}")
+                print(f"[ERROR] 跳过步骤失败: {e}")
+    
+    def prev_step(self):
+        """上一步"""
+        if self.current_step > 1:
+            if self.is_running:
+                if not messagebox.askyesno("确认", "当前步骤正在进行中，确定要返回上一步吗？"):
+                    return
+                self.is_running = False
+            
+            self.current_step -= 1
+            self.update_step_content()
+    
+    def next_step(self):
+        """下一步"""
+        if self.current_step < self.total_steps:
+            self.current_step += 1
+            self.update_step_content()
+    
+    def complete_all_steps(self):
+        """完成所有步骤"""
+        try:
+            # 更新会话状态
+            db.update_test_session_progress(
+                self.session_info['id'], 
+                self.total_steps, 
+                'completed'
+            )
+            
+            messagebox.showinfo("检测完成", 
+                              f"患者 {self.patient_info['name']} 的检测已全部完成！\n\n"
+                              f"完成步骤：{len([r for r in self.step_results.values() if r['status'] == 'completed'])}/{self.total_steps}\n"
+                              "是否要进行AI分析并生成报告？")
+            
+            self.dialog.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"完成检测失败：{e}")
+            print(f"[ERROR] 完成检测失败: {e}")
+    
+    def exit_wizard(self):
+        """退出向导"""
+        if self.is_running:
+            if not messagebox.askyesno("确认退出", "检测正在进行中，确定要退出吗？\n\n已完成的步骤将被保存。"):
+                return
+        
+        try:
+            # 保存当前进度
+            if self.step_results:
+                db.update_test_session_progress(
+                    self.session_info['id'], 
+                    max(self.step_results.keys()) if self.step_results else 0, 
+                    'interrupted'
+                )
+            
+            self.is_running = False
+            self.dialog.destroy()
+            
+        except Exception as e:
+            print(f"[ERROR] 退出向导失败: {e}")
+            self.dialog.destroy()
+    
+    def create_data_file(self):
+        """创建当前步骤的数据文件"""
+        try:
+            # 创建数据目录
+            data_dir = "detection_data"
+            if not os.path.exists(data_dir):
+                os.makedirs(data_dir)
+            
+            # 生成文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            step_config = self.steps_config[self.current_step]
+            filename = f"step{self.current_step}_{step_config['name']}_{timestamp}.csv"
+            self.current_data_file = os.path.join(data_dir, filename)
+            
+            # 创建CSV文件头
+            with open(self.current_data_file, 'w', encoding='utf-8') as f:
+                f.write("时间戳,步骤,设备,数据类型,数值\n")
+                f.write(f"{datetime.now().isoformat()},步骤{self.current_step},{step_config['device']},开始,0\n")
+            
+        except Exception as e:
+            print(f"[ERROR] 创建数据文件失败: {e}")
+            self.current_data_file = None
+    
+    def start_timer(self):
+        """启动计时器"""
+        def timer_thread():
+            while self.is_running and self.start_time:
+                try:
+                    # 计算已用时间
+                    elapsed = (datetime.now() - self.start_time).seconds
+                    elapsed_minutes = elapsed // 60
+                    elapsed_seconds = elapsed % 60
+                    
+                    # 计算剩余时间
+                    step_config = self.steps_config[self.current_step]
+                    total_duration = step_config['duration']
+                    remaining = max(0, total_duration - elapsed)
+                    remaining_minutes = remaining // 60
+                    remaining_seconds = remaining % 60
+                    
+                    # 在主线程中更新界面
+                    self.dialog.after(0, lambda: self.update_timer_display(
+                        elapsed_minutes, elapsed_seconds, remaining_minutes, remaining_seconds, elapsed, total_duration
+                    ))
+                    
+                    # 检查是否到时间且需要自动结束
+                    if elapsed >= total_duration and self.auto_finish:
+                        self.dialog.after(0, self.auto_finish_step)
+                        break
+                    
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    print(f"[ERROR] 计时器错误: {e}")
+                    break
+        
+        self.timer_thread = threading.Thread(target=timer_thread, daemon=True)
+        self.timer_thread.start()
+    
+    def update_timer_display(self, elapsed_min, elapsed_sec, remaining_min, remaining_sec, elapsed, total):
+        """更新计时器显示"""
+        try:
+            self.elapsed_label.config(text=f"{elapsed_min:02d}:{elapsed_sec:02d}")
+            self.remaining_label.config(text=f"{remaining_min:02d}:{remaining_sec:02d}")
+            
+            # 更新进度条
+            if total > 0:
+                progress = min(total, elapsed)
+                self.time_progress['value'] = progress
+            
+            # 如果时间到了，提示
+            if elapsed >= total:
+                self.status_label.config(text="⏰ 时间已到", foreground="#ff5722")
+                if not self.auto_finish:
+                    self.data_info_label.config(text="📊 数据记录：时间已到，可手动完成")
+            
+        except Exception as e:
+            print(f"[ERROR] 更新计时器显示失败: {e}")
+    
+    def auto_finish_step(self):
+        """自动完成步骤（用于定时步骤）"""
+        if self.is_running:
+            messagebox.showinfo("自动完成", f"第{self.current_step}步检测时间已到，自动完成！")
+            self.finish_current_step()
+    
+    def on_closing(self):
+        """窗口关闭事件"""
+        self.exit_wizard()
+
+
+# 测试代码
+if __name__ == "__main__":
+    from sarcopenia_database import db
+    
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+    
+    # 测试数据
+    patient_info = {
+        'id': 1,
+        'name': '测试患者',
+        'gender': '男',
+        'age': 65
+    }
+    
+    session_info = {
+        'id': 1,
+        'name': '测试会话'
+    }
+    
+    # 创建检测向导
+    wizard = DetectionWizardDialog(root, patient_info, session_info)
+    
+    root.destroy()
