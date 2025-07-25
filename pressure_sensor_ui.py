@@ -1467,8 +1467,8 @@ class PressureSensorUI:
         
         # AI分析日志 - 上半部分
         ai_log_frame = ttk.LabelFrame(log_container, text="Sarcneuro Edge AI 日志", 
-                                    padding=10, style='Hospital.TLabelframe')
-        ai_log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5), padx=0)
+                                    padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
+        ai_log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0), padx=0)
         
         # AI日志控制按钮 - 保持结构一致
         ai_btn_frame = ttk.Frame(ai_log_frame, style='Hospital.TFrame')
@@ -1491,8 +1491,8 @@ class PressureSensorUI:
         
         # 硬件设备日志 - 下半部分，带按钮
         hw_log_frame = ttk.LabelFrame(log_container, text="设备日志", 
-                                    padding=10, style='Hospital.TLabelframe')
-        hw_log_frame.grid(row=1, column=0, sticky="nsew", pady=(5, 0), padx=0)
+                                    padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
+        hw_log_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 0), padx=0)
         
         # 日志控制按钮 - 放在日志框标题旁边
         log_btn_frame = ttk.Frame(hw_log_frame, style='Hospital.TFrame')
@@ -1521,22 +1521,22 @@ class PressureSensorUI:
         status_frame.pack(fill=tk.X, pady=(15, 0))
         
         # 创建状态栏背景
-        status_bg = tk.Frame(status_frame, bg='#f8f9fa', height=35, relief='solid', bd=1)
+        status_bg = tk.Frame(status_frame, bg='#ffffff', height=35, relief='flat', bd=0)
         status_bg.pack(fill=tk.X)
         
         self.frame_count_label = tk.Label(status_bg, text="📦 接收帧数: 0",
-                                        bg='#f8f9fa', fg='#495057',
+                                        bg='#ffffff', fg='#495057',
                                         font=('Microsoft YaHei UI', 9))
         self.frame_count_label.pack(side=tk.LEFT, padx=(15, 0), pady=8)
         
         self.data_rate_label = tk.Label(status_bg, text="📈 数据速率: 0 帧/秒",
-                                      bg='#f8f9fa', fg='#495057',
+                                      bg='#ffffff', fg='#495057',
                                       font=('Microsoft YaHei UI', 9))
         self.data_rate_label.pack(side=tk.RIGHT, padx=(0, 15), pady=8)
         
         # 启动状态指示器
         self.status_bar = tk.Label(status_bg, text="🔄 正在启动系统...",
-                                 bg='#f8f9fa', fg='#007bff',
+                                 bg='#ffffff', fg='#007bff',
                                  font=('Microsoft YaHei UI', 9, 'bold'))
         self.status_bar.pack(side=tk.LEFT, padx=(30, 0), pady=8)
     
