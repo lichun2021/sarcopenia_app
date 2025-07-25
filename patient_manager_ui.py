@@ -98,7 +98,7 @@ class PatientManagerDialog:
         refresh_btn.pack(side="left")
         
         # 患者列表
-        list_frame = ttk.LabelFrame(main_frame, text="患者档案列表 (支持多选：Ctrl+点击 或 Shift+点击)", padding="5")
+        list_frame = ttk.LabelFrame(main_frame, text="患者档案列表", padding="5")
         list_frame.pack(fill="both", expand=True, pady=(0, 10))
         
         # 创建树状视图 - 支持多选
@@ -113,13 +113,13 @@ class PatientManagerDialog:
         
         # 滚动条
         tree_scrollbar_v = ttk.Scrollbar(list_frame, orient="vertical", command=self.patient_tree.yview)
-        tree_scrollbar_h = ttk.Scrollbar(list_frame, orient="horizontal", command=self.patient_tree.xview)
-        self.patient_tree.configure(yscrollcommand=tree_scrollbar_v.set, xscrollcommand=tree_scrollbar_h.set)
+        # tree_scrollbar_h = ttk.Scrollbar(list_frame, orient="horizontal", command=self.patient_tree.xview)
+        self.patient_tree.configure(yscrollcommand=tree_scrollbar_v.set)
         
         # 布局
         self.patient_tree.grid(row=0, column=0, sticky="nsew")
         tree_scrollbar_v.grid(row=0, column=1, sticky="ns")
-        tree_scrollbar_h.grid(row=1, column=0, sticky="ew")
+        # tree_scrollbar_h.grid(row=1, column=0, sticky="ew")
         
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
@@ -415,12 +415,12 @@ class PatientEditDialog:
         self.result = None
         self.patient_data = patient_data or {}
         
-        # 创建对话框窗口 - 增加窗口大小
+        # 创建对话框窗口 - 确保内容完整显示
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(f"📋 {title}")
-        self.dialog.geometry("700x650")  # 增加窗口大小
+        self.dialog.geometry("700x800")  # 进一步增加窗口高度
         self.dialog.resizable(True, True)
-        self.dialog.minsize(650, 600)  # 增加最小尺寸
+        self.dialog.minsize(650, 750)  # 增加最小尺寸
         self.dialog.grab_set()  # 模态对话框
         
         # 居中显示
@@ -443,8 +443,8 @@ class PatientEditDialog:
         """居中显示窗口"""
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() // 2) - (700 // 2)  # 更新居中计算
-        y = (self.dialog.winfo_screenheight() // 2) - (650 // 2)
-        self.dialog.geometry(f"700x650+{x}+{y}")
+        y = (self.dialog.winfo_screenheight() // 2) - (800 // 2)
+        self.dialog.geometry(f"700x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
@@ -453,26 +453,12 @@ class PatientEditDialog:
         style.configure('Title.TLabel', font=('Microsoft YaHei UI', 16, 'bold'))
         style.configure('Section.TLabelframe.Label', font=('Microsoft YaHei UI', 11, 'bold'))
         
-        # 主框架 - 使用滚动区域以防内容过多
-        main_canvas = tk.Canvas(self.dialog, bg='white')
-        scrollbar = ttk.Scrollbar(self.dialog, orient="vertical", command=main_canvas.yview)
-        scrollable_frame = ttk.Frame(main_canvas)
+        # 主框架 - 固定布局，无滚动条
+        main_frame = ttk.Frame(self.dialog, padding="30")
+        main_frame.pack(fill="both", expand=True)
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-        )
-        
-        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        main_canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # 打包滚动组件
-        main_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # 内容框架 - 增加内边距
-        content_frame = ttk.Frame(scrollable_frame, padding="30")
-        content_frame.pack(fill="both", expand=True)
+        # 内容框架
+        content_frame = main_frame
         
         # 标题区域
         title_frame = ttk.Frame(content_frame)
@@ -558,31 +544,25 @@ class PatientEditDialog:
         weight_entry = ttk.Entry(weight_frame, textvariable=self.weight_var, font=('Microsoft YaHei UI', 11))
         weight_entry.pack(fill="x", pady=(8, 0))
         
-        # 备注区域 - 增加高度
+        # 备注区域 - 优化设计
         notes_frame = ttk.LabelFrame(content_frame, text=" 📝 备注信息 ", 
                                     style='Section.TLabelframe', padding="25")
-        notes_frame.pack(fill="both", expand=True, pady=(0, 25))
+        notes_frame.pack(fill="x", pady=(0, 25))
         
-        # 备注输入 - 增加文本框高度
-        notes_container = ttk.Frame(notes_frame)
-        notes_container.pack(fill="both", expand=True)
-        
-        self.notes_text = tk.Text(notes_container, height=8, font=('Microsoft YaHei UI', 10),  # 增加高度
+        # 备注输入 - 减少高度，无滚动条
+        self.notes_text = tk.Text(notes_frame, height=4, font=('Microsoft YaHei UI', 10),
                                  wrap=tk.WORD, relief='solid', borderwidth=1,
                                  bg='#fafafa', selectbackground='#e3f2fd')
-        notes_scrollbar = ttk.Scrollbar(notes_container, orient="vertical", command=self.notes_text.yview)
-        self.notes_text.configure(yscrollcommand=notes_scrollbar.set)
         
         # 填入现有备注
         if self.patient_data.get('notes'):
             self.notes_text.insert(1.0, self.patient_data['notes'])
         
-        self.notes_text.pack(side="left", fill="both", expand=True)
-        notes_scrollbar.pack(side="right", fill="y")
+        self.notes_text.pack(fill="x", expand=False)
         
         # 底部信息和按钮区域
         bottom_frame = ttk.Frame(content_frame)
-        bottom_frame.pack(fill="x", pady=(15, 0))
+        bottom_frame.pack(fill="x", pady=(30, 0))
         
         # 必填项提示
         tip_frame = ttk.Frame(bottom_frame)
@@ -615,11 +595,10 @@ class PatientEditDialog:
         
         # 右侧按钮
         btn_container = ttk.Frame(button_frame)
-        btn_container.pack(side="right")
+        btn_container.pack(side="right", pady=(10, 0))
         
         # 取消按钮
-        cancel_btn = ttk.Button(btn_container, text="❌ 取消", command=self.cancel,
-                               style='Outline.TButton')
+        cancel_btn = ttk.Button(btn_container, text="❌ 取消", command=self.cancel)
         cancel_btn.pack(side="right", padx=(15, 0))
         
         # 确认按钮
@@ -631,12 +610,6 @@ class PatientEditDialog:
         self.dialog.bind('<Return>', lambda e: self.confirm())
         self.dialog.bind('<Escape>', lambda e: self.cancel())
         self.dialog.bind('<Control-s>', lambda e: self.confirm())
-        
-        # 鼠标滚轮绑定
-        def _on_mousewheel(event):
-            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        self.dialog.bind("<MouseWheel>", _on_mousewheel)
     
     def validate_input(self):
         """验证输入数据"""

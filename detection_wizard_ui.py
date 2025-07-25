@@ -223,50 +223,46 @@ class DetectionWizardDialog:
                                         font=('Microsoft YaHei UI', 10))
         self.data_info_label.pack()
         
-        # 底部按钮区域
+        # 底部按钮区域 - 使用简单的网格布局
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x")
+        button_frame.pack(fill="x", pady=(10, 0))
         
-        # 左侧导航按钮
-        nav_frame = ttk.Frame(button_frame)
-        nav_frame.pack(side="left")
+        # 第一行按钮
+        row1_frame = ttk.Frame(button_frame)
+        row1_frame.pack(fill="x", pady=(0, 5))
         
-        self.prev_btn = ttk.Button(nav_frame, text="◀️ 上一步", 
+        self.prev_btn = ttk.Button(row1_frame, text="◀️ 上一步", 
                                   command=self.prev_step, state="disabled")
         self.prev_btn.pack(side="left", padx=(0, 10))
         
-        self.next_btn = ttk.Button(nav_frame, text="下一步 ▶️", 
+        self.next_btn = ttk.Button(row1_frame, text="下一步 ▶️", 
                                   command=self.next_step, state="disabled")
-        self.next_btn.pack(side="left")
+        self.next_btn.pack(side="left", padx=(0, 10))
         
-        # 中间控制按钮
-        control_frame = ttk.Frame(button_frame)
-        control_frame.pack(side="none", expand=True)
+        ttk.Button(row1_frame, text="跳过", 
+                  command=self.skip_current_step).pack(side="right", padx=(10, 0))
         
-        self.start_btn = ttk.Button(control_frame, text="🚀 开始检测", 
+        ttk.Button(row1_frame, text="❌ 退出", 
+                  command=self.exit_wizard).pack(side="right")
+        
+        # 第二行按钮
+        row2_frame = ttk.Frame(button_frame)
+        row2_frame.pack(fill="x")
+        
+        self.start_btn = ttk.Button(row2_frame, text="🚀 开始检测", 
                                    command=self.start_current_step,
                                    style="Success.TButton")
         self.start_btn.pack(side="left", padx=(0, 10))
         
-        self.pause_btn = ttk.Button(control_frame, text="⏸️ 暂停", 
+        self.pause_btn = ttk.Button(row2_frame, text="⏸️ 暂停", 
                                    command=self.pause_current_step,
                                    state="disabled")
         self.pause_btn.pack(side="left", padx=(0, 10))
         
-        self.finish_btn = ttk.Button(control_frame, text="✅ 完成此步", 
+        self.finish_btn = ttk.Button(row2_frame, text="✅ 完成此步", 
                                     command=self.finish_current_step,
                                     state="disabled")
         self.finish_btn.pack(side="left")
-        
-        # 右侧退出按钮
-        exit_frame = ttk.Frame(button_frame)
-        exit_frame.pack(side="right")
-        
-        ttk.Button(exit_frame, text="跳过", 
-                  command=self.skip_current_step).pack(side="left", padx=(0, 10))
-        
-        ttk.Button(exit_frame, text="❌ 退出", 
-                  command=self.exit_wizard).pack(side="left")
     
     def update_step_content(self):
         """更新当前步骤的内容显示"""

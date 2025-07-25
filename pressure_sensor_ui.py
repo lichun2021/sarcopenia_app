@@ -39,7 +39,7 @@ class PressureSensorUI:
     def __init__(self, root):
         self.root = root
         self.root.title("🔬 智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
-        self.root.geometry("1600x1000")
+        self.root.geometry("1600x1100")
         self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
         
         # 设置窗口图标
@@ -591,97 +591,101 @@ class PressureSensorUI:
         """显示新建档案对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.title("新建检测档案")
-        dialog.geometry("600x500")
+        dialog.geometry("680x480")
         dialog.resizable(False, False)
         dialog.grab_set()
         
         # 居中显示
         dialog.transient(self.root)
-        x = self.root.winfo_x() + (self.root.winfo_width() - 600) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 500) // 2
-        dialog.geometry(f"600x500+{x}+{y}")
+        x = self.root.winfo_x() + (self.root.winfo_width() - 680) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 480) // 2
+        dialog.geometry(f"680x480+{x}+{y}")
         
         # 主框架
-        main_frame = ttk.Frame(dialog, padding=25)
+        main_frame = ttk.Frame(dialog, padding=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # 标题
         title_label = ttk.Label(main_frame, text="📁 新建检测档案", 
-                               font=("Arial", 16, "bold"))
+                               font=("Microsoft YaHei", 16, "bold"))
         title_label.pack(pady=(0, 20))
         
         # 基本信息框架
         info_frame = ttk.LabelFrame(main_frame, text="基本信息", padding=15)
         info_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # 姓名
-        ttk.Label(info_frame, text="姓名:", font=("Microsoft YaHei", 10)).grid(
-            row=0, column=0, sticky="e", padx=(0, 10), pady=5)
-        name_entry = ttk.Entry(info_frame, width=20, font=("Microsoft YaHei", 10))
-        name_entry.grid(row=0, column=1, sticky="w", pady=5)
+        # 配置网格权重，使布局更整齐
+        info_frame.grid_columnconfigure(1, weight=1)
+        info_frame.grid_columnconfigure(3, weight=1)
         
-        # 年龄
-        ttk.Label(info_frame, text="年龄:", font=("Microsoft YaHei", 10)).grid(
-            row=0, column=2, sticky="e", padx=(20, 10), pady=5)
-        age_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
-        age_entry.grid(row=0, column=3, sticky="w", pady=5)
+        # 第一行：姓名和年龄
+        ttk.Label(info_frame, text="姓名 *:", font=("Microsoft YaHei", 10, "bold")).grid(
+            row=0, column=0, sticky="e", padx=(0, 10), pady=8)
+        name_entry = ttk.Entry(info_frame, width=18, font=("Microsoft YaHei", 10))
+        name_entry.grid(row=0, column=1, sticky="ew", padx=(0, 20), pady=8)
         
-        # 性别
-        ttk.Label(info_frame, text="性别:", font=("Microsoft YaHei", 10)).grid(
-            row=1, column=0, sticky="e", padx=(0, 10), pady=5)
+        ttk.Label(info_frame, text="年龄 *:", font=("Microsoft YaHei", 10, "bold")).grid(
+            row=0, column=2, sticky="e", padx=(0, 10), pady=8)
+        age_entry = ttk.Entry(info_frame, width=12, font=("Microsoft YaHei", 10))
+        age_entry.grid(row=0, column=3, sticky="w", pady=8)
+        
+        # 第二行：性别和身高
+        ttk.Label(info_frame, text="性别 *:", font=("Microsoft YaHei", 10, "bold")).grid(
+            row=1, column=0, sticky="e", padx=(0, 10), pady=8)
         gender_var = tk.StringVar(value="男")
         gender_frame = ttk.Frame(info_frame)
-        gender_frame.grid(row=1, column=1, sticky="w", pady=5)
+        gender_frame.grid(row=1, column=1, sticky="w", pady=8)
         ttk.Radiobutton(gender_frame, text="男", variable=gender_var, value="男").pack(side=tk.LEFT)
-        ttk.Radiobutton(gender_frame, text="女", variable=gender_var, value="女").pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Radiobutton(gender_frame, text="女", variable=gender_var, value="女").pack(side=tk.LEFT, padx=(15, 0))
         
-        # 身高体重
-        ttk.Label(info_frame, text="身高(cm):", font=("Microsoft YaHei", 10)).grid(
-            row=1, column=2, sticky="e", padx=(20, 10), pady=5)
-        height_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
-        height_entry.grid(row=1, column=3, sticky="w", pady=5)
+        ttk.Label(info_frame, text="身高:", font=("Microsoft YaHei", 10)).grid(
+            row=1, column=2, sticky="e", padx=(0, 10), pady=8)
+        height_entry = ttk.Entry(info_frame, width=12, font=("Microsoft YaHei", 10))
+        height_entry.grid(row=1, column=3, sticky="w", pady=8)
         
-        ttk.Label(info_frame, text="体重(kg):", font=("Microsoft YaHei", 10)).grid(
-            row=2, column=0, sticky="e", padx=(0, 10), pady=5)
-        weight_entry = ttk.Entry(info_frame, width=10, font=("Microsoft YaHei", 10))
-        weight_entry.grid(row=2, column=1, sticky="w", pady=5)
+        # 第三行：体重和联系方式
+        ttk.Label(info_frame, text="体重:", font=("Microsoft YaHei", 10)).grid(
+            row=2, column=0, sticky="e", padx=(0, 10), pady=8)
+        weight_entry = ttk.Entry(info_frame, width=18, font=("Microsoft YaHei", 10))
+        weight_entry.grid(row=2, column=1, sticky="ew", padx=(0, 20), pady=8)
         
-        # 联系方式
         ttk.Label(info_frame, text="联系方式:", font=("Microsoft YaHei", 10)).grid(
-            row=2, column=2, sticky="e", padx=(20, 10), pady=5)
-        contact_entry = ttk.Entry(info_frame, width=15, font=("Microsoft YaHei", 10))
-        contact_entry.grid(row=2, column=3, sticky="w", pady=5)
+            row=2, column=2, sticky="e", padx=(0, 10), pady=8)
+        contact_entry = ttk.Entry(info_frame, width=20, font=("Microsoft YaHei", 10))
+        contact_entry.grid(row=2, column=3, sticky="ew", pady=8)
         
         # 检测配置框架
         config_frame = ttk.LabelFrame(main_frame, text="检测配置", padding=15)
         config_frame.pack(fill=tk.X, pady=(0, 15))
         
+        # 配置网格权重
+        config_frame.grid_columnconfigure(1, weight=1)
+        config_frame.grid_columnconfigure(3, weight=1)
+        
         # 检测模式
-        ttk.Label(config_frame, text="检测模式:", font=("Microsoft YaHei", 10)).grid(
-            row=0, column=0, sticky="e", padx=(0, 10), pady=5)
+        ttk.Label(config_frame, text="检测模式:", font=("Microsoft YaHei", 10, "bold")).grid(
+            row=0, column=0, sticky="e", padx=(0, 10), pady=8)
         mode_var = tk.StringVar(value="标准检测")
         mode_combo = ttk.Combobox(config_frame, textvariable=mode_var, width=18,
                                  values=["标准检测", "快速检测", "详细检测"], state="readonly")
-        mode_combo.grid(row=0, column=1, sticky="w", pady=5)
+        mode_combo.grid(row=0, column=1, sticky="ew", padx=(0, 20), pady=8)
         
         # 检测设备
-        ttk.Label(config_frame, text="检测设备:", font=("Microsoft YaHei", 10)).grid(
-            row=0, column=2, sticky="e", padx=(20, 10), pady=5)
+        ttk.Label(config_frame, text="检测设备:", font=("Microsoft YaHei", 10, "bold")).grid(
+            row=0, column=2, sticky="e", padx=(0, 10), pady=8)
         device_info = self.device_manager.get_current_device_info() if self.device_configured else None
         device_name = f"{device_info['icon']} {device_info['name']}" if device_info else "未配置设备"
         device_label = ttk.Label(config_frame, text=device_name, 
                                 font=("Microsoft YaHei", 10), foreground="blue")
-        device_label.grid(row=0, column=3, sticky="w", pady=5)
+        device_label.grid(row=0, column=3, sticky="w", pady=8)
         
-        # 备注框架
+        # 备注框架 - 简化设计
         notes_frame = ttk.LabelFrame(main_frame, text="备注信息", padding=15)
         notes_frame.pack(fill=tk.X, pady=(0, 20))
         
-        notes_text = tk.Text(notes_frame, height=4, width=60, font=("Microsoft YaHei", 10))
-        notes_scrollbar = ttk.Scrollbar(notes_frame, orient="vertical", command=notes_text.yview)
-        notes_text.configure(yscrollcommand=notes_scrollbar.set)
-        notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        notes_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # 备注文本框 - 固定高度，无滚动条
+        notes_text = tk.Text(notes_frame, height=2, font=("Microsoft YaHei", 10))
+        notes_text.pack(fill=tk.X, expand=False)
         
         # 按钮框架
         btn_frame = ttk.Frame(main_frame)
@@ -2874,6 +2878,18 @@ class PressureSensorUI:
     def on_closing(self):
         """窗口关闭事件"""
         try:
+            # 重置检测状态，避免影响下次启动
+            self.detection_in_progress = False
+            self.current_session = None
+            self._selecting_for_detection = False
+            
+            # 重置按钮状态
+            if hasattr(self, 'start_detection_btn'):
+                try:
+                    self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+                except:
+                    pass
+            
             # 停止肌少症分析服务
             if hasattr(self, 'sarcneuro_panel') and self.sarcneuro_panel:
                 try:
@@ -2907,6 +2923,9 @@ class PressureSensorUI:
     def select_patient_for_detection(self):
         """为检测选择患者"""
         try:
+            # 标记正在为检测选择患者，避免重复弹窗
+            self._selecting_for_detection = True
+            
             selector = PatientManagerDialog(self.root, title="选择患者档案", select_mode=True)
             if selector.selected_patient:
                 self.current_patient = selector.selected_patient
@@ -2917,6 +2936,9 @@ class PressureSensorUI:
             messagebox.showerror("错误", f"选择患者失败：{e}")
             print(f"[ERROR] 选择患者错误: {e}")
             return False
+        finally:
+            # 清除标记
+            self._selecting_for_detection = False
     
     def update_patient_status(self):
         """更新患者状态显示"""
@@ -2924,8 +2946,10 @@ class PressureSensorUI:
             patient_info = f"患者: {self.current_patient['name']} ({self.current_patient['gender']}, {self.current_patient['age']}岁)"
             self.status_label.config(text=patient_info, foreground="#28a745")
             
-            # 延迟检查是否有未完成检测（避免对话框重叠）
-            self.root.after(500, self.check_and_resume_detection)
+            # 只在非检测流程中检查未完成检测，避免重复弹窗
+            # 通过标记来区分是否是从开始检测按钮触发的患者选择
+            if not getattr(self, '_selecting_for_detection', False):
+                self.root.after(500, self.check_and_resume_detection)
         else:
             self.status_label.config(text="⚙️ 未选择患者", foreground="#ff6b35")
     
@@ -3126,10 +3150,24 @@ class PressureSensorUI:
             sessions = db.get_patient_test_sessions(self.current_patient['id'])
             unfinished_sessions = [s for s in sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
             
-            if unfinished_sessions:
-                if messagebox.askyesno("发现未完成检测", 
-                                     f"患者 {self.current_patient['name']} 有 {len(unfinished_sessions)} 个未完成的检测会话。\n\n是否要恢复检测？"):
-                    self.resume_detection()
+            # 只有确实存在未完成的检测会话才提示
+            if unfinished_sessions and len(unfinished_sessions) > 0:
+                # 检查是否有真正开始的步骤（避免对新创建但未开始的会话误报）
+                has_started_steps = False
+                for session in unfinished_sessions:
+                    steps = db.get_session_steps(session['id'])
+                    for step in steps:
+                        if step['status'] in ['in_progress', 'completed']:
+                            has_started_steps = True
+                            break
+                    if has_started_steps:
+                        break
+                
+                # 只有真正开始过步骤的会话才提示恢复
+                if has_started_steps:
+                    if messagebox.askyesno("发现未完成检测", 
+                                         f"患者 {self.current_patient['name']} 有 {len(unfinished_sessions)} 个未完成的检测会话。\n\n是否要恢复检测？"):
+                        self.resume_detection()
                     
         except Exception as e:
             print(f"[ERROR] 检查恢复检测失败: {e}")
@@ -3144,17 +3182,29 @@ class PressureSensorUI:
             # 创建检测向导
             wizard = DetectionWizardDialog(self.root, self.current_patient, self.current_session)
             
-            # 检测向导关闭后，检查检测状态
+            # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
+            self.detection_in_progress = False
+            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            
+            # 检查检测状态
             self.check_detection_completion()
                 
         except Exception as e:
             messagebox.showerror("错误", f"显示检测向导失败：{e}")
             print(f"[ERROR] 显示检测向导失败: {e}")
+            # 即使出错也要重置状态
+            self.detection_in_progress = False
+            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
     
     def check_detection_completion(self):
         """检查检测完成状态"""
         try:
+            # 无论如何都要重置按钮状态，确保用户可以重新开始
+            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            
             if not self.current_session:
+                # 没有当前会话，重置状态
+                self.detection_in_progress = False
                 return
             
             # 获取会话信息
@@ -3171,9 +3221,6 @@ class PressureSensorUI:
                     self.detection_in_progress = False
                     self.current_session = None
                     
-                    # 重置按钮状态
-                    self.start_detection_btn.config(text="🚀 开始检测", state="normal")
-                    
                     # 提供AI分析选项
                     if messagebox.askyesno("检测完成", 
                                          f"患者 {self.current_patient['name']} 的检测已完成！\n\n"
@@ -3181,15 +3228,17 @@ class PressureSensorUI:
                         self.start_ai_analysis_for_session(current_session['id'])
                 
                 elif current_session['status'] == 'interrupted':
-                    # 检测被中断，保持状态以便后续恢复
-                    self.detection_in_progress = True
-                    self.start_detection_btn.config(text="🚀 开始检测", state="normal")
-                    self.add_log("检测已暂停，可稍后继续")
+                    # 检测被中断，但仍可以重新开始
+                    self.detection_in_progress = False  # 重置状态，允许重新开始
+                    self.add_log("检测已暂停，可重新开始")
                 
                 else:
                     # 其他状态，重置
                     self.detection_in_progress = False
-                    self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            else:
+                # 找不到会话，重置状态
+                self.detection_in_progress = False
+                self.current_session = None
             
         except Exception as e:
             print(f"[ERROR] 检查检测完成状态失败: {e}")
