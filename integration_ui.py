@@ -100,7 +100,7 @@ class SarcopeniaAnalysisPanel:
         duration_spin.pack(side="left", padx=(5, 15))
         
         # 收集状态
-        self.collection_status_var = tk.StringVar(value="📊 准备收集")
+        self.collection_status_var = tk.StringVar(value="准备收集")
         ttk.Label(collect_grid, textvariable=self.collection_status_var).pack(side="left", padx=(0, 15))
         
         # 收集按钮
@@ -118,10 +118,10 @@ class SarcopeniaAnalysisPanel:
         action_frame = ttk.Frame(analysis_frame)
         action_frame.pack(fill="x", pady=(0, 10))
         
-        ttk.Button(action_frame, text="🔍 立即分析", command=self.analyze_current_data, 
+        ttk.Button(action_frame, text="立即分析", command=self.analyze_current_data, 
                   style="Accent.TButton").pack(side="left", padx=(0, 10))
-        ttk.Button(action_frame, text="📁 加载CSV", command=self.load_csv_file).pack(side="left", padx=(0, 10))
-        ttk.Button(action_frame, text="💾 保存数据", command=self.save_collected_data).pack(side="left", padx=(0, 10))
+        ttk.Button(action_frame, text="加载CSV", command=self.load_csv_file).pack(side="left", padx=(0, 10))
+        ttk.Button(action_frame, text="保存数据", command=self.save_collected_data).pack(side="left", padx=(0, 10))
         
         # 结果显示框架
         result_frame = ttk.LabelFrame(analysis_frame, text="分析结果", padding="5")
@@ -146,7 +146,7 @@ class SarcopeniaAnalysisPanel:
 3. 开始数据收集 (建议30-60秒)
 4. 点击"立即分析"进行智能评估
 
-💡 提示:
+提示:
 - 确保患者站立在压力传感器上
 - 数据收集期间保持静止或正常步态
 - 分析结果包含步态分析、平衡评估和风险等级
@@ -239,10 +239,10 @@ class SarcopeniaAnalysisPanel:
         self.collection_start_time = time.time()
         self.progress_var.set(0)
         
-        self.collection_status_var.set("📊 正在收集数据...")
+        self.collection_status_var.set("正在收集数据...")
         self.collect_btn.config(state="disabled")
         
-        self.log_result(f"🎯 开始收集数据，预计时长: {self.collection_duration}秒")
+        self.log_result(f"开始收集数据，预计时长: {self.collection_duration}秒")
         
         # 启动收集线程
         threading.Thread(target=self.collection_worker, daemon=True).start()
@@ -275,12 +275,12 @@ class SarcopeniaAnalysisPanel:
             
             if len(self.collected_frames) > 0:
                 quality = self.converter.estimate_quality_metrics(self.collected_frames)
-                self.log_result(f"📈 数据收集完成！")
+                self.log_result(f"数据收集完成！")
                 self.log_result(f"   - 总帧数: {len(self.collected_frames)}")
                 self.log_result(f"   - 数据质量: {quality['quality']} ({quality['score']}分)")
                 self.log_result(f"   - 有效帧率: {quality['validity_ratio']}%")
             else:
-                self.log_result("⚠️ 未收集到有效数据，请检查传感器连接")
+                self.log_result("未收集到有效数据，请检查传感器连接")
                 
         except Exception as e:
             self.is_collecting = False
@@ -292,9 +292,9 @@ class SarcopeniaAnalysisPanel:
         """停止数据收集"""
         if self.is_collecting:
             self.is_collecting = False
-            self.collection_status_var.set("⏹️ 已停止收集")
+            self.collection_status_var.set("已停止收集")
             self.collect_btn.config(state="normal")
-            self.log_result("⏹️ 数据收集已停止")
+            self.log_result("数据收集已停止")
     
     def analyze_current_data(self):
         """分析当前收集的数据"""
@@ -316,7 +316,7 @@ class SarcopeniaAnalysisPanel:
         # 在后台线程中进行分析
         def analyze_in_thread():
             try:
-                self.log_result("🔍 开始智能分析...")
+                self.log_result("开始智能分析...")
                 self.log_result(f"   - 患者: {patient_info['name']}, {patient_info['age']}岁")
                 self.log_result(f"   - 数据帧数: {len(self.collected_frames)}")
                 
@@ -377,7 +377,7 @@ class SarcopeniaAnalysisPanel:
             # 患者信息
             self.result_text.insert(tk.END, f"👤 患者信息: {result_data.get('patient_name', 'N/A')}\n")
             self.result_text.insert(tk.END, f"📋 测试类型: {result_data.get('test_type', 'N/A')}\n")
-            self.result_text.insert(tk.END, f"⏱️ 分析时间: {result_data.get('processing_time', 0):.0f}ms\n\n")
+            self.result_text.insert(tk.END, f"分析时间: {result_data.get('processing_time', 0):.0f}ms\n\n")
             
             # 核心评估结果
             overall_score = result_data.get('overall_score', 0)
@@ -394,9 +394,9 @@ class SarcopeniaAnalysisPanel:
             
             risk_display = risk_info.get(risk_level, {'color': '⚪', 'desc': '未知'})
             
-            self.result_text.insert(tk.END, f"📊 综合评分: {overall_score:.1f}/100\n")
-            self.result_text.insert(tk.END, f"⚠️ 风险等级: {risk_display['color']} {risk_display['desc']} ({risk_level})\n")
-            self.result_text.insert(tk.END, f"🎯 置信度: {confidence:.1%}\n\n")
+            self.result_text.insert(tk.END, f"综合评分: {overall_score:.1f}/100\n")
+            self.result_text.insert(tk.END, f"风险等级: {risk_display['color']} {risk_display['desc']} ({risk_level})\n")
+            self.result_text.insert(tk.END, f"置信度: {confidence:.1%}\n\n")
             
             # 医学解释
             interpretation = result_data.get('interpretation', '无解释信息')
@@ -405,7 +405,7 @@ class SarcopeniaAnalysisPanel:
             # 异常检测
             abnormalities = result_data.get('abnormalities', [])
             if abnormalities:
-                self.result_text.insert(tk.END, f"⚠️ 检测到的异常 ({len(abnormalities)}项):\n")
+                self.result_text.insert(tk.END, f"检测到的异常 ({len(abnormalities)}项):\n")
                 for i, abnormality in enumerate(abnormalities, 1):
                     self.result_text.insert(tk.END, f"   {i}. {abnormality}\n")
                 self.result_text.insert(tk.END, "\n")
@@ -426,7 +426,7 @@ class SarcopeniaAnalysisPanel:
                 # 平衡分析
                 balance = detailed.get('balance_analysis', {})
                 if balance:
-                    self.result_text.insert(tk.END, "⚖️ 平衡分析结果:\n")
+                    self.result_text.insert(tk.END, "平衡分析结果:\n")
                     self.result_text.insert(tk.END, f"   - 压力中心位移: {balance.get('cop_displacement', 0):.2f} mm\n")
                     self.result_text.insert(tk.END, f"   - 摆动面积: {balance.get('sway_area', 0):.2f} mm²\n")
                     self.result_text.insert(tk.END, f"   - 摆动速度: {balance.get('sway_velocity', 0):.2f} mm/s\n")
@@ -436,7 +436,7 @@ class SarcopeniaAnalysisPanel:
             # 康复建议
             recommendations = result_data.get('recommendations', [])
             if recommendations:
-                self.result_text.insert(tk.END, f"💡 康复建议 ({len(recommendations)}项):\n")
+                self.result_text.insert(tk.END, f"康复建议 ({len(recommendations)}项):\n")
                 for i, recommendation in enumerate(recommendations, 1):
                     self.result_text.insert(tk.END, f"   {i}. {recommendation}\n")
                 self.result_text.insert(tk.END, "\n")
@@ -480,7 +480,7 @@ class SarcopeniaAnalysisPanel:
             
             if frames:
                 self.collected_frames = frames
-                self.collection_status_var.set(f"📁 已加载 {len(frames)} 帧")
+                self.collection_status_var.set(f"已加载 {len(frames)} 帧")
                 quality = self.converter.estimate_quality_metrics(frames)
                 self.log_result(f"✅ 成功加载CSV文件: {Path(file_path).name}")
                 self.log_result(f"   - 有效帧数: {len(frames)}")
@@ -512,7 +512,7 @@ class SarcopeniaAnalysisPanel:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(csv_data)
             
-            self.log_result(f"💾 数据已保存到: {Path(file_path).name}")
+            self.log_result(f"数据已保存到: {Path(file_path).name}")
             messagebox.showinfo("保存成功", f"数据已保存到:\n{file_path}")
             
         except Exception as e:

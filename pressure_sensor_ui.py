@@ -38,8 +38,23 @@ class PressureSensorUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("🔬 智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
-        self.root.geometry("1600x1100")
+        self.root.title("智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
+        
+        # 先隐藏窗口，避免初始化时的闪烁
+        self.root.withdraw()
+        
+        # 禁用窗口调整大小，减少初始化时的布局计算
+        self.root.resizable(False, False)
+        
+        # 设置窗口大小和居中显示
+        window_width = 1600
+        window_height = 1100
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
         self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
         
         # 设置窗口图标
@@ -84,6 +99,10 @@ class PressureSensorUI:
         self.setup_ui()
         self.setup_visualizer()
         
+        # UI完成后显示窗口，并重新启用调整大小
+        self.root.resizable(True, True)
+        self.root.deiconify()
+        
         # 启动更新循环
         self.start_update_loop()
         
@@ -94,7 +113,8 @@ class PressureSensorUI:
         self.integrate_sarcneuro_analysis()
         
         # 检测并加载已保存的配置，如果没有则显示配置对话框
-        self.root.after(500, self.auto_load_or_show_config)
+        # 增加延迟确保UI完全准备好
+        self.root.after(800, self.auto_load_or_show_config)
     
     def auto_load_or_show_config(self):
         """自动加载已保存的配置，如果没有则显示配置对话框"""
@@ -217,6 +237,9 @@ class PressureSensorUI:
                                 # 向后兼容
                                 if hasattr(self.serial_interface, 'set_walkway_mode'):
                                     self.serial_interface.set_walkway_mode(True)
+                        
+                        # 重要：根据设备配置自动调整热力图大小
+                        self.auto_config_array_size(array_size)
                     
                     self.on_device_changed(None)
                 
@@ -308,8 +331,12 @@ class PressureSensorUI:
                 
                 # 获取串口接口并设置步道模式
                 self.serial_interface = self.device_manager.get_current_serial_interface()
-                if device_configs[first_device_id]['array_size'] == '32x96':
+                array_size = device_configs[first_device_id]['array_size']
+                if array_size == '32x96':
                     self.serial_interface.set_walkway_mode(True)
+                
+                # 重要：根据设备配置自动调整热力图大小
+                self.auto_config_array_size(array_size)
                 
                 self.on_device_changed(None)
                 
@@ -428,7 +455,7 @@ class PressureSensorUI:
                         # 多端口设备
                         if hasattr(self.serial_interface, 'set_device_mode'):
                             self.serial_interface.set_device_mode(device_type)
-                        self.log_message(f"🚶 已启用多端口模式（{com_ports}个端口数据合并）")
+                        self.log_message(f"[OK] 已启用多端口模式（{com_ports}个端口数据合并）")
                         # 显示调序按钮
                         self.order_button.grid()
                     elif array_size == '32x96' or device_type == 'walkway':
@@ -437,7 +464,7 @@ class PressureSensorUI:
                             self.serial_interface.set_walkway_mode(True)
                         elif hasattr(self.serial_interface, 'set_device_mode'):
                             self.serial_interface.set_device_mode(device_type)
-                        self.log_message("🚶 已启用步道模式（3帧数据合并）")
+                        self.log_message("[OK] 已启用步道模式（3帧数据合并）")
                         # 显示调序按钮
                         self.order_button.grid()
                     else:
@@ -450,7 +477,7 @@ class PressureSensorUI:
                         self.order_button.grid_remove()
                     
                     # 更新标题
-                    self.root.title(f"🔬 智能肌少症检测系统 - {device_info['icon']} {device_info['name']}")
+                    self.root.title(f"智能肌少症检测系统 - {device_info['icon']} {device_info['name']}")
                     
                     # 显示切换日志
                     com_ports = device_info.get('com_ports', 1)
@@ -592,7 +619,7 @@ class PressureSensorUI:
                 # 用户选择取消，停止重连
                 self.auto_reconnect_enabled = False
                 self.stop_connection()
-                self.log_message("🔌 用户取消重连，已停止自动连接")
+                self.log_message("[INFO] 用户取消重连，已停止自动连接")
         
         # 在主线程中显示警告
         self.root.after(0, show_warning)
@@ -687,8 +714,8 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加分析菜单项
-        analysis_menu.add_command(label="📄 导入CSV生成PDF报告", command=self.import_csv_for_analysis)
-        analysis_menu.add_command(label="📊 实时数据生成PDF报告", command=self.generate_pdf_report)
+        analysis_menu.add_command(label="📄 导入CSV生成报告", command=self.import_csv_for_analysis)
+        analysis_menu.add_command(label="📊 实时数据生成报告", command=self.generate_pdf_report)
         analysis_menu.add_separator()
         analysis_menu.add_command(label="📈 查看分析历史", command=self.show_analysis_history)
         analysis_menu.add_command(label="🤖 AI服务状态", command=self.show_service_status)
@@ -890,25 +917,25 @@ class PressureSensorUI:
         
         # 操作帮助内容
         help_content = """
-❓ 系统操作指南
+系统操作指南
 
 本指南将帮助您快速掌握智能肌少症检测系统的各项功能和操作方法。
 
 [START] 快速开始
 
-1️⃣ 首次使用系统
+1. 首次使用系统
    • 启动程序后会自动弹出设备配置对话框
    • 选择您的检测设备类型（32x32, 32x64, 32x96）
    • 配置COM端口和设备参数
    • 点击"确认配置"完成初始化
 
-2️⃣ 设备连接
+2. 设备连接
    • 确保压力传感器设备已正确连接电脑
    • 检查USB或串口线连接状态
    • 系统会自动检测并连接配置的设备
-   • 连接成功后状态栏显示"🟢 已连接"
+   • 连接成功后状态栏显示"已连接"
 
-🎛️ 主界面操作
+主界面操作
 
 [DATA] 热力图显示区域
    • 实时显示压力传感器数据的热力图
@@ -916,59 +943,59 @@ class PressureSensorUI:
    • 支持32x32, 32x64, 32x96多种阵列规格
    • 自动适配显示比例和颜色映射
 
-📈 实时统计面板
+实时统计面板
    • 最大值：当前帧的最大压力值
    • 最小值：当前帧的最小压力值  
    • 平均值：所有传感器点的平均压力
    • 标准差：压力分布的离散程度
    • 有效点：非零压力点的数量
 
-📝 数据日志区域
+数据日志区域
    • 实时显示接收到的数据帧信息
    • 包含时间戳、帧编号、统计数据
-   • JQ变换标识（✨表示已应用，[DATA]表示原始数据）
+   • JQ变换标识（已应用或原始数据）
    • 支持日志清除和保存功能
 
-🎛️ 控制面板功能
+控制面板功能
 
-🔧 设备管理
+设备管理
    • 设备选择：从下拉菜单选择当前使用的设备
    • 设备配置：重新配置设备参数和端口设置
    • 自动连接：系统会自动连接选择的设备
    • 连接监控：自动检测连接状态并尝试重连
 
-⚙️ 功能按钮
-   • 📸 保存快照：保存当前热力图为PNG图片文件
+功能按钮
+   • 保存快照：保存当前热力图为PNG图片文件
    • [REFRESH] 调序：调整32x96步道模式的段显示顺序
-   • 💾 保存日志：将当前日志内容保存为文本文件
-   • 🗑️ 清除日志：清空日志显示区域
+   • 保存日志：将当前日志内容保存为文本文件
+   • 清除日志：清空日志显示区域
 
-🍽️ 菜单栏功能
+菜单栏功能
 
 [INFO] 检测菜单
-   • 📁 新建档案：创建新的检测档案，录入被检测者信息
+   • 新建档案：创建新的检测档案，录入被检测者信息
    • [INFO] 检测流程：查看标准化7步检测流程说明
 
-🛠️ 其他菜单
-   • ❓ 操作帮助：查看本操作指南（当前页面）
-   • ℹ️ 关于系统：查看系统版本和开发信息
+其他菜单
+   • 操作帮助：查看本操作指南（当前页面）
+   • 关于系统：查看系统版本和开发信息
 
 [SCAN] 设备配置详解
 
-📱 支持的设备类型
+支持的设备类型
    • 32x32阵列：标准检测模式，适用于静态平衡测试
    • 32x64阵列：扩展检测模式，适用于动态平衡测试
    • 32x96阵列：步道模式，适用于步态分析和行走测试
 
-🔌 端口配置
+端口配置
    • 自动检测：系统会扫描可用的COM端口
    • 手动选择：可以指定特定的COM端口
    • 波特率：默认1,000,000 bps（无需修改）
    • 连接测试：配置时会自动测试端口连通性
 
-⚡ 性能优化设置
+性能优化设置
 
-🏃 运行模式
+运行模式
    • 标准模式：run_ui.py - 20 FPS，平衡性能与稳定性
    • 快速模式：run_ui_fast.py - 100 FPS，高刷新率显示
    • 极速模式：run_ui_ultra.py - 200 FPS，极致响应速度
@@ -979,7 +1006,7 @@ class PressureSensorUI:
    • 提供数据镜像翻转和重排序功能
    • 优化数据显示效果和分析精度
 
-🚨 故障排除
+故障排除
 
 [ERROR] 常见问题
    • 设备无法连接：检查USB线缆和端口选择
@@ -987,7 +1014,7 @@ class PressureSensorUI:
    • 热力图不更新：检查设备连接状态和数据流
    • 程序运行缓慢：尝试使用标准模式或重启程序
 
-🔧 解决方案
+解决方案
    • 重启设备：断开并重新连接检测设备
    • 重新配置：通过"设备配置"重新设置参数
    • 端口切换：尝试不同的COM端口
@@ -1482,7 +1509,8 @@ class PressureSensorUI:
             self.data_processor.set_array_size(rows, cols)
             
             # 更新可视化器
-            self.visualizer.set_array_size(rows, cols)
+            if self.visualizer:
+                self.visualizer.set_array_size(rows, cols)
             
             # 更新标题
             self.plot_frame.config(text=f"[DATA] 压力传感器热力图 ({rows}x{cols}) - JQ工业科技")
@@ -1585,7 +1613,7 @@ class PressureSensorUI:
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(self.log_text.get("1.0", tk.END))
-            self.log_message(f"💾 日志已保存: {filename}")
+            self.log_message(f"[OK] 日志已保存: {filename}")
         except Exception as e:
             self.log_message(f"[ERROR] 保存日志失败: {e}")
             
@@ -1608,7 +1636,7 @@ class PressureSensorUI:
             
             # 更新UI状态
             self.status_label.config(text="⚫ 未连接", foreground="red")
-            self.log_message("🔌 连接已断开")
+            self.log_message("[INFO] 连接已断开")
             
             # 重新启用设备选择
             if self.device_configured:
@@ -2235,7 +2263,7 @@ class PressureSensorUI:
         return {'status': 'error', 'message': '分析超时'}
     
     def import_csv_for_analysis(self):
-        """导入CSV文件进行AI分析并生成PDF报告"""
+        """导入CSV文件进行AI分析并生成报告"""
         if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
             messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
             return
@@ -2444,7 +2472,7 @@ class PressureSensorUI:
 • 风险等级：{risk_level}
 • 置信度：{confidence:.1%}
 
-[WARN] 注意：PDF报告生成失败，但AI分析数据完整。"""
+[WARN] 注意：报告生成失败，但AI分析数据完整。"""
                             
                             self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
                     else:
@@ -2457,7 +2485,7 @@ class PressureSensorUI:
 • 风险等级：{risk_level}
 • 置信度：{confidence:.1%}
 
-[WARN] 注意：无法生成PDF报告（缺少必要ID）。"""
+[WARN] 注意：无法生成报告（缺少必要ID）。"""
                         
                         self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
                     
@@ -2496,7 +2524,7 @@ class PressureSensorUI:
         threading.Thread(target=analyze_csv, daemon=True).start()
     
     def generate_pdf_report(self):
-        """生成当前数据的PDF报告"""
+        """生成当前数据的报告"""
         if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
             messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用")
             return
@@ -2690,7 +2718,7 @@ class PressureSensorUI:
             return report_path
             
         except Exception as e:
-            raise Exception(f"PDF报告生成失败: {e}")
+            raise Exception(f"报告生成失败: {e}")
 
     def generate_sarcneuro_report(self, test_id, format_type="pdf", csv_file_path=None, patient_info=None):
         """调用sarcneuro-edge API生成报告"""
@@ -2900,7 +2928,7 @@ class PressureSensorUI:
         # 检查报告文件类型
         import os
         file_ext = os.path.splitext(report_path)[1].lower()
-        file_type = "PDF报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
+        file_type = "报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
         filename = os.path.basename(report_path)
         
         message = f"""🧠 AI分析完成！

@@ -6,7 +6,7 @@ SarcNeuro Edge是肌智神护AI平台的边缘计算版本，专为硬件设备�
 ## 特性
 - 🔧 **独立运行** - 纯Python实现，无需Node.js或其他依赖
 - 💾 **本地存储** - SQLite数据库，支持完全离线运行
-- 📊 **离线报告** - 完整的HTML/PDF报告生成
+- 📊 **离线报告** - 完整的HTML/报告生成
 - 🔄 **智能同步** - 自动检测网络，双向数据同步
 - 🤖 **模型更新** - 联网时自动下载最新AI模型
 - 📦 **轻量部署** - Docker容器或单一可执行文件
@@ -91,7 +91,7 @@ docker run -p 8000:8000 -v ./data:/app/data sarcneuro-edge
 - `GET /api/reports` - 获取报告列表
 - `GET /api/reports/{report_id}` - 获取报告详情
 - `GET /api/reports/{report_id}/html` - 获取HTML报告
-- `GET /api/reports/{report_id}/pdf` - 下载PDF报告
+- `GET /api/reports/{report_id}/pdf` - 下载报告
 
 ### 同步管理
 - `POST /api/sync/check` - 检查同步状态

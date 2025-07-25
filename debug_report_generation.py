@@ -118,25 +118,25 @@ async def debug_report_generation():
             import traceback
             traceback.print_exc()
         
-        # 尝试生成PDF报告
-        print("📄 生成PDF报告...")
+        # 尝试生成报告
+        print("📄 生成报告...")
         try:
             pdf_path = await generator._generate_pdf_report(report_data)
-            print(f"✅ PDF报告生成成功: {pdf_path}")
+            print(f"✅ 报告生成成功: {pdf_path}")
             
             if pdf_path.exists():
                 file_size = pdf_path.stat().st_size
                 print(f"📁 PDF文件大小: {file_size} 字节")
                 
                 if file_size > 1000:  # PDF基本大小检查
-                    print("✅ PDF报告文件生成成功且有内容")
+                    print("✅ 报告文件生成成功且有内容")
                 else:
-                    print("❌ PDF报告文件为空或过小")
+                    print("❌ 报告文件为空或过小")
             else:
-                print("❌ PDF报告文件不存在")
+                print("❌ 报告文件不存在")
                 
         except Exception as e:
-            print(f"❌ PDF报告生成失败: {e}")
+            print(f"❌ 报告生成失败: {e}")
             import traceback
             traceback.print_exc()
             
