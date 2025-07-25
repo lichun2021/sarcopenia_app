@@ -77,7 +77,7 @@ class DetectionWizardDialog:
         # 创建对话框窗口
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(f"🔬 肌少症检测向导 - {patient_info['name']}")
-        self.dialog.geometry("800x700")
+        self.dialog.geometry("800x800")  # 增加窗口高度
         self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
         
@@ -107,8 +107,8 @@ class DetectionWizardDialog:
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
         x = (screen_width - 800) // 2
-        y = (screen_height - 700) // 2
-        self.dialog.geometry(f"800x700+{x}+{y}")
+        y = (screen_height - 800) // 2
+        self.dialog.geometry(f"800x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
@@ -145,7 +145,7 @@ class DetectionWizardDialog:
         
         # 步骤内容区域
         content_frame = ttk.LabelFrame(main_frame, text="检测步骤", padding="20")
-        content_frame.pack(fill="both", expand=True, pady=(0, 20))
+        content_frame.pack(fill="x", pady=(0, 15))
         
         # 步骤标题
         self.step_title = ttk.Label(content_frame, 
@@ -173,9 +173,9 @@ class DetectionWizardDialog:
         
         # 检测说明
         desc_frame = ttk.LabelFrame(content_frame, text="检测说明", padding="15")
-        desc_frame.pack(fill="x", pady=(0, 20))
+        desc_frame.pack(fill="x", pady=(0, 15))
         
-        self.description_text = tk.Text(desc_frame, height=4, width=70,
+        self.description_text = tk.Text(desc_frame, height=3, width=70,
                                        font=('Microsoft YaHei UI', 10),
                                        wrap=tk.WORD, relief='solid', borderwidth=1,
                                        bg='#f8f9fa', fg='#495057', state='disabled')
@@ -183,7 +183,7 @@ class DetectionWizardDialog:
         
         # 状态和计时区域
         status_frame = ttk.LabelFrame(content_frame, text="检测状态", padding="15")
-        status_frame.pack(fill="x", pady=(0, 20))
+        status_frame.pack(fill="x", pady=(0, 15))
         
         # 状态标签
         self.status_label = ttk.Label(status_frame, text="⏸️ 等待开始", 
@@ -216,53 +216,36 @@ class DetectionWizardDialog:
         
         # 数据收集信息
         data_frame = ttk.LabelFrame(content_frame, text="数据记录", padding="10")
-        data_frame.pack(fill="x", pady=(0, 15))
+        data_frame.pack(fill="x", pady=(0, 10))
         
         self.data_info_label = ttk.Label(data_frame, 
                                         text="📊 数据记录：未开始",
                                         font=('Microsoft YaHei UI', 10))
         self.data_info_label.pack()
         
-        # 底部按钮区域 - 使用简单的网格布局
+        # 底部按钮区域 - 重新布局
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=(10, 0))
+        button_frame.pack(fill="x", pady=(20, 0))
         
-        # 第一行按钮
-        row1_frame = ttk.Frame(button_frame)
-        row1_frame.pack(fill="x", pady=(0, 5))
-        
-        self.prev_btn = ttk.Button(row1_frame, text="◀️ 上一步", 
+        # 单行按钮布局
+        self.prev_btn = ttk.Button(button_frame, text="◀️ 上一步", 
                                   command=self.prev_step, state="disabled")
         self.prev_btn.pack(side="left", padx=(0, 10))
         
-        self.next_btn = ttk.Button(row1_frame, text="下一步 ▶️", 
+        self.next_btn = ttk.Button(button_frame, text="下一步 ▶️", 
                                   command=self.next_step, state="disabled")
-        self.next_btn.pack(side="left", padx=(0, 10))
+        self.next_btn.pack(side="left", padx=(0, 50))  # 增加间距
         
-        ttk.Button(row1_frame, text="跳过", 
-                  command=self.skip_current_step).pack(side="right", padx=(10, 0))
-        
-        ttk.Button(row1_frame, text="❌ 退出", 
-                  command=self.exit_wizard).pack(side="right")
-        
-        # 第二行按钮
-        row2_frame = ttk.Frame(button_frame)
-        row2_frame.pack(fill="x")
-        
-        self.start_btn = ttk.Button(row2_frame, text="🚀 开始检测", 
+        # 右侧按钮组
+        self.start_btn = ttk.Button(button_frame, text="🚀 开始检测", 
                                    command=self.start_current_step,
                                    style="Success.TButton")
-        self.start_btn.pack(side="left", padx=(0, 10))
+        self.start_btn.pack(side="right", padx=(10, 0))
         
-        self.pause_btn = ttk.Button(row2_frame, text="⏸️ 暂停", 
-                                   command=self.pause_current_step,
-                                   state="disabled")
-        self.pause_btn.pack(side="left", padx=(0, 10))
-        
-        self.finish_btn = ttk.Button(row2_frame, text="✅ 完成此步", 
+        self.finish_btn = ttk.Button(button_frame, text="✅ 完成此步", 
                                     command=self.finish_current_step,
                                     state="disabled")
-        self.finish_btn.pack(side="left")
+        self.finish_btn.pack(side="right")
     
     def update_step_content(self):
         """更新当前步骤的内容显示"""
@@ -297,7 +280,6 @@ class DetectionWizardDialog:
         self.prev_btn.config(state="normal" if self.current_step > 1 else "disabled")
         self.next_btn.config(state="disabled")
         self.start_btn.config(state="normal", text="🚀 开始检测")
-        self.pause_btn.config(state="disabled")
         self.finish_btn.config(state="disabled")
         
         # 重置运行状态
@@ -329,12 +311,15 @@ class DetectionWizardDialog:
             # 更新界面状态
             self.status_label.config(text="🔄 检测进行中", foreground="#ff9800")
             self.start_btn.config(state="disabled")
-            self.pause_btn.config(state="normal")
             self.finish_btn.config(state="normal")
             self.data_info_label.config(text="📊 数据记录：进行中...")
             
             # 创建数据文件
             self.create_data_file()
+            
+            # 通知主界面开始CSV记录
+            if hasattr(self.parent, 'start_detection_csv_recording'):
+                self.parent.start_detection_csv_recording(self.current_step)
             
             # 启动计时器
             self.start_timer()
@@ -361,6 +346,10 @@ class DetectionWizardDialog:
         try:
             self.is_running = False
             end_time = datetime.now()
+            
+            # 通知主界面停止CSV记录
+            if hasattr(self.parent, 'stop_detection_csv_recording'):
+                self.parent.stop_detection_csv_recording(self.current_step)
             
             # 更新数据库
             session_steps = db.get_session_steps(self.session_info['id'])
@@ -395,7 +384,6 @@ class DetectionWizardDialog:
             
             # 更新按钮状态
             self.start_btn.config(state="disabled")
-            self.pause_btn.config(state="disabled")
             self.finish_btn.config(state="disabled")
             
             # 启用下一步按钮或显示完成
@@ -513,25 +501,69 @@ class DetectionWizardDialog:
     def create_data_file(self):
         """创建当前步骤的数据文件"""
         try:
+            import csv
+            
             # 创建数据目录
             data_dir = "detection_data"
             if not os.path.exists(data_dir):
                 os.makedirs(data_dir)
             
-            # 生成文件名
+            # 生成文件名 - 使用患者姓名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             step_config = self.steps_config[self.current_step]
-            filename = f"step{self.current_step}_{step_config['name']}_{timestamp}.csv"
+            patient_name = self.patient_info['name']
+            filename = f"{patient_name}-第{self.current_step}步-{step_config['name']}-{timestamp}.csv"
             self.current_data_file = os.path.join(data_dir, filename)
             
-            # 创建CSV文件头
-            with open(self.current_data_file, 'w', encoding='utf-8') as f:
-                f.write("时间戳,步骤,设备,数据类型,数值\n")
-                f.write(f"{datetime.now().isoformat()},步骤{self.current_step},{step_config['device']},开始,0\n")
+            # 创建CSV文件并写入正确的头格式
+            with open(self.current_data_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # 写入CSV头：time,max,timestamp,area,press,data
+                writer.writerow(['time', 'max', 'timestamp', 'area', 'press', 'data'])
+            
+            # 初始化CSV相关变量
+            self._csv_start_time = datetime.now()
             
         except Exception as e:
             print(f"[ERROR] 创建数据文件失败: {e}")
             self.current_data_file = None
+    
+    def write_csv_data_row(self, processed_data):
+        """写入CSV数据行"""
+        try:
+            if not hasattr(self, 'current_data_file') or not self.current_data_file:
+                return
+            
+            import csv
+            import time
+            
+            # 计算经过时间
+            if hasattr(self, '_csv_start_time'):
+                elapsed_time = (datetime.now() - self._csv_start_time).total_seconds()
+            else:
+                elapsed_time = 0
+            
+            # 提取数据
+            stats = processed_data['statistics']
+            matrix_data = processed_data['matrix_2d']
+            frame_info = processed_data['original_frame']
+            
+            max_value = stats['max_value']
+            timestamp = frame_info['timestamp']
+            area = stats.get('contact_area', 0)
+            press = stats['sum_value']
+            
+            # 将2D矩阵转换为1D数组字符串
+            data_array = matrix_data.flatten().tolist()
+            data_str = str(data_array)
+            
+            # 写入CSV行
+            with open(self.current_data_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([elapsed_time, max_value, timestamp, area, press, data_str])
+                
+        except Exception as e:
+            print(f"[ERROR] 写入CSV数据失败: {e}")
     
     def start_timer(self):
         """启动计时器"""

@@ -1665,6 +1665,13 @@ class PressureSensorUI:
                         self.update_statistics_display(statistics)
                         self.log_processed_data(processed_data)
                         
+                        # 通知检测向导有新数据（如果向导正在运行）
+                        if hasattr(self, '_active_detection_wizard') and self._active_detection_wizard:
+                            try:
+                                self._active_detection_wizard.write_csv_data_row(processed_data)
+                            except:
+                                pass  # 忽略错误，防止影响主流程
+                        
                         # 显示丢弃的帧数（如果有）
                         dropped_frames = len(frame_data_list) - 1
                         if dropped_frames > 0:
@@ -3182,9 +3189,15 @@ class PressureSensorUI:
             # 创建检测向导
             wizard = DetectionWizardDialog(self.root, self.current_patient, self.current_session)
             
+            # 设置活动的检测向导引用，用于数据传递
+            self._active_detection_wizard = wizard
+            
             # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
             self.detection_in_progress = False
             self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            
+            # 清除活动检测向导引用
+            self._active_detection_wizard = None
             
             # 检查检测状态
             self.check_detection_completion()
@@ -3195,6 +3208,7 @@ class PressureSensorUI:
             # 即使出错也要重置状态
             self.detection_in_progress = False
             self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            self._active_detection_wizard = None
     
     def check_detection_completion(self):
         """检查检测完成状态"""
