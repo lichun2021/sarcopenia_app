@@ -2239,7 +2239,7 @@ async def health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 if __name__ == "__main__":
-    PORT = 8000  # 使用8000端口兼容主程序
+    PORT = 3004  # 使用8000端口兼容主程序
     print("[START] 启动 SarcNeuro Edge 独立分析服务...")
     print(f"[URL] 访问地址: http://localhost:{PORT}")
     print("[FEATURE] 功能：JSON API分析 | 文件上传 | 实时进度 | 批量处理")

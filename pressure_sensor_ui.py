@@ -2190,6 +2190,13 @@ class PressureSensorUI:
                 'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
             }
             
+            # 调试：打印实际发送的请求参数
+            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
+            for i, (field, (filename, content, content_type)) in enumerate(files):
+                content_preview = content[:100] + "..." if len(content) > 100 else content
+                self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
+            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
+            
             # 发送到 standalone_upload 的 /upload 接口
             response = requests.post(
                 f"{self.sarcneuro_service.base_url}/upload",
@@ -2234,6 +2241,10 @@ class PressureSensorUI:
                     self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
                     
                     if status == "COMPLETED":
+                        # 调试：记录服务返回的完整状态数据
+                        self.log_ai_message(f"[DEBUG] SarcNeuro服务状态数据字段: {list(status_data.keys())}")
+                        self.log_ai_message(f"[DEBUG] comprehensive_report_url: {status_data.get('comprehensive_report_url')}")
+                        
                         # 分析完成，构造结果
                         return {
                             'status': 'success',
@@ -2413,6 +2424,10 @@ class PressureSensorUI:
                 self.log_ai_message("[STATUS] 分析状态：正在处理多个CSV文件...")
                 
                 # 使用新的多文件分析API
+                self.log_ai_message(f"[DEBUG CSV导入] 上传文件数量: {len(all_csv_data)}")
+                for i, csv_file in enumerate(all_csv_data):
+                    self.log_ai_message(f"[DEBUG CSV导入] 文件{i+1}: {csv_file['filename']} ({csv_file['rows']}行)")
+                self.log_ai_message(f"[DEBUG CSV导入] 患者信息: {patient_info}")
                 result = self.send_multi_file_analysis(all_csv_data, patient_info)
                 
                 self.log_ai_message("📍 分析状态：检查分析结果...")
@@ -2445,8 +2460,13 @@ class PressureSensorUI:
                             detailed_result = self.get_analysis_result(analysis_id)
                             
                             if detailed_result:
-                                # 检查是否已有报告URL
-                                report_url = detailed_result.get('report_url')
+                                # 详细记录返回的数据结构
+                                self.log_ai_message(f"[DEBUG] 详细结果字段: {list(detailed_result.keys())}")
+                                self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
+                                self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
+                                
+                                # 检查是否已有报告URL (优先检查report_url，否则检查comprehensive_report_url)
+                                report_url = detailed_result.get('report_url') or detailed_result.get('comprehensive_report_url')
                                 if report_url:
                                     self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
                                     # 下载HTML内容并保存到我们的目录结构
@@ -3526,18 +3546,28 @@ class PressureSensorUI:
     def start_sarcneuro_analysis_for_session(self):
         """使用SarcNeuro Edge API为检测会话进行分析"""
         try:
+            # 启动服务（如果未启动）
+            if not self.sarcneuro_service.is_running:
+                self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
+                if not self.sarcneuro_service.start_service():
+                    raise Exception("无法启动 SarcNeuro Edge 服务")
+            
             # 获取会话的检测数据
             session_steps = db.get_session_steps(self.current_session['id'])
             if not session_steps:
                 raise Exception("没有找到检测数据")
             
             # 准备患者信息（与导入CSV相同的格式）
+            # 性别字段转换：中文转英文，匹配CSV导入的格式
+            gender_map = {'男': 'MALE', '女': 'FEMALE'}
+            patient_gender = gender_map.get(self.current_patient['gender'], self.current_patient['gender'])
+            
             patient_info = {
                 'name': self.current_patient['name'],
                 'age': self.current_patient['age'],
-                'gender': self.current_patient['gender'],
-                'height': self.current_patient.get('height', ''),
-                'weight': self.current_patient.get('weight', ''),
+                'gender': patient_gender,  # 使用转换后的英文性别
+                'height': str(self.current_patient.get('height', '')),  # 转为字符串
+                'weight': str(self.current_patient.get('weight', '')),  # 转为字符串
                 'test_type': 'COMPREHENSIVE',
                 'test_names': [f"第{step['step_number']}步检测" for step in session_steps if step['status'] == 'completed']
             }
@@ -3548,69 +3578,187 @@ class PressureSensorUI:
             temp_files = []
             
             try:
+                missing_files = []  # 记录丢失的文件
                 for step in session_steps:
-                    if step['status'] == 'completed' and step['detection_data']:
-                        # 解析检测数据
-                        detection_data = json.loads(step['detection_data'])
-                        if 'csv_data' in detection_data:
-                            # 创建临时CSV文件
-                            temp_fd, temp_path = tempfile.mkstemp(suffix='.csv', prefix=f'step_{step["step_number"]}_')
-                            with open(temp_path, 'w', newline='', encoding='utf-8') as f:
-                                f.write(detection_data['csv_data'])
-                            temp_files.append(temp_path)
-                            os.close(temp_fd)
+                    if step['status'] == 'completed':
+                        if step['data_file_path'] and os.path.exists(step['data_file_path']):
+                            # 直接使用现有的CSV文件
+                            temp_files.append(step['data_file_path'])
+                            self.log_ai_message(f"[OK] 找到数据文件: {os.path.basename(step['data_file_path'])}")
+                        else:
+                            # 记录丢失的文件信息
+                            missing_files.append({
+                                'step_number': step['step_number'],
+                                'step_name': step['step_name'],
+                                'original_path': step['data_file_path']
+                            })
+                            self.log_ai_message(f"[WARN] 步骤{step['step_number']}数据文件丢失: {step['data_file_path'] or '未记录路径'}")
+                
+                # 如果有丢失的文件，询问用户是否手动选择
+                if missing_files:
+                    manually_selected_files = self.ask_for_missing_files(missing_files)
+                    if manually_selected_files:
+                        temp_files.extend(manually_selected_files)
                 
                 if not temp_files:
-                    raise Exception("没有有效的检测数据可供分析")
+                    raise Exception("没有有效的检测数据可供分析，请确保CSV数据文件存在")
                 
                 self.log_ai_message(f"[INFO] 准备上传 {len(temp_files)} 个检测数据文件到SarcNeuro Edge")
                 
+                # 读取CSV文件内容，准备上传数据
+                all_csv_data = []
+                for file_path in temp_files:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            csv_content = f.read()
+                        all_csv_data.append({
+                            'filename': os.path.basename(file_path),
+                            'content': csv_content,
+                            'rows': len(csv_content.split('\n')) - 1  # 减去标题行
+                        })
+                        self.log_ai_message(f"[DATA] 读取文件: {os.path.basename(file_path)}")
+                    except Exception as e:
+                        self.log_ai_message(f"[ERROR] 读取文件失败 {file_path}: {e}")
+                        continue
+                
+                if not all_csv_data:
+                    raise Exception("无法读取检测数据文件")
+                
                 # 使用与导入CSV相同的上传逻辑
-                analysis_data = self.upload_csv_files_to_sarcneuro(temp_files, patient_info)
+                self.log_ai_message(f"[DEBUG 会话分析] 上传文件数量: {len(all_csv_data)}")
+                for i, csv_file in enumerate(all_csv_data):
+                    self.log_ai_message(f"[DEBUG 会话分析] 文件{i+1}: {csv_file['filename']} ({csv_file['rows']}行)")
+                self.log_ai_message(f"[DEBUG 会话分析] 患者信息: {patient_info}")
+                result = self.send_multi_file_analysis(all_csv_data, patient_info)
                 
-                # 如果分析成功，获取完整结果并生成报告
-                analysis_id = analysis_data.get('analysis_id')
-                test_id = analysis_data.get('test_id')
-                
-                if analysis_id and test_id:
-                    self.log_ai_message(f"[INFO] 获取分析详细结果 (analysis_id: {analysis_id})")
+                if result and result.get('status') == 'success':
+                    analysis_data = result['data']
                     
-                    # 调用 /api/analysis/results/{analysis_id} 获取完整结果
-                    detailed_result = self.get_analysis_result(analysis_id)
+                    self.log_ai_message("[OK] AI分析完成！")
                     
-                    if detailed_result:
-                        # 检查是否已有报告URL
-                        report_url = detailed_result.get('report_url')
-                        if report_url:
-                            self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
-                            # 下载HTML内容并保存到我们的目录结构
-                            local_report_path = self.download_and_save_html_report(report_url, patient_info)
-                            if local_report_path:
-                                self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                                # 显示成功对话框，传递本地报告路径
-                                self.show_analysis_complete_dialog(analysis_data, local_report_path)
-                            else:
-                                self.log_ai_message("[WARN] HTML报告保存失败")
-                                self.show_analysis_complete_dialog(analysis_data, None)
+                    # 显示分析结果摘要
+                    overall_score = analysis_data.get('overall_score', 0)
+                    risk_level = analysis_data.get('risk_level', 'UNKNOWN')
+                    confidence = analysis_data.get('confidence', 0)
+                    
+                    self.log_ai_message(f"[DATA] 综合评分: {overall_score:.1f}/100")
+                    self.log_ai_message(f"[WARN] 风险等级: {risk_level}")
+                    self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
+                    
+                    # 首先检查 analysis_data 是否已包含报告URL（和CSV导入一样）
+                    report_url = analysis_data.get('report_url')
+                    if report_url:
+                        self.log_ai_message(f"📄 从分析结果获取到HTML报告链接: {report_url}")
+                        # 下载HTML内容并保存到我们的目录结构
+                        local_report_path = self.download_and_save_html_report(report_url, patient_info)
+                        if local_report_path:
+                            self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
+                            # 显示成功对话框，传递本地报告路径
+                            self.show_analysis_complete_dialog(analysis_data, local_report_path)
                         else:
-                            self.log_ai_message("[WARN] 未找到报告链接")
+                            self.log_ai_message("[WARN] HTML报告保存失败")
                             self.show_analysis_complete_dialog(analysis_data, None)
                     else:
-                        raise Exception("无法获取分析详细结果")
+                        # 如果 analysis_data 中没有报告URL，再尝试获取详细结果（备用方案）
+                        analysis_id = analysis_data.get('analysis_id')
+                        test_id = analysis_data.get('test_id')
+                        
+                        if analysis_id and test_id:
+                            self.log_ai_message(f"[INFO] 获取分析详细结果 (analysis_id: {analysis_id})")
+                            
+                            # 调用 /api/analysis/results/{analysis_id} 获取完整结果
+                            detailed_result = self.get_analysis_result(analysis_id)
+                            
+                            if detailed_result:
+                                # 详细记录返回的数据结构
+                                self.log_ai_message(f"[DEBUG] 详细结果字段: {list(detailed_result.keys())}")
+                                self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
+                                self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
+                                
+                                # 检查是否已有报告URL (优先检查report_url，否则检查comprehensive_report_url)
+                                report_url = detailed_result.get('report_url') or detailed_result.get('comprehensive_report_url')
+                                if report_url:
+                                    self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
+                                    # 下载HTML内容并保存到我们的目录结构
+                                    local_report_path = self.download_and_save_html_report(report_url, patient_info)
+                                    if local_report_path:
+                                        self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
+                                        # 显示成功对话框，传递本地报告路径
+                                        self.show_analysis_complete_dialog(analysis_data, local_report_path)
+                                    else:
+                                        self.log_ai_message("[WARN] HTML报告保存失败")
+                                        self.show_analysis_complete_dialog(analysis_data, None)
+                                else:
+                                    self.log_ai_message("[WARN] 未找到报告链接")
+                                    self.show_analysis_complete_dialog(analysis_data, None)
+                            else:
+                                raise Exception("无法获取分析详细结果")
+                        else:
+                            self.log_ai_message("[WARN] 分析结果中缺少必要的ID信息")
+                            self.show_analysis_complete_dialog(analysis_data, None)
                 else:
-                    raise Exception("分析返回数据不完整")
+                    raise Exception(f"分析失败: {result.get('message', '未知错误')}")
                         
             finally:
-                # 清理临时文件
-                for temp_file in temp_files:
-                    try:
-                        os.unlink(temp_file)
-                    except:
-                        pass
+                # 注意：这里不需要清理文件，因为我们使用的是实际的数据文件
+                # 如果以后需要创建临时文件，可以在这里添加清理逻辑
+                pass
                         
         except Exception as e:
             self.log_ai_message(f"[ERROR] SarcNeuro Edge分析失败: {e}")
             raise
+    
+    def ask_for_missing_files(self, missing_files):
+        """询问用户手动选择丢失的CSV文件"""
+        from tkinter import filedialog
+        
+        # 显示丢失文件的对话框
+        missing_count = len(missing_files)
+        missing_steps = ', '.join([f"步骤{f['step_number']}({f['step_name']})" for f in missing_files])
+        
+        msg = f"检测已完成，但有 {missing_count} 个数据文件丢失：\n\n{missing_steps}\n\n是否要手动选择这些CSV数据文件进行分析？"
+        
+        if not messagebox.askyesno("数据文件丢失", msg):
+            return []
+        
+        selected_files = []
+        
+        for missing_file in missing_files:
+            while True:
+                file_path = filedialog.askopenfilename(
+                    title=f"选择步骤{missing_file['step_number']}的CSV数据文件 - {missing_file['step_name']}",
+                    filetypes=[
+                        ("CSV files", "*.csv"),
+                        ("All files", "*.*")
+                    ],
+                    initialdir="detection_data"  # 默认从检测数据目录开始
+                )
+                
+                if not file_path:
+                    # 用户取消了选择
+                    if messagebox.askyesno("跳过文件", f"跳过步骤{missing_file['step_number']}的数据文件吗？\n\n注意：跳过此文件可能影响分析结果的完整性。"):
+                        break  # 跳过这个文件
+                    else:
+                        continue  # 重新选择
+                
+                # 验证选择的文件
+                try:
+                    # 简单验证CSV文件格式
+                    import pandas as pd
+                    df = pd.read_csv(file_path)
+                    if 'data' not in df.columns:
+                        messagebox.showerror("文件格式错误", "选择的CSV文件格式不正确，必须包含'data'列")
+                        continue
+                    
+                    selected_files.append(file_path)
+                    self.log_ai_message(f"[OK] 手动选择文件: {os.path.basename(file_path)} (步骤{missing_file['step_number']})")
+                    break
+                    
+                except Exception as e:
+                    messagebox.showerror("文件读取错误", f"无法读取选择的文件：{e}")
+                    continue
+        
+        return selected_files
     
     def generate_report_for_patient(self):
         """为当前选中的患者生成报告"""
