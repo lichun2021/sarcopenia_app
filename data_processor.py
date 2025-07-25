@@ -14,8 +14,8 @@ class DataProcessor:
         self.array_rows = array_rows
         self.array_cols = array_cols
         self.total_points = array_rows * array_cols
-        # 32x96步道的段顺序，默认[1,2,3]，可调整为[2,3,1]或其他
-        self.walkway_segment_order = [0, 1, 2]  # 对应segment1, segment2, segment3
+        # 32x96步道的段顺序，固定为端口1、2的顺序 [0, 1, 2]
+        self.walkway_segment_order = [0, 1, 2]  # 对应端口1, 端口2的顺序
         
     def set_array_size(self, rows, cols):
         """设置阵列大小"""
@@ -23,16 +23,6 @@ class DataProcessor:
         self.array_cols = cols
         self.total_points = rows * cols
     
-    def set_segment_order(self, order):
-        """设置32x96步道的段顺序"""
-        if len(order) == 3 and all(i in [0, 1, 2] for i in order):
-            self.walkway_segment_order = order
-            return True
-        return False
-    
-    def get_segment_order(self):
-        """获取当前段顺序"""
-        return self.walkway_segment_order.copy()
         
     def prepare_data(self, raw_data):
         """准备数据 - 快速调整数据长度以匹配阵列大小"""
@@ -122,7 +112,7 @@ class DataProcessor:
             matrix2 = transformed_seg2.reshape(32, 32)
             matrix3 = transformed_seg3.reshape(32, 32)
             
-            # 按照设定的顺序合并成32x96
+            # 按照端口1、2的固定顺序合并成32x96
             matrices = [matrix1, matrix2, matrix3]
             ordered_matrices = [matrices[i] for i in self.walkway_segment_order]
             combined_matrix = np.hstack(ordered_matrices)

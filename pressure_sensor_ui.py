@@ -523,8 +523,6 @@ class PressureSensorUI:
                         if hasattr(self.serial_interface, 'set_device_mode'):
                             self.serial_interface.set_device_mode(device_type)
                         self.log_message(f"[OK] 已启用多端口模式（{com_ports}个端口数据合并）")
-                        # 显示调序按钮
-                        self.order_button.grid()
                     elif array_size == '32x96' or device_type == 'walkway':
                         # 单端口步道设备
                         if hasattr(self.serial_interface, 'set_walkway_mode'):
@@ -532,16 +530,12 @@ class PressureSensorUI:
                         elif hasattr(self.serial_interface, 'set_device_mode'):
                             self.serial_interface.set_device_mode(device_type)
                         self.log_message("[OK] 已启用步道模式（3帧数据合并）")
-                        # 显示调序按钮
-                        self.order_button.grid()
                     else:
                         # 普通单端口设备
                         if hasattr(self.serial_interface, 'set_walkway_mode'):
                             self.serial_interface.set_walkway_mode(False)
                         elif hasattr(self.serial_interface, 'set_device_mode'):
                             self.serial_interface.set_device_mode('single')
-                        # 隐藏调序按钮
-                        self.order_button.grid_remove()
                     
                     # 更新标题
                     self.root.title(f"智能肌少症检测系统 - {device_info['icon']} {device_info['name']}")
@@ -744,8 +738,8 @@ class PressureSensorUI:
         detection_menu.add_separator()
         detection_menu.add_command(label="👥 患者档案管理", command=self.show_patient_manager)
         detection_menu.add_command(label="📋 检测流程指导", command=self.show_detection_process_dialog)
-        detection_menu.add_separator()
-        detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
+        # detection_menu.add_separator()
+        # detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
         
         # 创建"设备"菜单（使用淡紫色医疗主题）
         device_menu = tk.Menu(menubar, tearoff=0,
@@ -1030,7 +1024,6 @@ class PressureSensorUI:
 
 功能按钮
    • 保存快照：保存当前热力图为PNG图片文件
-   • [REFRESH] 调序：调整32x96步道模式的段显示顺序
    • 保存日志：将当前日志内容保存为文本文件
    • 清除日志：清空日志显示区域
 
@@ -1414,21 +1407,14 @@ class PressureSensorUI:
                                       font=('Microsoft YaHei UI', 9))
         self.port_info_label.grid(row=0, column=4, padx=(0, 15))
         
-        # 第二行：功能按钮
-        # 开始检测按钮 - 醒目的绿色样式
-        self.start_detection_btn = ttk.Button(control_frame, text="🚀 开始检测", 
+        # 快速检测按钮 - 在第一行最右边
+        self.start_detection_btn = ttk.Button(control_frame, text="🚀 快速检测", 
                                             command=self.start_detection_process,
                                             style='Success.TButton')
-        self.start_detection_btn.grid(row=1, column=0, padx=(0, 15), pady=(15, 0))
+        self.start_detection_btn.grid(row=0, column=5, padx=(0, 0), sticky='e')
         
         
         
-        # 调序按钮（仅32x32以上设备显示）
-        self.order_button = ttk.Button(control_frame, text="[REFRESH] 调序", 
-                                     command=self.show_segment_order_dialog,
-                                     style='Hospital.TButton')
-        self.order_button.grid(row=1, column=3, padx=(0, 15), pady=(15, 0))
-        self.order_button.grid_remove()
         
         # 中间内容区域 - 医院白色背景
         content_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
@@ -1442,11 +1428,11 @@ class PressureSensorUI:
         
         # 右侧：数据日志和统计 - 医院白色
         right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
-        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 0))
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 0))
         right_frame.config(width=450)
         
         # 统计信息面板 - 医院风格
-        stats_frame = ttk.LabelFrame(right_frame, text="[DATA] 实时统计", 
+        stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
                                    padding=15, style='Hospital.TLabelframe')
         stats_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -1470,16 +1456,29 @@ class PressureSensorUI:
             label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # 日志区域 - 分为上下两部分
+        # 日志区域 - 使用grid布局确保均匀分配
         log_container = ttk.Frame(right_frame)
         log_container.pack(fill=tk.BOTH, expand=True)
+        
+        # 配置grid权重
+        log_container.grid_rowconfigure(0, weight=1)
+        log_container.grid_rowconfigure(1, weight=1)
+        log_container.grid_columnconfigure(0, weight=1)
         
         # AI分析日志 - 上半部分
         ai_log_frame = ttk.LabelFrame(log_container, text="Sarcneuro Edge AI 日志", 
                                     padding=10, style='Hospital.TLabelframe')
-        ai_log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        ai_log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5), padx=0)
         
-        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=55, height=12, 
+        # AI日志控制按钮 - 保持结构一致
+        ai_btn_frame = ttk.Frame(ai_log_frame, style='Hospital.TFrame')
+        ai_btn_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # 占位标签，保持视觉平衡
+        ttk.Label(ai_btn_frame, text="AI分析状态", 
+                 style='Hospital.TLabel').pack(side=tk.LEFT)
+        
+        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=55, 
                                                    font=("Consolas", 9),
                                                    bg='#f8f9ff',  # 淡蓝色背景
                                                    fg='#2c3e50',
@@ -1490,12 +1489,23 @@ class PressureSensorUI:
                                                    relief='solid')
         self.ai_log_text.pack(fill=tk.BOTH, expand=True)
         
-        # 硬件设备日志 - 下半部分
+        # 硬件设备日志 - 下半部分，带按钮
         hw_log_frame = ttk.LabelFrame(log_container, text="设备日志", 
                                     padding=10, style='Hospital.TLabelframe')
-        hw_log_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        hw_log_frame.grid(row=1, column=0, sticky="nsew", pady=(5, 0), padx=0)
         
-        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=55, height=12, 
+        # 日志控制按钮 - 放在日志框标题旁边
+        log_btn_frame = ttk.Frame(hw_log_frame, style='Hospital.TFrame')
+        log_btn_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Button(log_btn_frame, text="💾 保存日志", 
+                  command=self.save_log,
+                  style='Hospital.TButton').pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(log_btn_frame, text="🗑️ 清除日志", 
+                  command=self.clear_log,
+                  style='Hospital.TButton').pack(side=tk.LEFT)
+        
+        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=55, 
                                                 font=("Consolas", 9),
                                                 bg='#ffffff',
                                                 fg='#495057',
@@ -1505,17 +1515,6 @@ class PressureSensorUI:
                                                 borderwidth=1,
                                                 relief='solid')
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # 日志控制按钮
-        log_btn_frame = ttk.Frame(log_container, style='Hospital.TFrame')
-        log_btn_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        ttk.Button(log_btn_frame, text="💾 保存日志", 
-                  command=self.save_log,
-                  style='Hospital.TButton').pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(log_btn_frame, text="🗑️ 清除日志", 
-                  command=self.clear_log,
-                  style='Hospital.TButton').pack(side=tk.LEFT)
         
         # 底部状态栏 - 医院风格
         status_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
@@ -1598,64 +1597,6 @@ class PressureSensorUI:
         except Exception as e:
             self.log_message(f"[ERROR] 保存快照出错: {e}")
     
-    def show_segment_order_dialog(self):
-        """显示段顺序调整对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("[REFRESH] 调整段顺序")
-        dialog.geometry("300x200")
-        dialog.resizable(False, False)
-        dialog.grab_set()
-        
-        # 居中显示
-        dialog.transient(self.root)
-        dialog.geometry("+%d+%d" % (
-            self.root.winfo_rootx() + 200, 
-            self.root.winfo_rooty() + 150
-        ))
-        
-        # 主框架
-        main_frame = ttk.Frame(dialog, padding=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        ttk.Label(main_frame, text="32x96步道段顺序调整", font=("Arial", 12, "bold")).pack(pady=(0, 15))
-        ttk.Label(main_frame, text="选择3个段的显示顺序:").pack(pady=(0, 10))
-        
-        # 当前顺序显示
-        current_order = self.data_processor.get_segment_order()
-        current_text = "当前顺序: " + " - ".join([f"段{i+1}" for i in current_order])
-        ttk.Label(main_frame, text=current_text, foreground="blue").pack(pady=(0, 15))
-        
-        # 预设顺序按钮
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        presets = [
-            ("1-2-3", [0, 1, 2]),
-            ("2-3-1", [1, 2, 0]), 
-            ("3-1-2", [2, 0, 1]),
-            ("1-3-2", [0, 2, 1]),
-            ("2-1-3", [1, 0, 2]),
-            ("3-2-1", [2, 1, 0])
-        ]
-        
-        for i, (name, order) in enumerate(presets):
-            row = i // 3
-            col = i % 3
-            btn = ttk.Button(button_frame, text=name, width=8,
-                           command=lambda o=order: self.apply_segment_order(o, dialog))
-            btn.grid(row=row, column=col, padx=5, pady=3)
-        
-        # 关闭按钮
-        ttk.Button(main_frame, text="关闭", command=dialog.destroy).pack(pady=(10, 0))
-    
-    def apply_segment_order(self, order, dialog):
-        """应用段顺序"""
-        if self.data_processor.set_segment_order(order):
-            order_text = " - ".join([f"段{i+1}" for i in order])
-            self.log_message(f"[REFRESH] 段顺序已调整为: {order_text}")
-            dialog.destroy()
-        else:
-            self.log_message("[ERROR] 段顺序调整失败")
             
     def save_log(self):
         """保存日志"""
