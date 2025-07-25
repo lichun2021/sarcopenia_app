@@ -52,30 +52,17 @@ class DataProcessor:
         
         data_len = len(data_array)
         
-        # 调试输出：数据准备过程
-        if data_len > 1024:
-            print(f"🔍 prepare_data调试:")
-            print(f"   输入数据长度: {data_len}字节")
-            print(f"   当前total_points: {self.total_points}")
-            print(f"   当前数组大小: {self.array_rows}x{self.array_cols}")
-        
         # 其他阵列大小的正常处理
         if data_len < self.total_points:
             # 使用numpy的resize，更高效
             result = np.resize(data_array, self.total_points)
-            if data_len > 1024:
-                print(f"   处理结果: Padded ({data_len}->{self.total_points})")
             return result, f"Padded ({data_len}->{self.total_points})"
             
         elif data_len > self.total_points:
             # 直接切片，避免复制
             result = data_array[:self.total_points]
-            if data_len > 1024:
-                print(f"   ⚠️ 处理结果: Trimmed ({data_len}->{self.total_points}) - 数据被截断!")
             return result, f"Trimmed ({data_len}->{self.total_points})"
             
-        if data_len > 1024:
-            print(f"   处理结果: Perfect match")
         return data_array, "Perfect match"
     
     def jqbed_transform(self, data_array):
@@ -201,14 +188,6 @@ class DataProcessor:
             
             # 3. 重塑为2D数组
             matrix_2d = transformed_data.reshape(self.array_rows, self.array_cols)
-            
-            # 调试输出：多端口数据reshape
-            if len(transformed_data) > 1024:
-                print(f"🔄 数据reshape调试:")
-                print(f"   原始数据长度: {len(transformed_data)}字节")
-                print(f"   目标数组大小: {self.array_rows}x{self.array_cols}")
-                print(f"   reshape结果: {matrix_2d.shape}")
-                print(f"   数据范围: {transformed_data.min()}-{transformed_data.max()}")
             
             # 4. 计算统计信息
             stats = self.calculate_statistics(matrix_2d)

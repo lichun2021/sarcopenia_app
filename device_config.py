@@ -1090,25 +1090,48 @@ class DeviceManager:
                         # 检查是否已经有现有连接到这些端口中的任何一个
                         existing_interface = None
                         existing_port = None
+                        conflicting_device_id = None
+                        
                         for port in ports:
                             for existing_id, interface in self.serial_interfaces.items():
-                                if interface and hasattr(interface, 'get_current_port') and interface.get_current_port() == port:
+                                if (interface and hasattr(interface, 'get_current_port') and 
+                                    interface.get_current_port() == port):
                                     existing_interface = interface
                                     existing_port = port
+                                    conflicting_device_id = existing_id
                                     print(f"发现现有连接到端口 {port} (来自设备: {existing_id})")
                                     break
+                            
+                            # 检查多端口接口占用的所有端口
+                            for existing_id, interface in self.serial_interfaces.items():
+                                if (interface and hasattr(interface, 'multi_port_config') and 
+                                    interface.multi_port_config):
+                                    for config in interface.multi_port_config:
+                                        if config['port'] == port:
+                                            existing_interface = interface
+                                            existing_port = port
+                                            conflicting_device_id = existing_id
+                                            print(f"发现多端口接口占用端口 {port} (来自设备: {existing_id})")
+                                            break
                             if existing_interface:
                                 break
                         
                         if existing_interface:
                             # 如果有现有连接，需要先断开，然后创建新的多端口接口
-                            print(f"断开现有单端口连接 {existing_port}，准备创建多端口连接")
-                            existing_interface.disconnect()
+                            conflicting_device_name = self.devices.get(conflicting_device_id, {}).get('name', '未知')
+                            print(f"🔄 端口冲突: {device_name} 需要端口 {existing_port}，但被 {conflicting_device_name} 占用")
+                            print(f"🔌 断开冲突设备 '{conflicting_device_name}' 的连接...")
+                            
+                            try:
+                                existing_interface.disconnect()
+                                print(f"✅ 冲突设备 '{conflicting_device_name}' 连接已断开")
+                            except Exception as e:
+                                print(f"⚠️ 断开冲突设备连接时出错: {e}")
                             
                             # 从现有接口映射中移除
-                            existing_keys = [k for k, v in self.serial_interfaces.items() if v == existing_interface]
-                            for key in existing_keys:
-                                del self.serial_interfaces[key]
+                            if conflicting_device_id in self.serial_interfaces:
+                                del self.serial_interfaces[conflicting_device_id]
+                                print(f"🗑️ 移除冲突设备 '{conflicting_device_name}' 的接口映射")
                         
                         # 创建支持多端口的SerialInterface
                         serial_interface = SerialInterface(baudrate=1000000)
@@ -1142,6 +1165,24 @@ class DeviceManager:
     def switch_device(self, device_id):
         """切换当前设备"""
         if device_id in self.devices:
+            # 先断开当前设备连接，释放COM口
+            if self.current_device and self.current_device != device_id:
+                old_device_name = self.devices.get(self.current_device, {}).get('name', '未知')
+                new_device_name = self.devices.get(device_id, {}).get('name', '未知')
+                
+                # 断开旧设备的所有端口连接
+                if self.current_device in self.serial_interfaces:
+                    old_interface = self.serial_interfaces[self.current_device]
+                    if old_interface:
+                        print(f"🔌 断开旧设备 '{old_device_name}' 的连接...")
+                        try:
+                            # 确保完全断开连接
+                            old_interface.disconnect()
+                            print(f"✅ 旧设备 '{old_device_name}' 连接已断开")
+                        except Exception as e:
+                            print(f"⚠️ 断开旧设备连接时出错: {e}")
+            
+            # 切换到新设备
             self.current_device = device_id
             return True
         return False

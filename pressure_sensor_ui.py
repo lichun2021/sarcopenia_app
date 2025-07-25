@@ -402,12 +402,6 @@ class PressureSensorUI:
                     interface_type = type(self.serial_interface).__name__
                     multi_config = getattr(self.serial_interface, 'multi_port_config', None)
                     device_type = getattr(self.serial_interface, 'device_type', 'unknown')
-                    print(f"🔄 设备切换完成 - 当前接口信息:")
-                    print(f"   接口类型: {interface_type}")
-                    print(f"   设备模式: {device_type}")
-                    print(f"   多端口配置: {multi_config}")
-                else:
-                    print("❌ 设备切换后未获取到串口接口")
                 
                 # 更新UI显示
                 device_info = self.device_manager.get_current_device_info()
@@ -468,8 +462,8 @@ class PressureSensorUI:
                     
                     self.log_message(f"[OK] 已切换到设备: {device_info['icon']} {device_info['name']} ({port_display})")
                     
-                    # 自动连接设备
-                    self.auto_connect_device()
+                    # 延迟自动连接设备，给端口释放时间
+                    self.root.after(1000, self.auto_connect_device)  # 等待1秒后连接
                     
                 break
     
@@ -632,7 +626,6 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加文件菜单项
-        file_menu.add_command(label="📁 新建检测档案", command=self.show_new_profile_dialog)
         file_menu.add_separator()
         file_menu.add_command(label="💾 导出检测数据", command=self.save_log)
         file_menu.add_command(label="📸 保存热力图快照", command=self.save_snapshot)
@@ -657,7 +650,6 @@ class PressureSensorUI:
         detection_menu.add_separator()
         detection_menu.add_command(label="👥 患者档案管理", command=self.show_patient_manager)
         detection_menu.add_command(label="📋 检测流程指导", command=self.show_detection_process_dialog)
-        detection_menu.add_command(label="👤 患者信息管理", command=self.show_new_profile_dialog)
         detection_menu.add_separator()
         detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
         
@@ -680,25 +672,6 @@ class PressureSensorUI:
         device_menu.add_separator()
         device_menu.add_command(label="⚡ 性能模式设置", command=lambda: messagebox.showinfo("性能设置", "当前运行在标准模式\n可通过启动脚本切换:\n• run_ui.py (标准)\n• run_ui_fast.py (快速)\n• run_ui_ultra.py (极速)"))
         
-        # 创建"视图"菜单（使用橙色健康主题）
-        view_menu = tk.Menu(menubar, tearoff=0,
-                           bg='#ffffff',        # 纯白背景
-                           fg='#37474f',        # 深灰色文字
-                           activebackground='#fff3e0',  # 淡橙色悬停
-                           activeforeground='#f57c00',   # 深橙色悬停文字
-                           font=('Microsoft YaHei UI', 11),
-                           borderwidth=1,
-                           relief='solid',
-                           selectcolor='#ff9800')
-        menubar.add_cascade(label="  👀 视图  ", menu=view_menu,
-                          activebackground='#f0f8ff', activeforeground='#0066cc')
-        
-        # 添加视图菜单项
-        view_menu.add_command(label="📈 统计数据面板", command=lambda: messagebox.showinfo("统计面板", "实时统计数据已在右侧显示\n包含最大值、最小值、平均值等"))
-        view_menu.add_command(label="🎨 热力图显示设置", command=lambda: messagebox.showinfo("显示设置", "热力图显示功能:\n• 16级颜色梯度\n• 0-60mmHg压力范围\n• 实时数据更新"))
-        view_menu.add_separator()
-        view_menu.add_command(label="🗑️ 清除日志记录", command=self.clear_log)
-        view_menu.add_command(label="🔍 放大热力图", command=lambda: messagebox.showinfo("显示提示", "可拖拽调整窗口大小来放大显示"))
         
         # 创建"分析"菜单（使用医疗红色主题）
         analysis_menu = tk.Menu(menubar, tearoff=0,
@@ -748,161 +721,7 @@ class PressureSensorUI:
         help_menu.add_separator()
         help_menu.add_command(label="ℹ️ 关于本系统", command=self.show_about_dialog)
     
-    def show_new_profile_dialog(self):
-        """显示新建档案对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("新建检测档案")
-        dialog.geometry("680x480")
-        dialog.resizable(False, False)
-        dialog.grab_set()
-        
-        # 居中显示
-        dialog.transient(self.root)
-        x = self.root.winfo_x() + (self.root.winfo_width() - 680) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 480) // 2
-        dialog.geometry(f"680x480+{x}+{y}")
-        
-        # 主框架
-        main_frame = ttk.Frame(dialog, padding=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 标题
-        title_label = ttk.Label(main_frame, text="📁 新建检测档案", 
-                               font=("Microsoft YaHei", 16, "bold"))
-        title_label.pack(pady=(0, 20))
-        
-        # 基本信息框架
-        info_frame = ttk.LabelFrame(main_frame, text="基本信息", padding=15)
-        info_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # 配置网格权重，使布局更整齐
-        info_frame.grid_columnconfigure(1, weight=1)
-        info_frame.grid_columnconfigure(3, weight=1)
-        
-        # 第一行：姓名和年龄
-        ttk.Label(info_frame, text="姓名 *:", font=("Microsoft YaHei", 10, "bold")).grid(
-            row=0, column=0, sticky="e", padx=(0, 10), pady=8)
-        name_entry = ttk.Entry(info_frame, width=18, font=("Microsoft YaHei", 10))
-        name_entry.grid(row=0, column=1, sticky="ew", padx=(0, 20), pady=8)
-        
-        ttk.Label(info_frame, text="年龄 *:", font=("Microsoft YaHei", 10, "bold")).grid(
-            row=0, column=2, sticky="e", padx=(0, 10), pady=8)
-        age_entry = ttk.Entry(info_frame, width=12, font=("Microsoft YaHei", 10))
-        age_entry.grid(row=0, column=3, sticky="w", pady=8)
-        
-        # 第二行：性别和身高
-        ttk.Label(info_frame, text="性别 *:", font=("Microsoft YaHei", 10, "bold")).grid(
-            row=1, column=0, sticky="e", padx=(0, 10), pady=8)
-        gender_var = tk.StringVar(value="男")
-        gender_frame = ttk.Frame(info_frame)
-        gender_frame.grid(row=1, column=1, sticky="w", pady=8)
-        ttk.Radiobutton(gender_frame, text="男", variable=gender_var, value="男").pack(side=tk.LEFT)
-        ttk.Radiobutton(gender_frame, text="女", variable=gender_var, value="女").pack(side=tk.LEFT, padx=(15, 0))
-        
-        ttk.Label(info_frame, text="身高:", font=("Microsoft YaHei", 10)).grid(
-            row=1, column=2, sticky="e", padx=(0, 10), pady=8)
-        height_entry = ttk.Entry(info_frame, width=12, font=("Microsoft YaHei", 10))
-        height_entry.grid(row=1, column=3, sticky="w", pady=8)
-        
-        # 第三行：体重和联系方式
-        ttk.Label(info_frame, text="体重:", font=("Microsoft YaHei", 10)).grid(
-            row=2, column=0, sticky="e", padx=(0, 10), pady=8)
-        weight_entry = ttk.Entry(info_frame, width=18, font=("Microsoft YaHei", 10))
-        weight_entry.grid(row=2, column=1, sticky="ew", padx=(0, 20), pady=8)
-        
-        ttk.Label(info_frame, text="联系方式:", font=("Microsoft YaHei", 10)).grid(
-            row=2, column=2, sticky="e", padx=(0, 10), pady=8)
-        contact_entry = ttk.Entry(info_frame, width=20, font=("Microsoft YaHei", 10))
-        contact_entry.grid(row=2, column=3, sticky="ew", pady=8)
-        
-        # 检测配置框架
-        config_frame = ttk.LabelFrame(main_frame, text="检测配置", padding=15)
-        config_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # 配置网格权重
-        config_frame.grid_columnconfigure(1, weight=1)
-        config_frame.grid_columnconfigure(3, weight=1)
-        
-        # 检测模式
-        ttk.Label(config_frame, text="检测模式:", font=("Microsoft YaHei", 10, "bold")).grid(
-            row=0, column=0, sticky="e", padx=(0, 10), pady=8)
-        mode_var = tk.StringVar(value="标准检测")
-        mode_combo = ttk.Combobox(config_frame, textvariable=mode_var, width=18,
-                                 values=["标准检测", "快速检测", "详细检测"], state="readonly")
-        mode_combo.grid(row=0, column=1, sticky="ew", padx=(0, 20), pady=8)
-        
-        # 检测设备
-        ttk.Label(config_frame, text="检测设备:", font=("Microsoft YaHei", 10, "bold")).grid(
-            row=0, column=2, sticky="e", padx=(0, 10), pady=8)
-        device_info = self.device_manager.get_current_device_info() if self.device_configured else None
-        device_name = f"{device_info['icon']} {device_info['name']}" if device_info else "未配置设备"
-        device_label = ttk.Label(config_frame, text=device_name, 
-                                font=("Microsoft YaHei", 10), foreground="blue")
-        device_label.grid(row=0, column=3, sticky="w", pady=8)
-        
-        # 备注框架 - 简化设计
-        notes_frame = ttk.LabelFrame(main_frame, text="备注信息", padding=15)
-        notes_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        # 备注文本框 - 固定高度，无滚动条
-        notes_text = tk.Text(notes_frame, height=2, font=("Microsoft YaHei", 10))
-        notes_text.pack(fill=tk.X, expand=False)
-        
-        # 按钮框架
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(pady=(10, 0))
-        
-        def create_profile():
-            """创建档案"""
-            name = name_entry.get().strip()
-            if not name:
-                messagebox.showwarning("输入错误", "请输入姓名！")
-                return
-            
-            try:
-                age = int(age_entry.get()) if age_entry.get() else 0
-                height = float(height_entry.get()) if height_entry.get() else 0
-                weight = float(weight_entry.get()) if weight_entry.get() else 0
-            except ValueError:
-                messagebox.showwarning("输入错误", "年龄、身高、体重请输入数字！")
-                return
-            
-            # 创建档案信息
-            from datetime import datetime
-            profile_data = {
-                "name": name,
-                "age": age,
-                "gender": gender_var.get(),
-                "height": height,
-                "weight": weight,
-                "contact": contact_entry.get().strip(),
-                "detection_mode": mode_var.get(),
-                "device": device_name,
-                "notes": notes_text.get("1.0", tk.END).strip(),
-                "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "profile_id": datetime.now().strftime("%Y%m%d_%H%M%S")
-            }
-            
-            # 保存档案到文件
-            try:
-                import json
-                filename = f"检测档案_{profile_data['profile_id']}.json"
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(profile_data, f, ensure_ascii=False, indent=2)
-                
-                self.log_message(f"📁 新档案已创建: {name} ({filename})")
-                messagebox.showinfo("档案创建成功", 
-                                  f"检测档案创建成功！\n\n"
-                                  f"姓名: {name}\n"
-                                  f"档案编号: {profile_data['profile_id']}\n"
-                                  f"保存位置: {filename}")
-                dialog.destroy()
-                
-            except Exception as e:
-                messagebox.showerror("保存失败", f"档案保存失败：{e}")
-        
-        ttk.Button(btn_frame, text="[OK] 创建档案", command=create_profile, width=15).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(btn_frame, text="[ERROR] 取消", command=dialog.destroy, width=15).pack(side=tk.LEFT)
+  
 
     def show_detection_process_dialog(self):
         """显示检测流程对话框"""
@@ -1776,6 +1595,13 @@ class PressureSensorUI:
         try:
             self.is_running = False
             
+            # 断开串口接口连接
+            if self.serial_interface:
+                try:
+                    self.serial_interface.disconnect()
+                except Exception as e:
+                    pass
+            
             # 断开当前设备连接
             if self.device_configured:
                 self.device_manager.disconnect_current_device()
@@ -1816,7 +1642,6 @@ class PressureSensorUI:
                             self.data_processor.set_array_size(32, 64)  # 32x64: 左右拼接两个32x32
                         elif com_ports == 3:
                             self.data_processor.set_array_size(32, 96)  # 32x96: 左右拼接三个32x32
-                        print(f"📐 设置数组大小: {self.data_processor.array_rows}x{self.data_processor.array_cols} (total_points={self.data_processor.total_points})")
                     
                     # 只处理最新的帧，丢弃过旧的数据以减少延迟
                     frame_data = frame_data_list[-1]  # 取最新帧
@@ -1827,28 +1652,6 @@ class PressureSensorUI:
                         expected_length = com_ports * 1024
                         actual_length = len(frame_data.get('data', b''))
                             
-                        # 调试输出 - 增强版
-                        current_frame_count = self.serial_interface.get_frame_count() if self.serial_interface else 0
-                        if current_frame_count % 50 == 0:  # 每50帧输出一次调试信息
-                            # 检查接口类型和配置
-                            interface_type = type(self.serial_interface).__name__
-                            multi_config = getattr(self.serial_interface, 'multi_port_config', None)
-                            device_type = getattr(self.serial_interface, 'device_type', 'unknown')
-                            
-                            print(f"🔍 多端口调试 [帧#{current_frame_count}]:")
-                            print(f"  接口类型: {interface_type}")
-                            print(f"  设备模式: {device_type}")
-                            print(f"  多端口配置: {multi_config}")
-                            print(f"  数据长度: 预期{expected_length}字节, 实际{actual_length}字节")
-                            print(f"  数组大小: {self.data_processor.array_rows}x{self.data_processor.array_cols}")
-                            
-                            # 检查是否真的是多端口数据
-                            if actual_length == 1024:
-                                print(f"  ⚠️  警告: 数据长度为1024字节，可能仍在使用单端口连接!")
-                            elif actual_length == expected_length:
-                                print(f"  ✅ 数据长度正确，多端口连接正常")
-                            else:
-                                print(f"  ❌ 数据长度异常")
                     
                     # 正确的JQ转换逻辑：
                     # 单端口设备：这里需要JQ转换（原始数据→JQ转换→热力图）
@@ -1865,7 +1668,6 @@ class PressureSensorUI:
                         enable_jq = True
                         jq_reason = "默认启用JQ转换"
                     
-                    print(f"🔧 JQ转换决策: {enable_jq} ({jq_reason})")
                     processed_data = self.data_processor.process_frame_data(frame_data, enable_jq)
                     
                     
@@ -1889,17 +1691,12 @@ class PressureSensorUI:
                             self._debug_counter = 0
                         self._debug_counter += 1
                         
-                        if self._debug_counter % 50 == 0:  # 每50帧打印一次
-                            print(f"[DEBUG] 数据更新#{self._debug_counter}: 有向导={has_wizard}, 正在记录={is_recording}")
                         
                         if has_wizard:
                             if is_recording:
-                                if self._debug_counter % 50 == 0:
-                                    print(f"[DEBUG] 检测向导正在记录，传递数据")
                                 try:
                                     self._active_detection_wizard.write_csv_data_row(processed_data)
                                 except Exception as e:
-                                    print(f"[DEBUG] 写入检测数据失败: {e}")
                                     import traceback
                                     traceback.print_exc()
                         

@@ -76,12 +76,18 @@ class HeatmapVisualizer:
         """设置matplotlib图形"""
         # 根据数组尺寸调整图形大小
         aspect_ratio = self.array_cols / self.array_rows
-        if aspect_ratio > 1.5:  # 宽矩形（如32x64, 32x96）
-            figsize = (12, 8)
+        
+        # 基于数据真实比例计算最佳显示尺寸，同时最大化利用显示空间
+        if aspect_ratio > 1.5:  # 宽矩形（如32x64=2.0, 32x96=3.0）
+            # 让宽矩形尽可能占满水平空间
+            base_width = 16  # 更大的宽度
+            figsize = (base_width, base_width / aspect_ratio)
         elif aspect_ratio < 0.7:  # 高矩形（如64x32, 96x32）
-            figsize = (8, 12)
+            # 让高矩形尽可能占满垂直空间
+            base_height = 12
+            figsize = (base_height * aspect_ratio, base_height)
         else:  # 接近正方形
-            figsize = (10, 10)
+            figsize = (12, 12)
         
         self.fig = Figure(figsize=figsize, dpi=100, facecolor='white')
         self.ax = self.fig.add_subplot(111)
@@ -95,7 +101,7 @@ class HeatmapVisualizer:
             cmap=self.custom_cmap,
             norm=self.norm,
             interpolation='bilinear',  # 双线性插值，性能与效果的平衡
-            aspect='auto',             # 自动调整纵横比以适应数据形状
+            aspect='equal',            # 保持像素点正方形，确保正确比例显示
             animated=True,             # 启用动画模式提高性能
             alpha=1.0,                 # 去掉透明度提升性能
             rasterized=True            # 栅格化渲染提升性能
@@ -122,8 +128,12 @@ class HeatmapVisualizer:
         self.colorbar.set_ticks(tick_positions)
         self.colorbar.set_ticklabels(tick_labels)
         
-        # 调整布局
-        self.fig.tight_layout()
+        # 设置坐标轴范围，确保热力图填满整个显示区域
+        self.ax.set_xlim(-0.5, self.array_cols - 0.5)
+        self.ax.set_ylim(self.array_rows - 0.5, -0.5)  # 翻转Y轴，让(0,0)在左上角
+        
+        # 调整布局，为颜色条预留空间，让热力图尽可能大
+        self.fig.subplots_adjust(left=0.05, right=0.8, top=0.95, bottom=0.05)
         
         # 嵌入到tkinter
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.parent_frame)
@@ -150,7 +160,8 @@ class HeatmapVisualizer:
                 self.array_rows, self.array_cols = matrix_2d.shape
                 # 需要重新设置图像大小
                 self.set_array_size(self.array_rows, self.array_cols)
-                return  # 重新设置后会自动绘制
+                # 重新设置后，继续用新数据更新（不要return）
+                smoothed_matrix = self.smooth_data(matrix_2d)  # 重新计算平滑数据
             
             # 更新热力图数据
             self.im.set_array(smoothed_matrix)
@@ -181,13 +192,19 @@ class HeatmapVisualizer:
             
             # 根据新的数组尺寸调整图形大小
             aspect_ratio = self.array_cols / self.array_rows
-            if aspect_ratio > 1.5:  # 宽矩形（如32x64, 32x96）
-                figsize = (12, 8)
-            elif aspect_ratio < 0.7:  # 高矩形（如64x32, 96x32）
-                figsize = (8, 12)
-            else:  # 接近正方形
-                figsize = (10, 10)
             
+            # 基于数据真实比例计算最佳显示尺寸，同时最大化利用显示空间
+            if aspect_ratio > 1.5:  # 宽矩形（如32x64=2.0, 32x96=3.0）
+                # 让宽矩形尽可能占满水平空间
+                base_width = 16  # 更大的宽度
+                figsize = (base_width, base_width / aspect_ratio)
+            elif aspect_ratio < 0.7:  # 高矩形（如64x32, 96x32）
+                # 让高矩形尽可能占满垂直空间
+                base_height = 12
+                figsize = (base_height * aspect_ratio, base_height)
+            else:  # 接近正方形
+                figsize = (12, 12)
+                
             self.fig.set_figwidth(figsize[0])
             self.fig.set_figheight(figsize[1])
             
@@ -203,7 +220,7 @@ class HeatmapVisualizer:
                 cmap=self.custom_cmap,
                 norm=self.norm,
                 interpolation='bilinear',
-                aspect='auto',
+                aspect='equal',
                 animated=True,
                 alpha=1.0,
                 rasterized=True
@@ -227,8 +244,12 @@ class HeatmapVisualizer:
                 self.colorbar.set_ticks(tick_positions)
                 self.colorbar.set_ticklabels(tick_labels)
             
-            # 调整布局
-            self.fig.tight_layout()
+            # 设置坐标轴范围，确保热力图填满整个显示区域
+            self.ax.set_xlim(-0.5, self.array_cols - 0.5)
+            self.ax.set_ylim(self.array_rows - 0.5, -0.5)  # 翻转Y轴，让(0,0)在左上角
+            
+            # 调整布局，为颜色条预留空间，让热力图尽可能大
+            self.fig.subplots_adjust(left=0.05, right=0.8, top=0.95, bottom=0.05)
             
             # 重绘画布
             self.canvas.draw()
