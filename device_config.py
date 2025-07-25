@@ -26,9 +26,11 @@ class DeviceConfigDialog:
         
         # 设备类型定义
         self.device_types = {
-            'footpad': {'name': '脚垫', 'icon': '👣', 'array_size': '32x32'},
-            'cushion': {'name': '坐垫', 'icon': '🪑', 'array_size': '32x32'}, 
-            'walkway': {'name': '步道', 'icon': '🚶', 'array_size': '32x96'}
+            'footpad': {'name': '脚垫', 'icon': '👣', 'array_size': '32x32', 'com_ports': 1},
+            'cushion': {'name': '坐垫', 'icon': '🪑', 'array_size': '32x32', 'com_ports': 1}, 
+            'walkway_dual': {'name': '步道', 'icon': '🚶', 'array_size': '32x64', 'com_ports': 2},
+            # 'walkway': {'name': '步道(单口)', 'icon': '🚶', 'array_size': '32x96', 'com_ports': 1},
+            # 'walkway_triple': {'name': '步道(三口)', 'icon': '🚶‍♀️', 'array_size': '32x96', 'com_ports': 3}
         }
         
         # COM口扫描
@@ -143,21 +145,62 @@ class DeviceConfigDialog:
     def init_database(self):
         """初始化SQLite数据库"""
         try:
-            conn = sqlite3.connect(self.config_db)
+            conn = sqlite3.connect(self.config_db, timeout=10.0)
             cursor = conn.cursor()
             
-            # 创建设备配置表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS device_configs (
-                    device_id TEXT PRIMARY KEY,
-                    port TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    icon TEXT NOT NULL,
-                    array_size TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            ''')
+            # 检查是否需要升级数据库架构
+            cursor.execute("PRAGMA table_info(device_configs)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            needs_upgrade = ('ports' not in columns or 'com_ports' not in columns or 'device_type' not in columns)
+            
+            if needs_upgrade:
+                print("🔄 检测到旧版数据库，正在升级架构...")
+                
+                # 备份旧数据
+                old_data = []
+                try:
+                    cursor.execute('SELECT * FROM device_configs')
+                    old_data = cursor.fetchall()
+                except:
+                    pass
+                
+                # 删除旧表并创建新表
+                cursor.execute('DROP TABLE IF EXISTS device_configs')
+                
+                # 创建新的设备配置表（支持多端口）
+                cursor.execute('''
+                    CREATE TABLE device_configs (
+                        device_id TEXT PRIMARY KEY,
+                        ports TEXT NOT NULL,
+                        port TEXT,
+                        name TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        array_size TEXT NOT NULL,
+                        com_ports INTEGER NOT NULL,
+                        device_type TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                ''')
+                
+                print("✅ 数据库架构升级完成")
+            else:
+                # 表已存在且架构正确
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS device_configs (
+                        device_id TEXT PRIMARY KEY,
+                        ports TEXT NOT NULL,
+                        port TEXT,
+                        name TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        array_size TEXT NOT NULL,
+                        com_ports INTEGER NOT NULL,
+                        device_type TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                ''')
             
             # 创建配置元数据表
             cursor.execute('''
@@ -172,6 +215,16 @@ class DeviceConfigDialog:
             conn.close()
         except Exception as e:
             print(f"初始化数据库失败: {e}")
+            # 如果初始化失败，尝试删除损坏的数据库文件
+            try:
+                import os
+                if os.path.exists(self.config_db):
+                    os.remove(self.config_db)
+                    print("🗑️ 已删除损坏的数据库文件，将重新创建")
+                    # 递归调用重新初始化
+                    self.init_database()
+            except Exception as cleanup_error:
+                print(f"清理数据库文件失败: {cleanup_error}")
     
     def load_saved_config(self):
         """从SQLite数据库加载保存的配置"""
@@ -179,21 +232,35 @@ class DeviceConfigDialog:
             if not os.path.exists(self.config_db):
                 return None
                 
-            conn = sqlite3.connect(self.config_db)
+            conn = sqlite3.connect(self.config_db, timeout=10.0)
             cursor = conn.cursor()
             
             # 查询所有设备配置
-            cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
+            cursor.execute('''
+                SELECT device_id, ports, port, name, icon, array_size, com_ports, device_type 
+                FROM device_configs
+            ''')
             rows = cursor.fetchall()
             
             config_data = {}
             for row in rows:
-                device_id, port, name, icon, array_size = row
+                device_id, ports_str, port, name, icon, array_size, com_ports, device_type = row
+                
+                # 解析端口列表
+                import json
+                try:
+                    ports_list = json.loads(ports_str)
+                except:
+                    ports_list = [port] if port else []
+                
                 config_data[device_id] = {
+                    'ports': ports_list,
                     'port': port,
                     'name': name,
                     'icon': icon,
-                    'array_size': array_size
+                    'array_size': array_size,
+                    'com_ports': com_ports,
+                    'device_type': device_type
                 }
             
             conn.close()
@@ -212,11 +279,20 @@ class DeviceConfigDialog:
             if not isinstance(config_data, dict):
                 return False
             for device_id, config in config_data.items():
-                required_keys = ['port', 'name', 'icon', 'array_size']
+                required_keys = ['name', 'icon', 'array_size']
                 if not all(key in config for key in required_keys):
                     return False
-                if device_id not in self.device_types:
+                
+                # 检查端口配置
+                if 'ports' not in config and 'port' not in config:
                     return False
+                
+                # 检查设备类型是否存在（允许隐藏的设备类型）
+                if device_id not in self.device_types:
+                    # 允许已隐藏的设备类型
+                    hidden_types = ['walkway', 'walkway_triple']
+                    if device_id not in hidden_types:
+                        return False
             return True
         except:
             return False
@@ -247,67 +323,78 @@ class DeviceConfigDialog:
             
             for device_id, config in saved_config.items():
                 if device_id in self.device_rows:
-                    port = config['port']
+                    device_row = self.device_rows[device_id]
+                    device_name = config['name']
+                    ports = config.get('ports', [])
                     
-                    # 获取当前下拉框选项
-                    current_options = list(self.device_rows[device_id]['port_combo']['values'])
-                    if not current_options:
-                        current_options = [""]  # 确保有空选项
-                    
-                    # 如果保存的端口不在当前选项中，添加它
-                    if port not in current_options:
-                        current_options.append(port)
-                        self.device_rows[device_id]['port_combo']['values'] = current_options
-                    
-                    # 设置为默认选择
-                    self.device_rows[device_id]['port_var'].set(port)
+                    # 处理多端口配置
+                    for port_index, port_var in enumerate(device_row['port_vars']):
+                        if port_index < len(ports):
+                            port = ports[port_index]
+                            
+                            # 获取当前下拉框选项
+                            current_options = list(device_row['port_combos'][port_index]['values'])
+                            if not current_options:
+                                current_options = [""]
+                            
+                            # 如果保存的端口不在当前选项中，添加它
+                            if port not in current_options:
+                                current_options.append(port)
+                                device_row['port_combos'][port_index]['values'] = current_options
+                            
+                            # 设置为默认选择
+                            port_var.set(port)
+                            
+                            # 触发端口检测
+                            self.log_message(f"🔍 检测已保存的 {device_name} 端口{port_index+1} {port} 有效性...")
+                            
+                            def trigger_check(dev_id, p_idx, port_name, dev_name):
+                                def check_validity():
+                                    try:
+                                        result = self.check_port_validity_1024(port_name)
+                                        self.port_data_status[port_name] = result
+                                        
+                                        # 在主线程中更新UI
+                                        def update_ui():
+                                            self.update_device_status_display(dev_id)
+                                            self.update_ports_display()
+                                            self.log_message(f"✅ {dev_name} 端口{p_idx+1} {port_name} 检测完成: {result}")
+                                        
+                                        try:
+                                            self.dialog.after(0, update_ui)
+                                        except:
+                                            pass
+                                            
+                                    except Exception as e:
+                                        error_result = f"❌ 检测失败: {str(e)[:20]}..."
+                                        self.port_data_status[port_name] = error_result
+                                        
+                                        def update_error():
+                                            self.update_device_status_display(dev_id)
+                                            self.log_message(f"❌ {dev_name} 端口{p_idx+1} {port_name} 检测失败: {str(e)}")
+                                        
+                                        try:
+                                            self.dialog.after(0, update_error)
+                                        except:
+                                            pass
+                                
+                                # 启动检测线程
+                                check_thread = threading.Thread(target=check_validity, daemon=True)
+                                check_thread.start()
+                            
+                            # 延迟触发检测（避免UI阻塞）
+                            delay = 100 + port_index * 50  # 为每个端口错开检测时间
+                            self.dialog.after(delay, lambda d=device_id, i=port_index, p=port, n=device_name: trigger_check(d, i, p, n))
                     
                     # 设置检测中状态
-                    self.device_rows[device_id]['status_label'].config(text="🔍 检测中...", foreground="blue")
-                    
-                    # 立即触发1024字节检测
-                    device_name = self.device_types[device_id]['name']
-                    self.log_message(f"🔍 检测已保存的 {device_name} 端口 {port} 有效性...")
-                    
-                    def trigger_check(dev_id, port_name, dev_name):
-                        def check_validity():
-                            try:
-                                result = self.check_port_validity_1024(port_name)
-                                self.port_data_status[port_name] = result
-                                
-                                # 在主线程中更新UI
-                                def update_ui():
-                                    self.update_port_status_display(dev_id, port_name)
-                                    self.update_ports_display()
-                                    self.log_message(f"✅ {dev_name} 端口 {port_name} 检测完成: {result}")
-                                
-                                try:
-                                    self.dialog.after(0, update_ui)
-                                except:
-                                    pass
-                                    
-                            except Exception as e:
-                                error_result = f"❌ 检测失败: {str(e)[:20]}..."
-                                self.port_data_status[port_name] = error_result
-                                
-                                def update_error():
-                                    self.update_port_status_display(dev_id, port_name)
-                                    self.log_message(f"❌ {dev_name} 端口 {port_name} 检测失败: {str(e)}")
-                                
-                                try:
-                                    self.dialog.after(0, update_error)
-                                except:
-                                    pass
-                        
-                        # 启动检测线程
-                        check_thread = threading.Thread(target=check_validity, daemon=True)
-                        check_thread.start()
-                    
-                    # 延迟触发检测（避免UI阻塞）
-                    self.dialog.after(100, lambda d=device_id, p=port, n=device_name: trigger_check(d, p, n))
+                    device_row['status_label'].config(text="🔍 检测中...", foreground="blue")
                     
                     configured_count += 1
-                    port_list.append(f"{config['icon']} {config['name']}: {port}")
+                    if len(ports) > 1:
+                        port_desc = f"{ports[0]}...({len(ports)}端口)"
+                    else:
+                        port_desc = ports[0] if ports else "未知"
+                    port_list.append(f"{config['icon']} {device_name}: {port_desc}")
             
             # 更新端口列表显示
             if port_list:
@@ -329,7 +416,7 @@ class DeviceConfigDialog:
     def save_config(self, config_data):
         """保存配置到SQLite数据库"""
         try:
-            conn = sqlite3.connect(self.config_db)
+            conn = sqlite3.connect(self.config_db, timeout=10.0)
             cursor = conn.cursor()
             
             # 清空现有配置
@@ -337,17 +424,30 @@ class DeviceConfigDialog:
             
             # 插入新配置
             current_time = datetime.now().isoformat()
+            import json
+            
             for device_id, config in config_data.items():
+                # 准备端口数据
+                ports_list = config.get('ports', [])
+                if not ports_list and config.get('port'):
+                    ports_list = [config['port']]
+                
+                ports_json = json.dumps(ports_list)
+                single_port = ports_list[0] if len(ports_list) == 1 else None
+                
                 cursor.execute('''
                     INSERT INTO device_configs 
-                    (device_id, port, name, icon, array_size, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (device_id, ports, port, name, icon, array_size, com_ports, device_type, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     device_id,
-                    config['port'],
+                    ports_json,
+                    single_port,
                     config['name'],
                     config['icon'],
                     config['array_size'],
+                    config.get('com_ports', 1),
+                    config.get('device_type', 'single'),
                     current_time,
                     current_time
                 ))
@@ -421,9 +521,9 @@ class DeviceConfigDialog:
         header_frame = ttk.Frame(table_frame)
         header_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(header_frame, text="设备类型", width=15, font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5)
-        ttk.Label(header_frame, text="阵列大小", width=12, font=("Arial", 10, "bold")).grid(row=0, column=1, padx=5)
-        ttk.Label(header_frame, text="COM端口", width=20, font=("Arial", 10, "bold")).grid(row=0, column=2, padx=5)
+        ttk.Label(header_frame, text="设备类型", width=18, font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5)
+        ttk.Label(header_frame, text="阵列/端口", width=12, font=("Arial", 10, "bold")).grid(row=0, column=1, padx=5)
+        ttk.Label(header_frame, text="COM端口配置", width=25, font=("Arial", 10, "bold")).grid(row=0, column=2, padx=5)
         ttk.Label(header_frame, text="状态", width=15, font=("Arial", 10, "bold")).grid(row=0, column=3, padx=5)
         
         # 设备配置行
@@ -435,17 +535,43 @@ class DeviceConfigDialog:
             # 设备类型
             device_label = ttk.Label(row_frame, 
                                    text=f"{device_info['icon']} {device_info['name']}", 
-                                   width=15)
+                                   width=18)
             device_label.grid(row=0, column=0, padx=5)
             
-            # 阵列大小
-            size_label = ttk.Label(row_frame, text=device_info['array_size'], width=12)
+            # 阵列大小和端口数
+            size_info = f"{device_info['array_size']}\n({device_info['com_ports']}端口)"
+            size_label = ttk.Label(row_frame, text=size_info, width=12, font=("Arial", 9))
             size_label.grid(row=0, column=1, padx=5)
             
-            # COM端口选择
-            port_var = tk.StringVar()
-            port_combo = ttk.Combobox(row_frame, textvariable=port_var, width=18, state="readonly")
-            port_combo.grid(row=0, column=2, padx=5)
+            # COM端口配置
+            ports_frame = ttk.Frame(row_frame)
+            ports_frame.grid(row=0, column=2, padx=5)
+            
+            port_vars = []
+            port_combos = []
+            
+            # 根据端口数创建相应的下拉框
+            for port_idx in range(device_info['com_ports']):
+                if device_info['com_ports'] > 1:
+                    # 多端口设备，显示端口标签
+                    port_label = ttk.Label(ports_frame, text=f"端口{port_idx+1}:", font=("Arial", 8))
+                    port_label.grid(row=port_idx, column=0, sticky="w", padx=(0, 2))
+                    
+                    port_var = tk.StringVar()
+                    port_combo = ttk.Combobox(ports_frame, textvariable=port_var, width=12, state="readonly")
+                    port_combo.grid(row=port_idx, column=1, padx=2, pady=1)
+                else:
+                    # 单端口设备
+                    port_var = tk.StringVar()
+                    port_combo = ttk.Combobox(ports_frame, textvariable=port_var, width=18, state="readonly")
+                    port_combo.grid(row=0, column=0)
+                
+                port_vars.append(port_var)
+                port_combos.append(port_combo)
+                
+                # 绑定选择事件
+                port_combo.bind('<<ComboboxSelected>>', 
+                               lambda e, dev_id=device_id, p_idx=port_idx: self.on_port_selected(dev_id, p_idx))
             
             # 状态显示
             status_label = ttk.Label(row_frame, text="未配置", width=15, foreground="gray")
@@ -453,14 +579,11 @@ class DeviceConfigDialog:
             
             # 存储控件引用
             self.device_rows[device_id] = {
-                'port_var': port_var,
-                'port_combo': port_combo,
-                'status_label': status_label
+                'port_vars': port_vars,
+                'port_combos': port_combos,
+                'status_label': status_label,
+                'com_ports': device_info['com_ports']
             }
-            
-            # 绑定选择事件
-            port_combo.bind('<<ComboboxSelected>>', 
-                           lambda e, dev_id=device_id: self.on_port_selected(dev_id))
     
     def start_port_scanning(self):
         """启动COM端口扫描 - 立即显示端口"""
@@ -592,19 +715,23 @@ class DeviceConfigDialog:
                 port_options = [""] + self.available_ports
                 
                 for device_id, row in self.device_rows.items():
-                    current_value = row['port_var'].get()
-                    row['port_combo']['values'] = port_options
+                    # 更新所有端口下拉框的选项
+                    for port_combo in row['port_combos']:
+                        port_combo['values'] = port_options
                     
-                    # 如果当前选择的端口不在端口列表中，清空选择
-                    if current_value and current_value not in self.available_ports:
-                        row['port_var'].set("")
+                    # 检查当前选择的端口是否仍然可用
+                    has_missing_ports = False
+                    for port_var in row['port_vars']:
+                        current_value = port_var.get()
+                        if current_value and current_value not in self.available_ports:
+                            port_var.set("")  # 清空丢失的端口
+                            has_missing_ports = True
+                    
+                    # 更新设备状态显示
+                    if has_missing_ports:
                         row['status_label'].config(text="端口丢失", foreground="red")
-                    elif current_value:
-                        # 显示当前端口的检测状态
-                        self.update_port_status_display(device_id, current_value)
                     else:
-                        # 未选择端口
-                        row['status_label'].config(text="未配置", foreground="gray")
+                        self.update_device_status_display(device_id)
                         
             else:
                 self.scan_status_label.config(text="❌ 未发现COM端口", foreground="red")
@@ -612,8 +739,10 @@ class DeviceConfigDialog:
                 
                 # 清空所有端口选项
                 for device_id, row in self.device_rows.items():
-                    row['port_combo']['values'] = [""]
-                    row['port_var'].set("")
+                    for port_combo in row['port_combos']:
+                        port_combo['values'] = [""]
+                    for port_var in row['port_vars']:
+                        port_var.set("")
                     row['status_label'].config(text="无端口", foreground="red")
                     
         except Exception as e:
@@ -652,28 +781,20 @@ class DeviceConfigDialog:
         except Exception as e:
             print(f"更新设备端口状态出错: {e}")
     
-    def on_port_selected(self, device_id):
+    def on_port_selected(self, device_id, port_index):
         """端口选择事件 - 触发1024字节有效性检测"""
-        selected_port = self.device_rows[device_id]['port_var'].get()
-        status_label = self.device_rows[device_id]['status_label']
-        device_name = self.device_types[device_id]['name']
+        device_row = self.device_rows[device_id]
+        selected_port = device_row['port_vars'][port_index].get()
+        status_label = device_row['status_label']
+        device_name = self.device_types[device_id]['name'] 
         
         if selected_port:
-            # 检查端口是否被其他设备占用，如果占用则直接替换
-            for other_id, row in self.device_rows.items():
-                if other_id != device_id and row['port_var'].get() == selected_port:
-                    # 清空原设备的端口配置
-                    other_device_name = self.device_types[other_id]['name']
-                    row['port_var'].set("")  # 清空端口选择
-                    row['status_label'].config(text="未配置", foreground="gray")  # 重置状态
-                    
-                    # 记录替换日志
-                    self.log_message(f"🔄 端口 {selected_port} 从 {other_device_name} 转移到 {device_name}")
-                    break
+            # 检查端口是否被其他设备占用
+            self.check_and_clear_port_conflicts(device_id, port_index, selected_port)
             
             # 显示检测中状态
-            status_label.config(text="🔍 检测中...", foreground="blue")
-            self.log_message(f"🔍 开始检测 {device_name} 端口 {selected_port} 的1024字节数据有效性...")
+            status_label.config(text="🔍 检测中...", foreground="blue") 
+            self.log_message(f"🔍 开始检测 {device_name} 端口{port_index+1} {selected_port} 的1024字节数据有效性...")
             
             # 在后台线程中进行有效性检测
             def check_validity():
@@ -683,9 +804,9 @@ class DeviceConfigDialog:
                     
                     # 在主线程中更新UI
                     def update_ui():
-                        self.update_port_status_display(device_id, selected_port)
-                        self.update_ports_display()  # 更新端口列表显示
-                        self.log_message(f"✅ {device_name} 端口 {selected_port} 检测完成: {result}")
+                        self.update_device_status_display(device_id)
+                        self.update_ports_display()
+                        self.log_message(f"✅ {device_name} 端口{port_index+1} {selected_port} 检测完成: {result}")
                     
                     try:
                         self.dialog.after(0, update_ui)
@@ -697,8 +818,8 @@ class DeviceConfigDialog:
                     self.port_data_status[selected_port] = error_result
                     
                     def update_error():
-                        self.update_port_status_display(device_id, selected_port)
-                        self.log_message(f"❌ {device_name} 端口 {selected_port} 检测失败: {str(e)}")
+                        self.update_device_status_display(device_id)
+                        self.log_message(f"❌ {device_name} 端口{port_index+1} {selected_port} 检测失败: {str(e)}")
                     
                     try:
                         self.dialog.after(0, update_error)
@@ -710,7 +831,63 @@ class DeviceConfigDialog:
             check_thread.start()
             
         else:
+            # 检查是否所有端口都已配置
+            self.update_device_status_display(device_id)
+    
+    def check_and_clear_port_conflicts(self, current_device_id, current_port_index, selected_port):
+        """检查并清除端口冲突"""
+        for other_device_id, other_row in self.device_rows.items():
+            for other_port_index, other_port_var in enumerate(other_row['port_vars']):
+                # 跳过自己
+                if other_device_id == current_device_id and other_port_index == current_port_index:
+                    continue
+                    
+                if other_port_var.get() == selected_port:
+                    # 清空冲突的端口配置
+                    other_device_name = self.device_types[other_device_id]['name']
+                    current_device_name = self.device_types[current_device_id]['name']
+                    
+                    other_port_var.set("")  # 清空端口选择
+                    self.update_device_status_display(other_device_id)  # 重置状态
+                    
+                    # 记录替换日志
+                    self.log_message(f"🔄 端口 {selected_port} 从 {other_device_name} 转移到 {current_device_name}")
+                    return
+    
+    def update_device_status_display(self, device_id):
+        """更新设备状态显示"""
+        device_row = self.device_rows[device_id]
+        status_label = device_row['status_label']
+        expected_ports = device_row['com_ports']
+        
+        # 检查配置的端口数
+        configured_ports = []
+        valid_ports = 0
+        invalid_ports = 0
+        
+        for port_var in device_row['port_vars']:
+            port_name = port_var.get()
+            if port_name:
+                configured_ports.append(port_name)
+                # 检查端口状态
+                port_status = self.port_data_status.get(port_name, "未检测")
+                if "✅ 1024字节有效数据" in port_status or "使用中" in port_status:
+                    valid_ports += 1
+                elif "❌" in port_status:
+                    invalid_ports += 1
+        
+        configured_count = len(configured_ports)
+        
+        if configured_count == 0:
             status_label.config(text="未配置", foreground="gray")
+        elif configured_count < expected_ports:
+            status_label.config(text=f"部分配置 {configured_count}/{expected_ports}", foreground="orange")
+        elif invalid_ports > 0:
+            status_label.config(text=f"❌ {invalid_ports}个无效", foreground="red")
+        elif valid_ports == expected_ports:
+            status_label.config(text="✅ 全部有效", foreground="green")
+        else:
+            status_label.config(text="🔍 检测中", foreground="blue")
     
     def refresh_ports(self):
         """手动刷新端口 - 立即显示，不自动检测"""
@@ -787,15 +964,35 @@ class DeviceConfigDialog:
         configured_count = 0
         
         for device_id, row in self.device_rows.items():
-            selected_port = row['port_var'].get()
-            if selected_port:
-                config_result[device_id] = {
-                    'port': selected_port,
-                    'name': self.device_types[device_id]['name'],
-                    'icon': self.device_types[device_id]['icon'],
-                    'array_size': self.device_types[device_id]['array_size']
-                }
-                configured_count += 1
+            # 收集该设备的所有端口配置
+            device_ports = []
+            for port_var in row['port_vars']:
+                port_name = port_var.get()
+                if port_name:
+                    device_ports.append(port_name)
+            
+            # 检查是否有配置的端口
+            if device_ports:
+                expected_ports = self.device_types[device_id]['com_ports']
+                
+                # 对于多端口设备，检查是否配置完整
+                if len(device_ports) == expected_ports:
+                    config_result[device_id] = {
+                        'ports': device_ports,  # 多端口配置
+                        'port': device_ports[0] if len(device_ports) == 1 else None,  # 向后兼容
+                        'name': self.device_types[device_id]['name'],
+                        'icon': self.device_types[device_id]['icon'],
+                        'array_size': self.device_types[device_id]['array_size'],
+                        'com_ports': expected_ports,
+                        'device_type': self.get_device_type_string(device_id, len(device_ports))
+                    }
+                    configured_count += 1
+                elif len(device_ports) < expected_ports:
+                    # 端口配置不完整
+                    messagebox.showwarning("配置警告", 
+                                         f"{self.device_types[device_id]['name']} 需要配置 {expected_ports} 个端口，"
+                                         f"但只配置了 {len(device_ports)} 个端口！")
+                    return
         
         if configured_count == 0:
             messagebox.showwarning("配置警告", "请至少配置一个设备！")
@@ -819,6 +1016,17 @@ class DeviceConfigDialog:
         except:
             pass
     
+    def get_device_type_string(self, device_id, port_count):
+        """根据设备ID和端口数量获取设备类型字符串"""
+        if device_id == "walkway":
+            return "walkway"  # 向后兼容
+        elif device_id == "walkway_dual" or port_count == 2:
+            return "dual_1024"
+        elif device_id == "walkway_triple" or port_count == 3:
+            return "triple_1024"
+        else:
+            return "single"
+    
     def cancel_config(self):
         """取消配置"""
         self.result = None
@@ -841,25 +1049,86 @@ class DeviceManager:
         """设置设备配置"""
         self.devices = device_configs
         
-        # 为每个设备创建串口接口，但避免重复创建已连接的接口
+        # 为每个设备创建相应的接口
         for device_id, config in device_configs.items():
-            port_name = config['port']
+            device_name = config['name']
+            com_ports = config.get('com_ports', 1)
+            device_type = config.get('device_type', 'single')
             
-            # 检查是否已经有连接到此端口的串口接口
-            existing_interface = None
-            for existing_id, interface in self.serial_interfaces.items():
-                if interface and interface.get_current_port() == port_name:
-                    existing_interface = interface
-                    break
-            
-            if existing_interface:
-                # 重用已连接的接口
-                self.serial_interfaces[device_id] = existing_interface
-                print(f"重用端口 {port_name} 的现有连接 (设备: {config['name']})")
+            if com_ports == 1:
+                # 单端口设备
+                port_name = config.get('port') or config.get('ports', [None])[0]
+                if port_name:
+                    # 检查是否已经有连接到此端口的串口接口
+                    existing_interface = None
+                    for existing_id, interface in self.serial_interfaces.items():
+                        if interface and hasattr(interface, 'get_current_port') and interface.get_current_port() == port_name:
+                            existing_interface = interface
+                            break
+                    
+                    if existing_interface:
+                        # 重用已连接的接口
+                        self.serial_interfaces[device_id] = existing_interface
+                        print(f"重用端口 {port_name} 的现有连接 (设备: {device_name})")
+                    else:
+                        # 创建新的串口接口
+                        serial_interface = SerialInterface(baudrate=1000000)
+                        # 根据设备类型设置模式
+                        if device_type == "walkway":
+                            serial_interface.set_device_mode("walkway")
+                        else:
+                            serial_interface.set_device_mode("single")
+                        self.serial_interfaces[device_id] = serial_interface
+                        print(f"为 {device_name} 创建新的串口接口 (端口: {port_name})")
+                else:
+                    print(f"⚠️ 设备 {device_name} 缺少端口配置")
             else:
-                # 创建新的串口接口
-                self.serial_interfaces[device_id] = SerialInterface(baudrate=1000000)
-                print(f"为 {config['name']} 创建新的串口接口 (端口: {port_name})")
+                # 多端口设备 - 使用新的透明多端口支持
+                ports = config.get('ports', [])
+                if len(ports) == com_ports:
+                    try:
+                        # 检查是否已经有现有连接到这些端口中的任何一个
+                        existing_interface = None
+                        existing_port = None
+                        for port in ports:
+                            for existing_id, interface in self.serial_interfaces.items():
+                                if interface and hasattr(interface, 'get_current_port') and interface.get_current_port() == port:
+                                    existing_interface = interface
+                                    existing_port = port
+                                    print(f"发现现有连接到端口 {port} (来自设备: {existing_id})")
+                                    break
+                            if existing_interface:
+                                break
+                        
+                        if existing_interface:
+                            # 如果有现有连接，需要先断开，然后创建新的多端口接口
+                            print(f"断开现有单端口连接 {existing_port}，准备创建多端口连接")
+                            existing_interface.disconnect()
+                            
+                            # 从现有接口映射中移除
+                            existing_keys = [k for k, v in self.serial_interfaces.items() if v == existing_interface]
+                            for key in existing_keys:
+                                del self.serial_interfaces[key]
+                        
+                        # 创建支持多端口的SerialInterface
+                        serial_interface = SerialInterface(baudrate=1000000)
+                        
+                        # 配置多端口
+                        port_configs = [{'port': ports[i], 'device_id': i} for i in range(len(ports))]
+                        serial_interface.set_multi_port_config(port_configs)
+                        
+                        # 设置设备模式
+                        serial_interface.set_device_mode(device_type)
+                        
+                        self.serial_interfaces[device_id] = serial_interface
+                        print(f"✅ 为 {device_name} 创建多端口接口 (端口: {', '.join(ports)}, 模式: {device_type})")
+                        print(f"   接口类型: {type(serial_interface).__name__}")
+                        print(f"   多端口配置: {getattr(serial_interface, 'multi_port_config', None)}")
+                        print(f"   预期设备帧数: {getattr(serial_interface, 'expected_device_frames', None)}")
+                    except Exception as e:
+                        print(f"❌ 创建多端口接口失败: {e}")
+                else:
+                    print(f"⚠️ 设备 {device_name} 端口配置不完整: 需要{com_ports}个，实际{len(ports)}个")
             
         # 设置默认设备
         if self.devices:
@@ -896,7 +1165,28 @@ class DeviceManager:
             serial_interface = self.serial_interfaces[self.current_device]
             
             try:
-                return serial_interface.connect(device_config['port'])
+                com_ports = device_config.get('com_ports', 1)
+                
+                if com_ports == 1:
+                    # 单端口设备
+                    port_name = device_config.get('port') or device_config.get('ports', [None])[0]
+                    if port_name:
+                        return serial_interface.connect(port_name)
+                    else:
+                        print(f"❌ 设备 {device_config['name']} 缺少端口配置")
+                        return False
+                else:
+                    # 多端口设备 - 使用透明连接方式
+                    # 新的SerialInterface支持通过connect()方法透明处理多端口
+                    # 只需要传入任意一个端口即可，因为多端口配置已经在setup_devices中设置
+                    ports = device_config.get('ports', [])
+                    if ports:
+                        # 使用第一个端口作为连接入口，SerialInterface会内部处理多端口连接
+                        return serial_interface.connect(ports[0])
+                    else:
+                        print(f"❌ 设备 {device_config['name']} 缺少端口配置")
+                        return False
+                        
             except Exception as e:
                 print(f"连接设备失败: {e}")
                 return False
@@ -906,4 +1196,29 @@ class DeviceManager:
         """断开当前设备"""
         if self.current_device and self.current_device in self.serial_interfaces:
             serial_interface = self.serial_interfaces[self.current_device]
-            serial_interface.disconnect()
+            
+            # 检查是单端口还是多端口接口
+            if hasattr(serial_interface, 'disconnect_all'):
+                # 多端口接口
+                serial_interface.disconnect_all()
+            else:
+                # 单端口接口
+                serial_interface.disconnect()
+    
+    def get_current_device_data(self):
+        """获取当前设备的数据"""
+        if self.current_device and self.current_device in self.serial_interfaces:
+            serial_interface = self.serial_interfaces[self.current_device]
+            device_config = self.devices[self.current_device]
+            com_ports = device_config.get('com_ports', 1)
+            
+            if com_ports == 1:
+                # 单端口设备
+                return serial_interface.get_data()
+            else:
+                # 多端口设备
+                if hasattr(serial_interface, 'get_combined_data'):
+                    return serial_interface.get_combined_data()
+                else:
+                    return None
+        return None

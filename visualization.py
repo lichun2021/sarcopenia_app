@@ -74,8 +74,16 @@ class HeatmapVisualizer:
         
     def setup_figure(self):
         """设置matplotlib图形"""
-        # 创建图形，增大尺寸以便看清细节
-        self.fig = Figure(figsize=(10, 10), dpi=100, facecolor='white')
+        # 根据数组尺寸调整图形大小
+        aspect_ratio = self.array_cols / self.array_rows
+        if aspect_ratio > 1.5:  # 宽矩形（如32x64, 32x96）
+            figsize = (12, 8)
+        elif aspect_ratio < 0.7:  # 高矩形（如64x32, 96x32）
+            figsize = (8, 12)
+        else:  # 接近正方形
+            figsize = (10, 10)
+        
+        self.fig = Figure(figsize=figsize, dpi=100, facecolor='white')
         self.ax = self.fig.add_subplot(111)
         
         # 初始化数据
@@ -87,7 +95,7 @@ class HeatmapVisualizer:
             cmap=self.custom_cmap,
             norm=self.norm,
             interpolation='bilinear',  # 双线性插值，性能与效果的平衡
-            aspect='equal',
+            aspect='auto',             # 自动调整纵横比以适应数据形状
             animated=True,             # 启用动画模式提高性能
             alpha=1.0,                 # 去掉透明度提升性能
             rasterized=True            # 栅格化渲染提升性能
@@ -171,6 +179,18 @@ class HeatmapVisualizer:
             self.array_rows = rows
             self.array_cols = cols
             
+            # 根据新的数组尺寸调整图形大小
+            aspect_ratio = self.array_cols / self.array_rows
+            if aspect_ratio > 1.5:  # 宽矩形（如32x64, 32x96）
+                figsize = (12, 8)
+            elif aspect_ratio < 0.7:  # 高矩形（如64x32, 96x32）
+                figsize = (8, 12)
+            else:  # 接近正方形
+                figsize = (10, 10)
+            
+            self.fig.set_figwidth(figsize[0])
+            self.fig.set_figheight(figsize[1])
+            
             # 清除旧的图形
             self.ax.clear()
             
@@ -183,7 +203,7 @@ class HeatmapVisualizer:
                 cmap=self.custom_cmap,
                 norm=self.norm,
                 interpolation='bilinear',
-                aspect='equal',
+                aspect='auto',
                 animated=True,
                 alpha=1.0,
                 rasterized=True

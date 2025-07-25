@@ -110,21 +110,56 @@ class PressureSensorUI:
             # 直接从数据库加载配置
             if os.path.exists(config_db):
                 try:
-                    conn = sqlite3.connect(config_db)
+                    conn = sqlite3.connect(config_db, timeout=10.0)
                     cursor = conn.cursor()
-                    cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
-                    rows = cursor.fetchall()
                     
-                    if rows:
-                        saved_config = {}
-                        for row in rows:
-                            device_id, port, name, icon, array_size = row
-                            saved_config[device_id] = {
-                                'port': port,
-                                'name': name,
-                                'icon': icon,
-                                'array_size': array_size
-                            }
+                    # 尝试新的数据库架构
+                    try:
+                        cursor.execute('''
+                            SELECT device_id, ports, port, name, icon, array_size, com_ports, device_type 
+                            FROM device_configs
+                        ''')
+                        rows = cursor.fetchall()
+                        
+                        if rows:
+                            saved_config = {}
+                            import json
+                            for row in rows:
+                                device_id, ports_str, port, name, icon, array_size, com_ports, device_type = row
+                                
+                                # 解析端口列表
+                                try:
+                                    ports_list = json.loads(ports_str)
+                                except:
+                                    ports_list = [port] if port else []
+                                
+                                saved_config[device_id] = {
+                                    'ports': ports_list,
+                                    'port': port,
+                                    'name': name,
+                                    'icon': icon,
+                                    'array_size': array_size,
+                                    'com_ports': com_ports,
+                                    'device_type': device_type
+                                }
+                    except sqlite3.OperationalError:
+                        # 尝试旧的数据库架构
+                        cursor.execute('SELECT device_id, port, name, icon, array_size FROM device_configs')
+                        rows = cursor.fetchall()
+                        
+                        if rows:
+                            saved_config = {}
+                            for row in rows:
+                                device_id, port, name, icon, array_size = row
+                                saved_config[device_id] = {
+                                    'ports': [port] if port else [],
+                                    'port': port,
+                                    'name': name,
+                                    'icon': icon,
+                                    'array_size': array_size,
+                                    'com_ports': 1,
+                                    'device_type': 'single'
+                                }
                     
                     conn.close()
                 except Exception as e:
@@ -142,7 +177,8 @@ class PressureSensorUI:
                     if current_port:
                         # 找到使用此端口的设备配置
                         for device_id, config in saved_config.items():
-                            if config['port'] == current_port:
+                            ports = config.get('ports', [])
+                            if current_port in ports:
                                 # 将现有接口添加到设备管理器
                                 self.device_manager.serial_interfaces[device_id] = self.serial_interface
                                 print(f"重用现有连接 {current_port} (设备: {config['name']})")
@@ -161,10 +197,26 @@ class PressureSensorUI:
                     first_device_id = device_list[0][0]
                     self.device_var.set(f"{saved_config[first_device_id]['icon']} {saved_config[first_device_id]['name']}")
                     
-                    # 获取串口接口并设置步道模式
+                    # 获取串口接口并设置设备模式
                     self.serial_interface = self.device_manager.get_current_serial_interface()
-                    if saved_config[first_device_id]['array_size'] == '32x96':
-                        self.serial_interface.set_walkway_mode(True)
+                    if self.serial_interface:
+                        device_type = saved_config[first_device_id].get('device_type', 'single')
+                        array_size = saved_config[first_device_id]['array_size']
+                        com_ports = saved_config[first_device_id].get('com_ports', 1)
+                        
+                        # 根据接口类型设置模式
+                        if com_ports > 1:
+                            # 多端口接口
+                            if hasattr(self.serial_interface, 'set_device_mode'):
+                                self.serial_interface.set_device_mode(device_type)
+                        else:
+                            # 单端口接口
+                            if hasattr(self.serial_interface, 'set_device_mode'):
+                                self.serial_interface.set_device_mode(device_type)
+                            elif array_size == '32x96' or device_type == 'walkway':
+                                # 向后兼容
+                                if hasattr(self.serial_interface, 'set_walkway_mode'):
+                                    self.serial_interface.set_walkway_mode(True)
                     
                     self.on_device_changed(None)
                 
@@ -191,7 +243,12 @@ class PressureSensorUI:
         if self.device_configured and self.device_manager:
             current_device_info = self.device_manager.get_current_device_info()
             if current_device_info:
-                skip_ports.append(current_device_info['port'])
+                # 添加当前设备使用的所有端口到跳过列表
+                ports = current_device_info.get('ports', [])
+                if ports:
+                    skip_ports.extend(ports)
+                elif current_device_info.get('port'):
+                    skip_ports.append(current_device_info['port'])
         
         # 方法2：从串口接口获取当前连接的端口
         if self.serial_interface:
@@ -220,10 +277,20 @@ class PressureSensorUI:
                 if current_port:
                     # 找到使用此端口的设备配置
                     for device_id, config in device_configs.items():
-                        if config['port'] == current_port:
-                            # 将现有接口添加到设备管理器
-                            self.device_manager.serial_interfaces[device_id] = self.serial_interface
-                            print(f"传递现有连接 {current_port} 给设备管理器 (设备: {config['name']})")
+                        ports = config.get('ports', [])
+                        com_ports = config.get('com_ports', 1)
+                        
+                        if current_port in ports:
+                            # 检查是否为单端口设备
+                            if com_ports == 1:
+                                # 单端口设备：直接传递现有接口
+                                self.device_manager.serial_interfaces[device_id] = self.serial_interface
+                                print(f"传递现有单端口连接 {current_port} 给设备管理器 (设备: {config['name']})")
+                            else:
+                                # 多端口设备：不能直接使用现有单端口连接
+                                # 设备管理器的setup_devices会检测到现有连接并正确处理转换
+                                print(f"检测到多端口设备 {config['name']} 包含现有端口 {current_port}")
+                                print(f"将由设备管理器处理单端口到多端口的转换 (端口: {', '.join(ports)})")
                             break
             
             # 设置设备配置
@@ -284,15 +351,43 @@ class PressureSensorUI:
                     self.restore_current_device_selection()
                     return
                 
-                target_port = target_device_configs[device_id]['port']
+                # 获取设备端口配置
+                device_config = target_device_configs[device_id]
+                com_ports = device_config.get('com_ports', 1)
                 
-                # 检查目标端口是否存在和有效
-                if not self.check_port_availability(target_port):
-                    self.log_message(f"[ERROR] 设备端口无效或不存在: {name} ({target_port})")
-                    messagebox.showwarning("设备切换失败", 
-                                         f"无法切换到 {icon} {name}\n端口 {target_port} 不存在或无有效数据")
-                    self.restore_current_device_selection()
-                    return
+                if com_ports == 1:
+                    # 单端口设备
+                    target_port = device_config.get('port') or device_config.get('ports', [None])[0]
+                    
+                    # 检查目标端口是否存在和有效
+                    if not target_port or not self.check_port_availability(target_port):
+                        self.log_message(f"[ERROR] 设备端口无效或不存在: {name} ({target_port})")
+                        messagebox.showwarning("设备切换失败", 
+                                             f"无法切换到 {icon} {name}\n端口 {target_port} 不存在或无有效数据")
+                        self.restore_current_device_selection()
+                        return
+                else:
+                    # 多端口设备
+                    ports = device_config.get('ports', [])
+                    if not ports or len(ports) != com_ports:
+                        self.log_message(f"[ERROR] 多端口设备配置不完整: {name} (需要{com_ports}个端口，实际{len(ports)}个)")
+                        messagebox.showwarning("设备切换失败", 
+                                             f"无法切换到 {icon} {name}\n多端口设备配置不完整")
+                        self.restore_current_device_selection()
+                        return
+                    
+                    # 检查所有端口是否可用
+                    invalid_ports = []
+                    for port in ports:
+                        if not self.check_port_availability(port):
+                            invalid_ports.append(port)
+                    
+                    if invalid_ports:
+                        self.log_message(f"[ERROR] 多端口设备部分端口无效: {name} ({', '.join(invalid_ports)})")
+                        messagebox.showwarning("设备切换失败", 
+                                             f"无法切换到 {icon} {name}\n以下端口不存在或无有效数据:\n{', '.join(invalid_ports)}")
+                        self.restore_current_device_selection()
+                        return
                 
                 # 断开当前设备
                 if self.is_running:
@@ -302,29 +397,76 @@ class PressureSensorUI:
                 self.device_manager.switch_device(device_id)
                 self.serial_interface = self.device_manager.get_current_serial_interface()
                 
+                # 调试输出：显示当前接口信息
+                if self.serial_interface:
+                    interface_type = type(self.serial_interface).__name__
+                    multi_config = getattr(self.serial_interface, 'multi_port_config', None)
+                    device_type = getattr(self.serial_interface, 'device_type', 'unknown')
+                    print(f"🔄 设备切换完成 - 当前接口信息:")
+                    print(f"   接口类型: {interface_type}")
+                    print(f"   设备模式: {device_type}")
+                    print(f"   多端口配置: {multi_config}")
+                else:
+                    print("❌ 设备切换后未获取到串口接口")
+                
                 # 更新UI显示
                 device_info = self.device_manager.get_current_device_info()
                 if device_info:
-                    self.port_info_label.config(text=f"端口: {device_info['port']}")
+                    # 显示端口信息
+                    com_ports = device_info.get('com_ports', 1)
+                    if com_ports > 1:
+                        ports = device_info.get('ports', [])
+                        port_display = f"端口: {', '.join(ports)} ({com_ports}个)"
+                    else:
+                        port = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+                        port_display = f"端口: {port}"
+                    self.port_info_label.config(text=port_display)
                     
                     # 自动根据设备类型配置数组大小
                     self.auto_config_array_size(device_info['array_size'])
                     
-                    # 根据设备类型设置步道模式
-                    if device_info['array_size'] == '32x96':
-                        self.serial_interface.set_walkway_mode(True)
+                    # 根据设备类型设置模式
+                    device_type = device_info.get('device_type', 'single')
+                    com_ports = device_info.get('com_ports', 1)
+                    array_size = device_info['array_size']
+                    
+                    if com_ports > 1:
+                        # 多端口设备
+                        if hasattr(self.serial_interface, 'set_device_mode'):
+                            self.serial_interface.set_device_mode(device_type)
+                        self.log_message(f"🚶 已启用多端口模式（{com_ports}个端口数据合并）")
+                        # 显示调序按钮
+                        self.order_button.grid()
+                    elif array_size == '32x96' or device_type == 'walkway':
+                        # 单端口步道设备
+                        if hasattr(self.serial_interface, 'set_walkway_mode'):
+                            self.serial_interface.set_walkway_mode(True)
+                        elif hasattr(self.serial_interface, 'set_device_mode'):
+                            self.serial_interface.set_device_mode(device_type)
                         self.log_message("🚶 已启用步道模式（3帧数据合并）")
                         # 显示调序按钮
                         self.order_button.grid()
                     else:
-                        self.serial_interface.set_walkway_mode(False)
+                        # 普通单端口设备
+                        if hasattr(self.serial_interface, 'set_walkway_mode'):
+                            self.serial_interface.set_walkway_mode(False)
+                        elif hasattr(self.serial_interface, 'set_device_mode'):
+                            self.serial_interface.set_device_mode('single')
                         # 隐藏调序按钮
                         self.order_button.grid_remove()
                     
                     # 更新标题
                     self.root.title(f"🔬 智能肌少症检测系统 - {device_info['icon']} {device_info['name']}")
                     
-                    self.log_message(f"[OK] 已切换到设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
+                    # 显示切换日志
+                    com_ports = device_info.get('com_ports', 1)
+                    if com_ports > 1:
+                        ports = device_info.get('ports', [])
+                        port_display = ', '.join(ports)
+                    else:
+                        port_display = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+                    
+                    self.log_message(f"[OK] 已切换到设备: {device_info['icon']} {device_info['name']} ({port_display})")
                     
                     # 自动连接设备
                     self.auto_connect_device()
@@ -367,7 +509,15 @@ class PressureSensorUI:
             if not device_info:
                 return
                 
-            self.log_message(f"[REFRESH] 自动连接设备: {device_info['icon']} {device_info['name']} ({device_info['port']})")
+            # 显示设备端口信息
+            com_ports = device_info.get('com_ports', 1)
+            if com_ports > 1:
+                ports = device_info.get('ports', [])
+                port_display = ', '.join(ports)
+            else:
+                port_display = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+            
+            self.log_message(f"[REFRESH] 自动连接设备: {device_info['icon']} {device_info['name']} ({port_display})")
             
             if self.device_manager.connect_current_device():
                 self.is_running = True
@@ -426,11 +576,19 @@ class PressureSensorUI:
     def show_device_lost_warning(self, device_info):
         """显示设备丢失警告"""
         def show_warning():
+            # 显示设备端口信息
+            com_ports = device_info.get('com_ports', 1)
+            if com_ports > 1:
+                ports = device_info.get('ports', [])
+                port_display = ', '.join(ports)
+            else:
+                port_display = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+            
             result = messagebox.askretrycancel(
                 "设备连接丢失", 
                 f"[WARN] 设备连接已丢失\n\n"
                 f"设备: {device_info['icon']} {device_info['name']}\n"
-                f"端口: {device_info['port']}\n\n"
+                f"端口: {port_display}\n\n"
                 f"请检查设备连接状态\n\n"
                 f"点击'重试'继续尝试连接\n"
                 f"点击'取消'停止重连"
@@ -1649,11 +1807,65 @@ class PressureSensorUI:
                     self.last_data_time = time.time()
                     self.device_lost_warned = False  # 重置警告状态
                     
+                    # 先检查设备信息并设置正确的数组大小
+                    device_info = self.device_manager.get_current_device_info()
+                    if device_info and device_info.get('com_ports', 1) > 1:
+                        # 多端口设备，先设置正确的数组大小
+                        com_ports = device_info.get('com_ports', 1)
+                        if com_ports == 2:
+                            self.data_processor.set_array_size(32, 64)  # 32x64: 左右拼接两个32x32
+                        elif com_ports == 3:
+                            self.data_processor.set_array_size(32, 96)  # 32x96: 左右拼接三个32x32
+                        print(f"📐 设置数组大小: {self.data_processor.array_rows}x{self.data_processor.array_cols} (total_points={self.data_processor.total_points})")
+                    
                     # 只处理最新的帧，丢弃过旧的数据以减少延迟
                     frame_data = frame_data_list[-1]  # 取最新帧
-                    # 根据设备类型决定是否使用JQ变换（32x32和32x96都使用JQ变换）
-                    device_info = self.device_manager.get_current_device_info()
-                    enable_jq = device_info and device_info.get('array_size') in ['32x32', '32x96']
+                    
+                    # 调试：检查多端口设备的数据
+                    if device_info and device_info.get('com_ports', 1) > 1:
+                        com_ports = device_info.get('com_ports', 1)
+                        expected_length = com_ports * 1024
+                        actual_length = len(frame_data.get('data', b''))
+                            
+                        # 调试输出 - 增强版
+                        current_frame_count = self.serial_interface.get_frame_count() if self.serial_interface else 0
+                        if current_frame_count % 50 == 0:  # 每50帧输出一次调试信息
+                            # 检查接口类型和配置
+                            interface_type = type(self.serial_interface).__name__
+                            multi_config = getattr(self.serial_interface, 'multi_port_config', None)
+                            device_type = getattr(self.serial_interface, 'device_type', 'unknown')
+                            
+                            print(f"🔍 多端口调试 [帧#{current_frame_count}]:")
+                            print(f"  接口类型: {interface_type}")
+                            print(f"  设备模式: {device_type}")
+                            print(f"  多端口配置: {multi_config}")
+                            print(f"  数据长度: 预期{expected_length}字节, 实际{actual_length}字节")
+                            print(f"  数组大小: {self.data_processor.array_rows}x{self.data_processor.array_cols}")
+                            
+                            # 检查是否真的是多端口数据
+                            if actual_length == 1024:
+                                print(f"  ⚠️  警告: 数据长度为1024字节，可能仍在使用单端口连接!")
+                            elif actual_length == expected_length:
+                                print(f"  ✅ 数据长度正确，多端口连接正常")
+                            else:
+                                print(f"  ❌ 数据长度异常")
+                    
+                    # 正确的JQ转换逻辑：
+                    # 单端口设备：这里需要JQ转换（原始数据→JQ转换→热力图）
+                    # 多端口设备：这里不需要JQ转换（已在合并时对每个端口进行了JQ转换）
+                    if device_info:
+                        com_ports = device_info.get('com_ports', 1)
+                        if com_ports == 1:
+                            enable_jq = True
+                            jq_reason = "单端口设备需要JQ转换"
+                        else:
+                            enable_jq = False
+                            jq_reason = f"多端口设备({com_ports}端口)已在合并时JQ转换"
+                    else:
+                        enable_jq = True
+                        jq_reason = "默认启用JQ转换"
+                    
+                    print(f"🔧 JQ转换决策: {enable_jq} ({jq_reason})")
                     processed_data = self.data_processor.process_frame_data(frame_data, enable_jq)
                     
                     
@@ -1696,7 +1908,33 @@ class PressureSensorUI:
                         if dropped_frames > 0:
                             self.log_message(f"⚡ Dropped {dropped_frames} old frames for real-time display")
                     else:
-                        self.log_message(f"[ERROR] Data processing error: {processed_data['error']}")
+                        # 详细的错误调试信息
+                        error_msg = processed_data['error']
+                        frame_info = processed_data.get('original_frame', {})
+                        data_length = len(frame_info.get('data', b'')) if 'data' in frame_info else 0
+                        data_type = type(frame_info.get('data', None)).__name__
+                        
+                        self.log_message(f"[ERROR] Data processing error: {error_msg}")
+                        self.log_message(f"[DEBUG] Frame info - length: {data_length}, type: {data_type}")
+                        
+                        # 如果是字符串错误，显示前50个字符的十六进制
+                        if 'data' in frame_info:
+                            data_sample = frame_info['data']
+                            if isinstance(data_sample, bytes):
+                                hex_sample = data_sample[:20].hex()
+                                self.log_message(f"[DEBUG] Data sample (hex): {hex_sample}")
+                            elif isinstance(data_sample, str):
+                                self.log_message(f"[DEBUG] String data detected: {repr(data_sample[:50])}")
+                            else:
+                                self.log_message(f"[DEBUG] Data type: {type(data_sample)}")
+                        
+                        # 获取当前设备信息
+                        if device_info:
+                            self.log_message(f"[DEBUG] Device info - ports: {device_info.get('com_ports', 1)}, "
+                                           f"array_size: {device_info.get('array_size', 'unknown')}")
+                        
+                        # 获取数据处理器状态
+                        self.log_message(f"[DEBUG] Processor - array: {self.data_processor.array_rows}x{self.data_processor.array_cols}")
                 
                 # 计算数据速率
                 self.calculate_data_rate()

@@ -36,24 +36,46 @@ class DataProcessor:
         
     def prepare_data(self, raw_data):
         """准备数据 - 快速调整数据长度以匹配阵列大小"""
-        # 直接使用numpy处理，避免多次数据复制
-        if isinstance(raw_data, (list, bytearray)):
-            data_array = np.frombuffer(bytes(raw_data), dtype=np.uint8)
-        else:
-            data_array = np.asarray(raw_data, dtype=np.uint8)
+        try:
+            # 统一数据类型处理
+            if isinstance(raw_data, (list, bytearray)):
+                data_array = np.frombuffer(bytes(raw_data), dtype=np.uint8)
+            elif isinstance(raw_data, bytes):
+                data_array = np.frombuffer(raw_data, dtype=np.uint8)
+            elif isinstance(raw_data, str):
+                # 字符串类型，可能是错误传入
+                raise ValueError(f"不能处理字符串类型的数据: {raw_data[:50]}...")
+            else:
+                data_array = np.asarray(raw_data, dtype=np.uint8)
+        except Exception as e:
+            raise ValueError(f"数据类型转换失败: {e}, 数据类型: {type(raw_data)}")
         
         data_len = len(data_array)
+        
+        # 调试输出：数据准备过程
+        if data_len > 1024:
+            print(f"🔍 prepare_data调试:")
+            print(f"   输入数据长度: {data_len}字节")
+            print(f"   当前total_points: {self.total_points}")
+            print(f"   当前数组大小: {self.array_rows}x{self.array_cols}")
         
         # 其他阵列大小的正常处理
         if data_len < self.total_points:
             # 使用numpy的resize，更高效
             result = np.resize(data_array, self.total_points)
+            if data_len > 1024:
+                print(f"   处理结果: Padded ({data_len}->{self.total_points})")
             return result, f"Padded ({data_len}->{self.total_points})"
             
         elif data_len > self.total_points:
             # 直接切片，避免复制
-            return data_array[:self.total_points], f"Trimmed ({data_len}->{self.total_points})"
+            result = data_array[:self.total_points]
+            if data_len > 1024:
+                print(f"   ⚠️ 处理结果: Trimmed ({data_len}->{self.total_points}) - 数据被截断!")
+            return result, f"Trimmed ({data_len}->{self.total_points})"
             
+        if data_len > 1024:
+            print(f"   处理结果: Perfect match")
         return data_array, "Perfect match"
     
     def jqbed_transform(self, data_array):
@@ -153,6 +175,14 @@ class DataProcessor:
         try:
             raw_data = frame_data_dict['data']
             
+            # 数据类型检查和转换
+            if isinstance(raw_data, str):
+                # 如果是字符串，转换为字节
+                raw_data = raw_data.encode('latin-1')
+            elif not isinstance(raw_data, (bytes, bytearray, list, np.ndarray)):
+                # 如果不是预期的数据类型，尝试转换
+                raise ValueError(f"不支持的数据类型: {type(raw_data)}, 应为 bytes/bytearray/list/ndarray")
+            
             # 特殊处理32x96步道数据
             if self.array_rows == 32 and self.array_cols == 96:
                 transformed_data, prep_msg = self.process_walkway_data(raw_data)
@@ -171,6 +201,14 @@ class DataProcessor:
             
             # 3. 重塑为2D数组
             matrix_2d = transformed_data.reshape(self.array_rows, self.array_cols)
+            
+            # 调试输出：多端口数据reshape
+            if len(transformed_data) > 1024:
+                print(f"🔄 数据reshape调试:")
+                print(f"   原始数据长度: {len(transformed_data)}字节")
+                print(f"   目标数组大小: {self.array_rows}x{self.array_cols}")
+                print(f"   reshape结果: {matrix_2d.shape}")
+                print(f"   数据范围: {transformed_data.min()}-{transformed_data.max()}")
             
             # 4. 计算统计信息
             stats = self.calculate_statistics(matrix_2d)
