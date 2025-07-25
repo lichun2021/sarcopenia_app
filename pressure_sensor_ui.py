@@ -77,6 +77,9 @@ class PressureSensorUI:
         self.auto_reconnect_enabled = True
         self.device_lost_warned = False  # 防止重复弹窗
         
+        # 活动的检测向导引用
+        self._active_detection_wizard = None
+        
         # 界面设置
         self.setup_ui()
         self.setup_visualizer()
@@ -1665,12 +1668,28 @@ class PressureSensorUI:
                         self.update_statistics_display(statistics)
                         self.log_processed_data(processed_data)
                         
-                        # 通知检测向导有新数据（如果向导正在运行）
-                        if hasattr(self, '_active_detection_wizard') and self._active_detection_wizard:
-                            try:
-                                self._active_detection_wizard.write_csv_data_row(processed_data)
-                            except:
-                                pass  # 忽略错误，防止影响主流程
+                        # 通知检测向导有新数据（如果向导正在运行且在记录数据）
+                        has_wizard = hasattr(self, '_active_detection_wizard') and self._active_detection_wizard
+                        is_recording = has_wizard and getattr(self._active_detection_wizard, '_recording_data', False)
+                        
+                        # 每隔一段时间打印一次调试信息（避免日志过多）
+                        if not hasattr(self, '_debug_counter'):
+                            self._debug_counter = 0
+                        self._debug_counter += 1
+                        
+                        if self._debug_counter % 50 == 0:  # 每50帧打印一次
+                            print(f"[DEBUG] 数据更新#{self._debug_counter}: 有向导={has_wizard}, 正在记录={is_recording}")
+                        
+                        if has_wizard:
+                            if is_recording:
+                                if self._debug_counter % 50 == 0:
+                                    print(f"[DEBUG] 检测向导正在记录，传递数据")
+                                try:
+                                    self._active_detection_wizard.write_csv_data_row(processed_data)
+                                except Exception as e:
+                                    print(f"[DEBUG] 写入检测数据失败: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                         
                         # 显示丢弃的帧数（如果有）
                         dropped_frames = len(frame_data_list) - 1
@@ -3186,11 +3205,16 @@ class PressureSensorUI:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return
             
-            # 创建检测向导
-            wizard = DetectionWizardDialog(self.root, self.current_patient, self.current_session)
+            print(f"[DEBUG] 准备创建检测向导")
             
-            # 设置活动的检测向导引用，用于数据传递
-            self._active_detection_wizard = wizard
+            # 初始化活动检测向导引用
+            self._active_detection_wizard = None
+            
+            # 创建检测向导（它会自动将自己注册为活动向导）
+            # 注意：传递self而不是self.root，这样检测向导可以访问主界面对象
+            wizard = DetectionWizardDialog(self, self.current_patient, self.current_session)
+            
+            print(f"[DEBUG] 检测向导对话框已关闭")
             
             # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
             self.detection_in_progress = False
@@ -3198,6 +3222,7 @@ class PressureSensorUI:
             
             # 清除活动检测向导引用
             self._active_detection_wizard = None
+            print(f"[DEBUG] 活动检测向导已清除")
             
             # 检查检测状态
             self.check_detection_completion()

@@ -17,7 +17,16 @@ class DetectionWizardDialog:
     """检测向导对话框 - 翻页式6步检测"""
     
     def __init__(self, parent, patient_info, session_info):
-        self.parent = parent
+        # 区分UI parent和主界面对象
+        if hasattr(parent, 'root'):
+            # parent是主界面对象
+            self.main_ui = parent
+            self.parent = parent.root  # 用于创建Tkinter对话框
+        else:
+            # parent是Tkinter root对象
+            self.parent = parent
+            self.main_ui = None
+        
         self.patient_info = patient_info
         self.session_info = session_info
         self.current_step = 1
@@ -27,6 +36,11 @@ class DetectionWizardDialog:
         self.start_time = None
         self.timer_thread = None
         self.auto_finish = False
+        self._recording_data = False  # CSV数据记录状态
+        
+        # 将自己注册到主界面作为活动检测向导
+        if self.main_ui and hasattr(self.main_ui, '_active_detection_wizard'):
+            self.main_ui._active_detection_wizard = self
         
         # 6步检测配置
         self.steps_config = {
@@ -75,14 +89,14 @@ class DetectionWizardDialog:
         }
         
         # 创建对话框窗口
-        self.dialog = tk.Toplevel(parent)
+        self.dialog = tk.Toplevel(self.parent)
         self.dialog.title(f"🔬 肌少症检测向导 - {patient_info['name']}")
         self.dialog.geometry("800x800")  # 增加窗口高度
         self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
         
         # 居中显示
-        self.dialog.transient(parent)
+        self.dialog.transient(self.parent)
         self.center_window()
         
         # 设置图标
@@ -317,9 +331,8 @@ class DetectionWizardDialog:
             # 创建数据文件
             self.create_data_file()
             
-            # 通知主界面开始CSV记录
-            if hasattr(self.parent, 'start_detection_csv_recording'):
-                self.parent.start_detection_csv_recording(self.current_step)
+            # 告诉主界面当前步骤正在运行，需要记录数据
+            self._recording_data = True
             
             # 启动计时器
             self.start_timer()
@@ -347,9 +360,8 @@ class DetectionWizardDialog:
             self.is_running = False
             end_time = datetime.now()
             
-            # 通知主界面停止CSV记录
-            if hasattr(self.parent, 'stop_detection_csv_recording'):
-                self.parent.stop_detection_csv_recording(self.current_step)
+            # 停止数据记录
+            self._recording_data = False
             
             # 更新数据库
             session_steps = db.get_session_steps(self.session_info['id'])
@@ -531,6 +543,9 @@ class DetectionWizardDialog:
     def write_csv_data_row(self, processed_data):
         """写入CSV数据行"""
         try:
+            # 只有在记录状态且有数据文件时才写入
+            if not getattr(self, '_recording_data', False):
+                return
             if not hasattr(self, 'current_data_file') or not self.current_data_file:
                 return
             
@@ -549,13 +564,34 @@ class DetectionWizardDialog:
             frame_info = processed_data['original_frame']
             
             max_value = stats['max_value']
-            timestamp = frame_info['timestamp']
+            # 格式化timestamp为 2025/6/17 14:43:28:219 格式
+            if 'timestamp' in frame_info and frame_info['timestamp']:
+                # 如果是datetime对象
+                if hasattr(frame_info['timestamp'], 'strftime'):
+                    timestamp = frame_info['timestamp'].strftime("%Y/%m/%d %H:%M:%S:%f")[:-3]
+                else:
+                    # 如果是字符串，尝试解析然后重新格式化
+                    try:
+                        if isinstance(frame_info['timestamp'], str):
+                            # 尝试解析现有的时间戳格式
+                            dt = datetime.strptime(frame_info['timestamp'], "%H:%M:%S.%f")
+                            # 添加当前日期
+                            dt = dt.replace(year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
+                            timestamp = dt.strftime("%Y/%m/%d %H:%M:%S:%f")[:-3]
+                        else:
+                            timestamp = str(frame_info['timestamp'])
+                    except:
+                        timestamp = datetime.now().strftime("%Y/%m/%d %H:%M:%S:%f")[:-3]
+            else:
+                # 使用当前时间
+                timestamp = datetime.now().strftime("%Y/%m/%d %H:%M:%S:%f")[:-3]
+            
             area = stats.get('contact_area', 0)
             press = stats['sum_value']
             
-            # 将2D矩阵转换为1D数组字符串
+            # 将2D矩阵转换为1D数组字符串，去掉空格
             data_array = matrix_data.flatten().tolist()
-            data_str = str(data_array)
+            data_str = str(data_array).replace(' ', '')
             
             # 写入CSV行
             with open(self.current_data_file, 'a', newline='', encoding='utf-8') as f:
@@ -564,6 +600,8 @@ class DetectionWizardDialog:
                 
         except Exception as e:
             print(f"[ERROR] 写入CSV数据失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def start_timer(self):
         """启动计时器"""

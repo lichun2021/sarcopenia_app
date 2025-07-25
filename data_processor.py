@@ -202,7 +202,9 @@ class DataProcessor:
             'min_value': int(np.min(matrix_2d)),
             'mean_value': float(np.mean(matrix_2d)),
             'std_value': float(np.std(matrix_2d)),
+            'sum_value': int(np.sum(matrix_2d)),
             'nonzero_count': int(np.count_nonzero(matrix_2d)),
+            'contact_area': int(np.count_nonzero(matrix_2d)),  # 接触面积等于非零点数
             'total_points': int(matrix_2d.size)
         }
     
