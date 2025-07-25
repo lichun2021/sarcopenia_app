@@ -18,16 +18,19 @@ class PatientManagerDialog:
         self.select_mode = select_mode  # 是否为选择模式
         self.selected_patient = None
         
-        # 创建对话框窗口
+        # 创建对话框窗口 - 优化显示避免闪烁
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(f"👥 {title}")
+        
+        # 先隐藏窗口，避免初始化时的闪烁
+        self.dialog.withdraw()
+        
         self.dialog.geometry("800x600")
         self.dialog.resizable(True, True)
         self.dialog.grab_set()  # 模态对话框
         
         # 居中显示
         self.dialog.transient(parent)
-        self.center_window()
         
         # 设置图标
         try:
@@ -40,6 +43,10 @@ class PatientManagerDialog:
         
         # 加载患者数据
         self.refresh_patient_list()
+        
+        # 居中显示并显示窗口
+        self.center_window()
+        self.dialog.deiconify()
         
         # 等待对话框关闭
         self.dialog.wait_window()

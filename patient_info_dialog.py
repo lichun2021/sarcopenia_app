@@ -15,16 +15,19 @@ class PatientInfoDialog:
     def __init__(self, parent):
         self.result = None
         
-        # 创建对话框窗口
+        # 创建对话框窗口 - 优化显示避免闪烁
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("📋 患者信息录入")
+        
+        # 先隐藏窗口，避免初始化时的闪烁
+        self.dialog.withdraw()
+        
         self.dialog.geometry("450x400")
         self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
         
         # 居中显示
         self.dialog.transient(parent)
-        self.center_window()
         
         # 设置图标
         try:
@@ -34,6 +37,10 @@ class PatientInfoDialog:
         
         # 创建界面
         self.create_ui()
+        
+        # 居中显示并显示窗口
+        self.center_window()
+        self.dialog.deiconify()
         
         # 等待对话框关闭
         self.dialog.wait_window()

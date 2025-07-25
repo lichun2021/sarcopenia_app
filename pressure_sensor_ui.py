@@ -46,16 +46,17 @@ class PressureSensorUI:
         # 禁用窗口调整大小，减少初始化时的布局计算
         self.root.resizable(False, False)
         
-        # 设置窗口大小和居中显示
-        window_width = 1600
-        window_height = 1100
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
-        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        # 预设置窗口位置（避免geometry计算延迟）
+        self.root.geometry("1600x1100+200+50")
         
+        # 延迟精确居中到UI完成后
+        self._needs_centering = True
+        
+        # 设置背景和基本样式
         self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
+        
+        # 启用双缓冲减少重绘闪烁
+        self.root.option_add('*tearOff', False)
         
         # 设置窗口图标
         try:
@@ -99,9 +100,42 @@ class PressureSensorUI:
         self.setup_ui()
         self.setup_visualizer()
         
-        # UI完成后显示窗口，并重新启用调整大小
+        # 分阶段完成初始化以提升响应速度
+        self._complete_initialization()
+    
+    def _complete_initialization(self):
+        """分阶段完成初始化，提升启动响应速度"""
+        # 第一阶段：立即显示窗口（100ms后）
+        self.root.after(100, self._stage1_show_window)
+    
+    def _stage1_show_window(self):
+        """第一阶段：显示窗口并居中"""
+        # 精确居中显示
+        if self._needs_centering:
+            self.root.update_idletasks()
+            window_width = 1600
+            window_height = 1100
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            self._needs_centering = False
+        
+        # 重新启用调整大小并显示窗口
         self.root.resizable(True, True)
         self.root.deiconify()
+        
+        # 显示启动状态
+        self._show_startup_status("🔄 正在初始化核心服务...")
+        
+        # 第二阶段：启动核心服务（200ms后）
+        self.root.after(200, self._stage2_start_services)
+    
+    def _stage2_start_services(self):
+        """第二阶段：启动核心服务"""
+        # 更新启动状态
+        self._show_startup_status("⚡ 启动数据更新服务...")
         
         # 启动更新循环
         self.start_update_loop()
@@ -109,12 +143,45 @@ class PressureSensorUI:
         # 启动连接监控
         self.start_connection_monitor()
         
+        # 第三阶段：集成扩展功能（400ms后）
+        self.root.after(400, self._stage3_integrate_features)
+    
+    def _stage3_integrate_features(self):
+        """第三阶段：集成扩展功能"""
+        # 更新启动状态
+        self._show_startup_status("🧠 集成智能分析功能...")
+        
         # 集成肌少症分析功能
         self.integrate_sarcneuro_analysis()
         
-        # 检测并加载已保存的配置，如果没有则显示配置对话框
-        # 增加延迟确保UI完全准备好
-        self.root.after(800, self.auto_load_or_show_config)
+        # 第四阶段：自动加载配置（600ms后）
+        self.root.after(600, self._stage4_load_config)
+    
+    def _stage4_load_config(self):
+        """第四阶段：加载设备配置"""
+        # 更新启动状态
+        self._show_startup_status("⚙️ 正在加载设备配置...")
+        
+        # 延迟加载配置，给用户看到状态
+        self.root.after(200, self._finalize_startup)
+    
+    def _finalize_startup(self):
+        """完成启动流程"""
+        # 隐藏启动状态
+        self._hide_startup_status()
+        
+        # 加载配置
+        self.auto_load_or_show_config()
+    
+    def _show_startup_status(self, message):
+        """显示启动状态信息"""
+        if hasattr(self, 'status_bar') and self.status_bar:
+            self.status_bar.config(text=message, foreground='blue')
+    
+    def _hide_startup_status(self):
+        """隐藏启动状态信息"""
+        if hasattr(self, 'status_bar') and self.status_bar:
+            self.status_bar.config(text="系统就绪", foreground='green')
     
     def auto_load_or_show_config(self):
         """自动加载已保存的配置，如果没有则显示配置对话框"""
@@ -654,7 +721,7 @@ class PressureSensorUI:
         
         # 添加文件菜单项
         file_menu.add_separator()
-        file_menu.add_command(label="💾 导出检测数据", command=self.save_log)
+        file_menu.add_command(label="💾 导出设备日志", command=self.save_log)
         file_menu.add_command(label="📸 保存热力图快照", command=self.save_snapshot)
         file_menu.add_separator()
         file_menu.add_command(label="❌ 退出系统", command=self.on_closing)
@@ -694,11 +761,8 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加设备菜单项
-        device_menu.add_command(label="🔍 自动检测端口", command=lambda: self.show_device_config())
-        device_menu.add_command(label="📊 实时数据监控", command=lambda: messagebox.showinfo("数据监控", "数据监控面板已在右侧显示"))
-        device_menu.add_separator()
-        device_menu.add_command(label="⚡ 性能模式设置", command=lambda: messagebox.showinfo("性能设置", "当前运行在标准模式\n可通过启动脚本切换:\n• run_ui.py (标准)\n• run_ui_fast.py (快速)\n• run_ui_ultra.py (极速)"))
-        
+        device_menu.add_command(label="🔍 设备配置", command=lambda: self.show_device_config())
+  
         
         # 创建"分析"菜单（使用医疗红色主题）
         analysis_menu = tk.Menu(menubar, tearoff=0,
@@ -937,7 +1001,7 @@ class PressureSensorUI:
 
 主界面操作
 
-[DATA] 热力图显示区域
+ 热力图显示区域
    • 实时显示压力传感器数据的热力图
    • 颜色越红表示压力越大，越蓝表示压力越小
    • 支持32x32, 32x64, 32x96多种阵列规格
@@ -1035,7 +1099,7 @@ class PressureSensorUI:
    • 选择合适的数组大小和模式
    • 定期清洁传感器表面
 
-[DATA] 数据分析
+   数据分析
    • 观察热力图的颜色分布模式
    • 关注压力峰值的位置和变化
    • 结合统计数据进行综合判断
@@ -1162,14 +1226,10 @@ class PressureSensorUI:
         features_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
         
         features_list = [
-            "🎨 实时压力数据可视化热力图显示 (16级颜色梯度)",
-            "[REFRESH] 多设备智能配置和无缝切换管理系统",
-            "✨ JQ工业科技专用数据变换算法 (镜像+重排)",
-            "⚡ 高性能数据处理引擎 (最高200FPS刷新率)",
-            "[INFO] 标准化健康检测流程指导和档案管理",
-            "💾 数据导出、快照保存和日志记录功能",
-            "[SCAN] 智能端口检测和自动连接重连机制",
-            "[DATA] 实时统计分析 (最值/均值/标准差/有效点)",
+            "实时压力数据可视化热力图显示 (16级颜色梯度)",
+            "多设备智能配置和无缝切换管理系统",
+            "标准化健康检测流程指导和档案管理",
+            "智能端口检测和自动连接重连机制",
         ]
         
         for i, feature in enumerate(features_list):
@@ -1361,15 +1421,7 @@ class PressureSensorUI:
                                             style='Success.TButton')
         self.start_detection_btn.grid(row=1, column=0, padx=(0, 15), pady=(15, 0))
         
-        # 患者档案管理按钮
-        ttk.Button(control_frame, text="👥 患者档案", 
-                  command=self.show_patient_manager,
-                  style='Hospital.TButton').grid(row=1, column=1, padx=(0, 15), pady=(15, 0))
         
-        # 保存快照按钮
-        ttk.Button(control_frame, text="📸 保存快照", 
-                  command=self.save_snapshot,
-                  style='Hospital.TButton').grid(row=1, column=2, padx=(0, 15), pady=(15, 0))
         
         # 调序按钮（仅32x32以上设备显示）
         self.order_button = ttk.Button(control_frame, text="[REFRESH] 调序", 
@@ -1384,7 +1436,7 @@ class PressureSensorUI:
         
         # 左侧：热力图显示 - 医院风格边框
         self.plot_frame = ttk.LabelFrame(content_frame, 
-                                       text="[DATA] 压力传感器热力图 (32x32) - JQ工业科技", 
+                                       text="压力传感器热力图", 
                                        padding=15, style='Hospital.TLabelframe')
         self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
         
@@ -1423,7 +1475,7 @@ class PressureSensorUI:
         log_container.pack(fill=tk.BOTH, expand=True)
         
         # AI分析日志 - 上半部分
-        ai_log_frame = ttk.LabelFrame(log_container, text="🧠 AI分析日志", 
+        ai_log_frame = ttk.LabelFrame(log_container, text="Sarcneuro Edge AI 日志", 
                                     padding=10, style='Hospital.TLabelframe')
         ai_log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
@@ -1439,7 +1491,7 @@ class PressureSensorUI:
         self.ai_log_text.pack(fill=tk.BOTH, expand=True)
         
         # 硬件设备日志 - 下半部分
-        hw_log_frame = ttk.LabelFrame(log_container, text="⚙️ 硬件设备日志", 
+        hw_log_frame = ttk.LabelFrame(log_container, text="设备日志", 
                                     padding=10, style='Hospital.TLabelframe')
         hw_log_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
         
@@ -1482,6 +1534,12 @@ class PressureSensorUI:
                                       bg='#f8f9fa', fg='#495057',
                                       font=('Microsoft YaHei UI', 9))
         self.data_rate_label.pack(side=tk.RIGHT, padx=(0, 15), pady=8)
+        
+        # 启动状态指示器
+        self.status_bar = tk.Label(status_bg, text="🔄 正在启动系统...",
+                                 bg='#f8f9fa', fg='#007bff',
+                                 font=('Microsoft YaHei UI', 9, 'bold'))
+        self.status_bar.pack(side=tk.LEFT, padx=(30, 0), pady=8)
     
     def setup_visualizer(self):
         """设置可视化模块"""
@@ -1513,7 +1571,7 @@ class PressureSensorUI:
                 self.visualizer.set_array_size(rows, cols)
             
             # 更新标题
-            self.plot_frame.config(text=f"[DATA] 压力传感器热力图 ({rows}x{cols}) - JQ工业科技")
+            self.plot_frame.config(text=f"压力传感器热力图 ({rows}x{cols})")
             
             self.log_message(f"[OK] 已自动配置阵列大小: {rows}x{cols}")
             
@@ -2392,7 +2450,6 @@ class PressureSensorUI:
                 
                 self.log_ai_message(f"[OK] 成功解析 {total_frames} 帧压力数据")
                 self.log_ai_message(f"📐 传感器阵列: {array_type} ({array_size}个传感点)")
-                self.log_ai_message(f"[DATA] 有效帧数: {valid_frames}/{total_frames} ({contact_ratio:.1f}%)")
                 self.log_ai_message(f"📏 平均接触面积: {avg_area:.1f} 像素")
                 self.log_ai_message(f"⚖️ 平均总压力: {avg_pressure:.1f}")
                 
@@ -2824,6 +2881,7 @@ class PressureSensorUI:
             import requests
             from datetime import datetime
             import os
+            import sys
             
             if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
                 raise Exception("SarcNeuro Edge服务未运行")
@@ -2927,9 +2985,14 @@ class PressureSensorUI:
         
         # 检查报告文件类型
         import os
-        file_ext = os.path.splitext(report_path)[1].lower()
-        file_type = "报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
-        filename = os.path.basename(report_path)
+        if report_path:
+            file_ext = os.path.splitext(report_path)[1].lower()
+            file_type = "报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
+            filename = os.path.basename(report_path)
+        else:
+            file_ext = ""
+            file_type = "分析报告"
+            filename = "未保存"
         
         message = f"""🧠 AI分析完成！
 
@@ -2943,7 +3006,7 @@ class PressureSensorUI:
 是否立即打开报告文件？"""
         
         result = messagebox.askyesno("分析完成", message)
-        if result:
+        if result and report_path:
             try:
                 import os
                 import subprocess
@@ -2957,6 +3020,8 @@ class PressureSensorUI:
                     subprocess.run(['xdg-open', report_path])  # Linux
             except Exception as e:
                 messagebox.showinfo("打开文件", f"请手动打开报告文件:\n{report_path}")
+        elif result and not report_path:
+            messagebox.showinfo("提示", "报告文件未保存，请检查分析服务状态或重试分析")
     
     def collect_and_analyze_data(self, patient_info):
         """收集实时数据并进行分析"""

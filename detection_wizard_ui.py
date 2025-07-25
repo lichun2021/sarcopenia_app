@@ -88,16 +88,19 @@ class DetectionWizardDialog:
             }
         }
         
-        # 创建对话框窗口
+        # 创建对话框窗口 - 优化显示避免闪烁
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title(f"🔬 肌少症检测向导 - {patient_info['name']}")
+        
+        # 先隐藏窗口，避免初始化时的闪烁
+        self.dialog.withdraw()
+        
         self.dialog.geometry("800x800")  # 增加窗口高度
         self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
         
         # 居中显示
         self.dialog.transient(self.parent)
-        self.center_window()
         
         # 设置图标
         try:
@@ -111,6 +114,10 @@ class DetectionWizardDialog:
         
         # 绑定关闭事件
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # 居中显示并显示窗口
+        self.center_window()
+        self.dialog.deiconify()
         
         # 等待对话框关闭
         self.dialog.wait_window()

@@ -28,6 +28,12 @@ class HeatmapVisualizer:
         self.enable_smoothing = False  # 关闭平滑处理提升性能
         self.smooth_sigma = 0.5        # 减小sigma值降低计算量
         
+        # 性能优化参数
+        self.frame_skip_counter = 0
+        self.frame_skip_threshold = 2  # 每3帧渲染1帧
+        self.last_render_time = 0
+        self.min_render_interval = 0.033  # 最小渲染间隔33ms (30fps)
+        
         # 创建强对比度颜色映射
         self.setup_colormap()
         
@@ -146,11 +152,25 @@ class HeatmapVisualizer:
         self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
         
     def update_data(self, matrix_2d, statistics=None):
-        """更新显示数据"""
+        """更新显示数据 - 带帧跳跃优化"""
         try:
             # 检查数据有效性
             if matrix_2d is None or matrix_2d.size == 0:
                 return
+            
+            # 帧跳跃优化：控制渲染频率
+            import time
+            current_time = time.time()
+            
+            # 如果距离上次渲染时间太短，跳过此帧
+            if current_time - self.last_render_time < self.min_render_interval:
+                self.frame_skip_counter += 1
+                if self.frame_skip_counter < self.frame_skip_threshold:
+                    return
+            
+            # 重置计数器并记录渲染时间
+            self.frame_skip_counter = 0
+            self.last_render_time = current_time
             
             # 应用平滑处理
             smoothed_matrix = self.smooth_data(matrix_2d)
