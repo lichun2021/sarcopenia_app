@@ -162,7 +162,12 @@ class PatientManagerDialog:
         else:
             # 管理模式下的按钮
             close_btn = ttk.Button(bottom_frame, text="🚪 关闭", command=self.close_dialog)
-            close_btn.pack(side="right")
+            close_btn.pack(side="right", padx=(10, 0))
+            
+            # 选择此患者按钮
+            self.select_btn = ttk.Button(bottom_frame, text="✅ 选择此患者", command=self.select_patient, 
+                                        state="disabled", style="Accent.TButton")
+            self.select_btn.pack(side="right")
     
     def refresh_patient_list(self):
         """刷新患者列表"""
@@ -230,9 +235,8 @@ class PatientManagerDialog:
                 # 按钮状态
                 self.edit_btn.config(state="disabled")  # 多选时不能编辑
                 self.delete_btn.config(state="normal", text=f"🗑️ 删除 ({len(selection)})")
-                if self.select_mode:
-                    self.select_btn.config(state="disabled")  # 多选时不能选择
-                    self.selected_patient = None
+                self.select_btn.config(state="disabled")  # 多选时不能选择
+                self.selected_patient = None
                     
             else:
                 # 单选状态
@@ -248,9 +252,8 @@ class PatientManagerDialog:
                     # 启用按钮
                     self.edit_btn.config(state="normal")
                     self.delete_btn.config(state="normal", text="🗑️ 删除")
-                    if self.select_mode:
-                        self.select_btn.config(state="normal")
-                        self.selected_patient = patient
+                    self.select_btn.config(state="normal")
+                    self.selected_patient = patient
         else:
             # 清空详情
             self.detail_text.config(state='normal')
@@ -260,9 +263,8 @@ class PatientManagerDialog:
             # 禁用按钮
             self.edit_btn.config(state="disabled")
             self.delete_btn.config(state="disabled", text="🗑️ 删除")
-            if self.select_mode:
-                self.select_btn.config(state="disabled")
-                self.selected_patient = None
+            self.select_btn.config(state="disabled")
+            self.selected_patient = None
     
     def show_patient_detail(self, patient):
         """显示患者详情"""

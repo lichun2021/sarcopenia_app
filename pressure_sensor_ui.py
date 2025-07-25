@@ -737,6 +737,7 @@ class PressureSensorUI:
         detection_menu.add_command(label="🚀 开始检测", command=self.start_detection_process)
         detection_menu.add_separator()
         detection_menu.add_command(label="👥 患者档案管理", command=self.show_patient_manager)
+        detection_menu.add_command(label="📋 检测会话管理", command=self.show_session_manager)
         detection_menu.add_command(label="📋 检测流程指导", command=self.show_detection_process_dialog)
         # detection_menu.add_separator()
         # detection_menu.add_command(label="⚙️ 设备配置管理", command=self.show_device_config)
@@ -1407,11 +1408,17 @@ class PressureSensorUI:
                                       font=('Microsoft YaHei UI', 9))
         self.port_info_label.grid(row=0, column=4, padx=(0, 15))
         
-        # 快速检测按钮 - 在第一行最右边
+        # 快速检测按钮 - 在第一行右边
         self.start_detection_btn = ttk.Button(control_frame, text="🚀 快速检测", 
                                             command=self.start_detection_process,
                                             style='Success.TButton')
-        self.start_detection_btn.grid(row=0, column=5, padx=(0, 0), sticky='e')
+        self.start_detection_btn.grid(row=0, column=5, padx=(0, 15), sticky='e')
+        
+        # 生成报告按钮 - 在快速检测按钮旁边
+        self.generate_report_btn = ttk.Button(control_frame, text="📊 生成报告", 
+                                            command=self.generate_report_for_patient,
+                                            style='Hospital.TButton')
+        self.generate_report_btn.grid(row=0, column=6, padx=(0, 0), sticky='e')
         
         
         
@@ -3010,10 +3017,148 @@ class PressureSensorUI:
     def show_patient_manager(self):
         """显示患者档案管理界面"""
         try:
-            PatientManagerDialog(self.root, title="患者档案管理", select_mode=False)
+            manager = PatientManagerDialog(self.root, title="患者档案管理", select_mode=False)
+            # 如果用户在管理界面中选择了患者，则设置为当前患者
+            if hasattr(manager, 'selected_patient') and manager.selected_patient:
+                self.current_patient = manager.selected_patient
+                self.update_patient_status()
         except Exception as e:
             messagebox.showerror("错误", f"打开患者档案管理失败：{e}")
             print(f"[ERROR] 患者档案管理错误: {e}")
+    
+    def show_session_manager(self):
+        """显示检测会话管理界面"""
+        try:
+            if not self.current_patient:
+                messagebox.showwarning("提示", "请先选择患者档案")
+                return
+            
+            # 获取当前患者的所有检测会话
+            sessions = db.get_patient_test_sessions(self.current_patient['id'])
+            
+            if not sessions:
+                messagebox.showinfo("无检测会话", f"患者 {self.current_patient['name']} 还没有检测会话记录")
+                return
+            
+            # 显示会话管理界面
+            self.create_session_manager_dialog(sessions)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"打开检测会话管理失败：{e}")
+            print(f"[ERROR] 检测会话管理错误: {e}")
+    
+    def create_session_manager_dialog(self, sessions):
+        """创建检测会话管理对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"检测会话管理 - {self.current_patient['name']}")
+        dialog.geometry("800x500")
+        dialog.resizable(True, True)
+        dialog.grab_set()
+        dialog.transient(self.root)
+        
+        # 居中显示
+        dialog.update_idletasks()
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 500) // 2
+        dialog.geometry(f"800x500+{x}+{y}")
+        
+        # 主框架
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill="both", expand=True)
+        
+        # 标题
+        title_label = ttk.Label(main_frame, 
+                               text=f"患者 {self.current_patient['name']} 的检测会话",
+                               font=('Microsoft YaHei UI', 14, 'bold'))
+        title_label.pack(pady=(0, 15))
+        
+        # 会话列表
+        list_frame = ttk.LabelFrame(main_frame, text="检测会话列表", padding="10")
+        list_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        # 创建树状视图
+        columns = ("会话名称", "状态", "进度", "创建时间", "更新时间")
+        session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15)
+        
+        # 设置列标题和宽度
+        column_widths = {"会话名称": 200, "状态": 100, "进度": 100, "创建时间": 150, "更新时间": 150}
+        for col in columns:
+            session_tree.heading(col, text=col)
+            session_tree.column(col, width=column_widths.get(col, 120), minwidth=80)
+        
+        # 填充数据
+        for session in sessions:
+            status_text = "已完成" if session['status'] == 'completed' else \
+                         "进行中" if session['status'] == 'in_progress' else \
+                         "已中断" if session['status'] == 'interrupted' else \
+                         "等待中" if session['status'] == 'pending' else session['status']
+            
+            values = (
+                session['session_name'],
+                status_text,
+                f"{session['current_step']}/{session['total_steps']}",
+                session['created_time'][:19].replace('T', ' '),
+                session['updated_time'][:19].replace('T', ' ') if session['updated_time'] else "-"
+            )
+            session_tree.insert("", "end", values=values)
+        
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=session_tree.yview)
+        session_tree.configure(yscrollcommand=scrollbar.set)
+        
+        session_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 按钮区域
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        def on_resume():
+            selection = session_tree.selection()
+            if selection:
+                item = session_tree.item(selection[0])
+                session_name = item['values'][0]
+                # 根据名称找到对应的会话
+                for s in sessions:
+                    if s['session_name'] == session_name:
+                        if s['status'] in ['pending', 'in_progress', 'interrupted']:
+                            self.current_session = s
+                            dialog.destroy()
+                            self.show_detection_wizard()
+                        else:
+                            messagebox.showwarning("无法恢复", "只能恢复未完成的检测会话")
+                        break
+            else:
+                messagebox.showwarning("提示", "请选择要恢复的检测会话")
+        
+        def on_generate_report():
+            selection = session_tree.selection()
+            if selection:
+                item = session_tree.item(selection[0])
+                session_name = item['values'][0]
+                # 根据名称找到对应的会话
+                for s in sessions:
+                    if s['session_name'] == session_name:
+                        if s['status'] == 'completed':
+                            dialog.destroy()
+                            self.generate_report_for_session(s['id'])
+                        else:
+                            messagebox.showwarning("无法生成报告", "只能为已完成的检测会话生成报告")
+                        break
+            else:
+                messagebox.showwarning("提示", "请选择要生成报告的检测会话")
+        
+        # 按钮
+        ttk.Button(button_frame, text="🚪 关闭", command=dialog.destroy).pack(side="right", padx=(10, 0))
+        ttk.Button(button_frame, text="📄 生成报告", command=on_generate_report).pack(side="right", padx=(0, 10))
+        ttk.Button(button_frame, text="🔄 恢复检测", command=on_resume).pack(side="right")
+        
+        # 绑定双击事件
+        def on_double_click(event):
+            on_resume()
+        session_tree.bind("<Double-1>", on_double_click)
     
     def select_patient_for_detection(self):
         """为检测选择患者"""
@@ -3040,6 +3185,7 @@ class PressureSensorUI:
         if self.current_patient:
             patient_info = f"患者: {self.current_patient['name']} ({self.current_patient['gender']}, {self.current_patient['age']}岁)"
             self.status_label.config(text=patient_info, foreground="#28a745")
+            
             
             # 只在非检测流程中检查未完成检测，避免重复弹窗
             # 通过标记来区分是否是从开始检测按钮触发的患者选择
@@ -3166,16 +3312,18 @@ class PressureSensorUI:
         # 创建会话选择对话框
         dialog = tk.Toplevel(self.root)
         dialog.title("选择检测会话")
-        dialog.geometry("500x300")
-        dialog.resizable(False, False)
+        dialog.geometry("700x450")
+        dialog.resizable(True, True)
         dialog.grab_set()
         dialog.transient(self.root)
         
         # 居中显示
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (300 // 2)
-        dialog.geometry(f"500x300+{x}+{y}")
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 700) // 2
+        y = (screen_height - 450) // 2
+        dialog.geometry(f"700x450+{x}+{y}")
         
         result = None
         
@@ -3189,12 +3337,13 @@ class PressureSensorUI:
         
         # 创建列表框
         columns = ("会话名称", "状态", "进度", "创建时间")
-        session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
+        session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
         
-        # 设置列标题
+        # 设置列标题和宽度
+        column_widths = {"会话名称": 200, "状态": 100, "进度": 100, "创建时间": 150}
         for col in columns:
             session_tree.heading(col, text=col)
-            session_tree.column(col, width=120)
+            session_tree.column(col, width=column_widths.get(col, 120), minwidth=80)
         
         # 填充数据
         for session in sessions:
@@ -3206,11 +3355,16 @@ class PressureSensorUI:
             )
             session_tree.insert("", "end", values=values)
         
-        session_tree.pack(fill="both", expand=True)
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=session_tree.yview)
+        session_tree.configure(yscrollcommand=scrollbar.set)
+        
+        session_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
         # 按钮区域
         button_frame = ttk.Frame(dialog)
-        button_frame.pack(fill="x", padx=20, pady=10)
+        button_frame.pack(fill="x", padx=20, pady=15)
         
         def on_confirm():
             nonlocal result
@@ -3228,8 +3382,8 @@ class PressureSensorUI:
         def on_cancel():
             dialog.destroy()
         
-        ttk.Button(button_frame, text="确认", command=on_confirm).pack(side="left")
-        ttk.Button(button_frame, text="取消", command=on_cancel).pack(side="left", padx=(10, 0))
+        ttk.Button(button_frame, text="✅ 确认", command=on_confirm).pack(side="right", padx=(10, 0))
+        ttk.Button(button_frame, text="❌ 取消", command=on_cancel).pack(side="right")
         
         # 等待对话框关闭
         dialog.wait_window()
@@ -3334,6 +3488,7 @@ class PressureSensorUI:
                                          f"患者 {self.current_patient['name']} 的检测已完成！\n\n"
                                          "是否要进行AI分析并生成报告？"):
                         self.start_ai_analysis_for_session(current_session['id'])
+                    
                 
                 elif current_session['status'] == 'interrupted':
                     # 检测被中断，但仍可以重新开始
@@ -3368,6 +3523,294 @@ class PressureSensorUI:
             messagebox.showerror("错误", f"启动AI分析失败：{e}")
             print(f"[ERROR] 启动AI分析失败: {e}")
     
+    def start_sarcneuro_analysis_for_session(self):
+        """使用SarcNeuro Edge API为检测会话进行分析"""
+        try:
+            # 获取会话的检测数据
+            session_steps = db.get_session_steps(self.current_session['id'])
+            if not session_steps:
+                raise Exception("没有找到检测数据")
+            
+            # 准备患者信息（与导入CSV相同的格式）
+            patient_info = {
+                'name': self.current_patient['name'],
+                'age': self.current_patient['age'],
+                'gender': self.current_patient['gender'],
+                'height': self.current_patient.get('height', ''),
+                'weight': self.current_patient.get('weight', ''),
+                'test_type': 'COMPREHENSIVE',
+                'test_names': [f"第{step['step_number']}步检测" for step in session_steps if step['status'] == 'completed']
+            }
+            
+            # 创建临时CSV文件用于上传
+            import tempfile
+            import csv
+            temp_files = []
+            
+            try:
+                for step in session_steps:
+                    if step['status'] == 'completed' and step['detection_data']:
+                        # 解析检测数据
+                        detection_data = json.loads(step['detection_data'])
+                        if 'csv_data' in detection_data:
+                            # 创建临时CSV文件
+                            temp_fd, temp_path = tempfile.mkstemp(suffix='.csv', prefix=f'step_{step["step_number"]}_')
+                            with open(temp_path, 'w', newline='', encoding='utf-8') as f:
+                                f.write(detection_data['csv_data'])
+                            temp_files.append(temp_path)
+                            os.close(temp_fd)
+                
+                if not temp_files:
+                    raise Exception("没有有效的检测数据可供分析")
+                
+                self.log_ai_message(f"[INFO] 准备上传 {len(temp_files)} 个检测数据文件到SarcNeuro Edge")
+                
+                # 使用与导入CSV相同的上传逻辑
+                analysis_data = self.upload_csv_files_to_sarcneuro(temp_files, patient_info)
+                
+                # 如果分析成功，获取完整结果并生成报告
+                analysis_id = analysis_data.get('analysis_id')
+                test_id = analysis_data.get('test_id')
+                
+                if analysis_id and test_id:
+                    self.log_ai_message(f"[INFO] 获取分析详细结果 (analysis_id: {analysis_id})")
+                    
+                    # 调用 /api/analysis/results/{analysis_id} 获取完整结果
+                    detailed_result = self.get_analysis_result(analysis_id)
+                    
+                    if detailed_result:
+                        # 检查是否已有报告URL
+                        report_url = detailed_result.get('report_url')
+                        if report_url:
+                            self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
+                            # 下载HTML内容并保存到我们的目录结构
+                            local_report_path = self.download_and_save_html_report(report_url, patient_info)
+                            if local_report_path:
+                                self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
+                                # 显示成功对话框，传递本地报告路径
+                                self.show_analysis_complete_dialog(analysis_data, local_report_path)
+                            else:
+                                self.log_ai_message("[WARN] HTML报告保存失败")
+                                self.show_analysis_complete_dialog(analysis_data, None)
+                        else:
+                            self.log_ai_message("[WARN] 未找到报告链接")
+                            self.show_analysis_complete_dialog(analysis_data, None)
+                    else:
+                        raise Exception("无法获取分析详细结果")
+                else:
+                    raise Exception("分析返回数据不完整")
+                        
+            finally:
+                # 清理临时文件
+                for temp_file in temp_files:
+                    try:
+                        os.unlink(temp_file)
+                    except:
+                        pass
+                        
+        except Exception as e:
+            self.log_ai_message(f"[ERROR] SarcNeuro Edge分析失败: {e}")
+            raise
+    
+    def generate_report_for_patient(self):
+        """为当前选中的患者生成报告"""
+        try:
+            # 检查是否选中了患者
+            if not self.current_patient:
+                messagebox.showwarning("提示", "请先选择一个患者")
+                return
+            
+            # 查找该患者的已完成检测会话
+            completed_sessions = self.get_patient_completed_sessions(self.current_patient['id'])
+            
+            if not completed_sessions:
+                messagebox.showwarning("提示", f"患者 {self.current_patient['name']} 还没有完成的检测记录")
+                return
+            
+            # 如果有多个完成的会话，让用户选择
+            if len(completed_sessions) > 1:
+                session_id = self.select_session_for_report(completed_sessions)
+                if not session_id:
+                    return  # 用户取消选择
+            else:
+                session_id = completed_sessions[0]['id']
+            
+            # 为选中的会话生成报告
+            self.generate_report_for_session(session_id)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"生成报告失败：{e}")
+            print(f"[ERROR] 生成报告失败: {e}")
+    
+    def generate_report_for_patient_id(self, patient_id):
+        """为指定患者ID生成报告"""
+        try:
+            # 获取患者信息
+            patient = db.get_patient_by_id(patient_id)
+            if not patient:
+                messagebox.showerror("错误", "未找到指定的患者")
+                return
+            
+            # 查找该患者的已完成检测会话
+            completed_sessions = self.get_patient_completed_sessions(patient_id)
+            
+            if not completed_sessions:
+                messagebox.showwarning("提示", f"患者 {patient['name']} 还没有完成的检测记录")
+                return
+            
+            # 如果有多个完成的会话，让用户选择
+            if len(completed_sessions) > 1:
+                session_id = self.select_session_for_report(completed_sessions)
+                if not session_id:
+                    return  # 用户取消选择
+            else:
+                session_id = completed_sessions[0]['id']
+            
+            # 临时设置为当前患者以便生成报告
+            original_patient = self.current_patient
+            self.current_patient = patient
+            
+            try:
+                # 为选中的会话生成报告
+                self.generate_report_for_session(session_id)
+            finally:
+                # 恢复原患者
+                self.current_patient = original_patient
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"生成报告失败：{e}")
+            print(f"[ERROR] 生成报告失败: {e}")
+    
+    def get_patient_completed_sessions(self, patient_id):
+        """获取患者的已完成检测会话"""
+        try:
+            conn = sqlite3.connect(db.db_path)
+            cursor = conn.cursor()
+            
+            # 查询已完成的检测会话
+            cursor.execute('''
+                SELECT s.*, 
+                       COUNT(st.id) as total_steps,
+                       COUNT(CASE WHEN st.status = 'completed' THEN 1 END) as completed_steps
+                FROM test_sessions s
+                LEFT JOIN test_steps st ON s.id = st.session_id
+                WHERE s.patient_id = ? AND s.status = 'completed'
+                GROUP BY s.id
+                HAVING completed_steps >= 3
+                ORDER BY s.created_time DESC
+            ''', (patient_id,))
+            
+            sessions = []
+            for row in cursor.fetchall():
+                sessions.append({
+                    'id': row[0],
+                    'patient_id': row[1], 
+                    'session_name': row[2],
+                    'status': row[3],
+                    'created_time': row[4],
+                    'total_steps': row[6],
+                    'completed_steps': row[7]
+                })
+            
+            conn.close()
+            return sessions
+            
+        except Exception as e:
+            print(f"[ERROR] 查询已完成会话失败: {e}")
+            return []
+    
+    def select_session_for_report(self, sessions):
+        """让用户选择要生成报告的检测会话"""
+        # 创建选择对话框
+        dialog = tk.Toplevel(self.root)
+        dialog.title("选择检测会话")
+        dialog.geometry("600x400")
+        dialog.resizable(True, True)
+        dialog.grab_set()
+        dialog.transient(self.root)
+        
+        # 居中显示
+        dialog.update_idletasks()
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 600) // 2
+        y = (screen_height - 400) // 2
+        dialog.geometry(f"600x400+{x}+{y}")
+        
+        selected_session_id = None
+        
+        # 主框架
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="请选择要生成报告的检测会话：", font=("Arial", 12, "bold")).pack(pady=(0, 15))
+        
+        # 会话列表
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # 创建列表框
+        session_listbox = tk.Listbox(list_frame, font=("Arial", 10))
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=session_listbox.yview)
+        session_listbox.configure(yscrollcommand=scrollbar.set)
+        
+        session_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 填充会话数据
+        for i, session in enumerate(sessions):
+            created_time = session['created_time']
+            if isinstance(created_time, str):
+                try:
+                    created_time = datetime.fromisoformat(created_time).strftime('%Y-%m-%d %H:%M')
+                except:
+                    pass
+            
+            session_text = f"{session['session_name']} ({created_time}) - {session['completed_steps']}个步骤"
+            session_listbox.insert(tk.END, session_text)
+        
+        # 默认选中第一个
+        if sessions:
+            session_listbox.selection_set(0)
+        
+        # 按钮框架
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X)
+        
+        def on_confirm():
+            nonlocal selected_session_id
+            selection = session_listbox.curselection()
+            if selection:
+                selected_session_id = sessions[selection[0]]['id']
+                dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        ttk.Button(btn_frame, text="确定", command=on_confirm).pack(side=tk.RIGHT, padx=(10, 0))
+        ttk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.RIGHT)
+        
+        # 等待用户选择
+        dialog.wait_window()
+        return selected_session_id
+    
+    def generate_report_for_session(self, session_id):
+        """为指定的检测会话生成报告"""
+        try:
+            # 临时设置会话ID和患者信息
+            original_session = self.current_session
+            self.current_session = {'id': session_id}
+            
+            # 启动AI分析（会调用SarcNeuro Edge API）
+            self.start_ai_analysis()
+            
+            # 恢复原会话
+            self.current_session = original_session
+            
+        except Exception as e:
+            self.current_session = original_session  # 确保恢复原会话
+            raise
+    
     def add_log(self, message):
         """添加日志信息（如果有日志控件的话）"""
         try:
@@ -3400,277 +3843,13 @@ class PressureSensorUI:
                                      "您可以手动导出检测数据进行分析。")
                 return
             
-            # 显示进度对话框
-            progress_dialog = self.show_analysis_progress_dialog()
-            
-            # 获取检测步骤数据
-            steps = db.get_session_steps(self.current_session['id'])
-            completed_steps = [step for step in steps if step['status'] == 'completed']
-            
-            if not completed_steps:
-                messagebox.showwarning("无数据", "没有找到已完成的检测步骤数据")
-                return
-            
-            # 准备分析数据
-            analysis_data = self.prepare_analysis_data(completed_steps)
-            
-            # 调用AI分析
-            self.perform_ai_analysis(analysis_data, progress_dialog)
+            # 只使用SarcNeuro Edge API进行分析
+            self.start_sarcneuro_analysis_for_session()
             
         except Exception as e:
             messagebox.showerror("错误", f"AI分析失败：{e}")
             print(f"[ERROR] AI分析失败: {e}")
     
-    def show_analysis_progress_dialog(self):
-        """显示分析进度对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("🤖 AI分析进行中")
-        dialog.geometry("400x200")
-        dialog.resizable(False, False)
-        dialog.grab_set()
-        dialog.transient(self.root)
-        
-        # 居中显示
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (400 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (200 // 2)
-        dialog.geometry(f"400x200+{x}+{y}")
-        
-        # 内容
-        main_frame = ttk.Frame(dialog, padding="20")
-        main_frame.pack(fill="both", expand=True)
-        
-        # 标题
-        ttk.Label(main_frame, text="🤖 AI智能分析中...", 
-                 font=('Microsoft YaHei UI', 14, 'bold')).pack(pady=(0, 20))
-        
-        # 进度条
-        progress_bar = ttk.Progressbar(main_frame, mode='indeterminate', length=300)
-        progress_bar.pack(pady=(0, 10))
-        progress_bar.start()
-        
-        # 状态标签
-        status_label = ttk.Label(main_frame, text="正在分析检测数据...", 
-                                font=('Microsoft YaHei UI', 10))
-        status_label.pack()
-        
-        dialog.progress_bar = progress_bar
-        dialog.status_label = status_label
-        
-        return dialog
-    
-    def prepare_analysis_data(self, completed_steps):
-        """准备AI分析数据"""
-        analysis_data = {
-            'patient_info': self.current_patient,
-            'session_info': self.current_session,
-            'steps_data': [],
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        for step in completed_steps:
-            step_data = {
-                'step_number': step['step_number'],
-                'step_name': step['step_name'],
-                'device_type': step['device_type'],
-                'duration': step['duration'],
-                'data_file_path': step['data_file_path'],
-                'start_time': step['start_time'],
-                'end_time': step['end_time']
-            }
-            
-            # 如果有数据文件，读取数据
-            if step['data_file_path'] and os.path.exists(step['data_file_path']):
-                try:
-                    with open(step['data_file_path'], 'r', encoding='utf-8') as f:
-                        step_data['raw_data'] = f.read()
-                except Exception as e:
-                    print(f"[WARN] 读取步骤数据文件失败: {e}")
-                    step_data['raw_data'] = None
-            
-            analysis_data['steps_data'].append(step_data)
-        
-        return analysis_data
-    
-    def perform_ai_analysis(self, analysis_data, progress_dialog):
-        """执行AI分析"""
-        def analysis_thread():
-            try:
-                progress_dialog.status_label.config(text="正在连接AI分析服务...")
-                
-                # 使用现有的SarcNeuro服务进行分析
-                if hasattr(self, 'last_frame_data') and self.last_frame_data is not None:
-                    # 如果有最新的传感器数据，包含在分析中
-                    analysis_data['latest_sensor_data'] = self.last_frame_data.tolist()
-                
-                progress_dialog.status_label.config(text="正在生成AI分析报告...")
-                
-                # 调用现有的AI分析功能
-                try:
-                    # 模拟AI分析过程（实际应该调用sarcneuro_service的相关方法）
-                    time.sleep(2)  # 模拟分析时间
-                    
-                    # 生成分析结果
-                    analysis_result = {
-                        'analysis_type': 'comprehensive_analysis',
-                        'confidence_score': 0.85,
-                        'analysis_data': analysis_data,
-                        'recommendations': [
-                            "建议加强下肢肌力训练",
-                            "注意平衡能力锻炼",
-                            "定期进行肌少症筛查"
-                        ],
-                        'created_time': datetime.now().isoformat()
-                    }
-                    
-                    # 保存分析结果到数据库
-                    self.save_analysis_result(analysis_result)
-                    
-                    # 生成报告
-                    self.generate_analysis_report(analysis_result)
-                    
-                    # 在主线程中关闭进度对话框并显示结果
-                    self.root.after(0, lambda: self.on_analysis_complete(progress_dialog, analysis_result))
-                    
-                except Exception as e:
-                    self.root.after(0, lambda: self.on_analysis_error(progress_dialog, str(e)))
-                    
-            except Exception as e:
-                self.root.after(0, lambda: self.on_analysis_error(progress_dialog, str(e)))
-        
-        # 启动分析线程
-        threading.Thread(target=analysis_thread, daemon=True).start()
-    
-    def save_analysis_result(self, analysis_result):
-        """保存分析结果到数据库"""
-        try:
-            conn = sqlite3.connect(db.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO analysis_results 
-                (session_id, analysis_type, analysis_data, confidence_score, created_time)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (
-                self.current_session['id'],
-                analysis_result['analysis_type'],
-                json.dumps(analysis_result, ensure_ascii=False),
-                analysis_result['confidence_score'],
-                analysis_result['created_time']
-            ))
-            
-            conn.commit()
-            conn.close()
-            
-        except Exception as e:
-            print(f"[ERROR] 保存分析结果失败: {e}")
-    
-    def generate_analysis_report(self, analysis_result):
-        """生成分析报告文件"""
-        try:
-            # 创建报告目录
-            report_dir = "analysis_reports"
-            if not os.path.exists(report_dir):
-                os.makedirs(report_dir)
-            
-            # 生成报告文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"analysis_report_{self.current_patient['name']}_{timestamp}.html"
-            report_path = os.path.join(report_dir, report_filename)
-            
-            # 生成HTML报告（简化版本）
-            html_content = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <title>肌少症检测分析报告</title>
-    <style>
-        body {{ font-family: 'Microsoft YaHei', sans-serif; margin: 40px; }}
-        .header {{ text-align: center; color: #2c3e50; }}
-        .patient-info {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-        .analysis-results {{ margin: 20px 0; }}
-        .recommendations {{ background: #e3f2fd; padding: 15px; border-radius: 8px; }}
-        .footer {{ text-align: center; color: #666; margin-top: 40px; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🔬 智能肌少症检测分析报告</h1>
-        <p>生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-    </div>
-    
-    <div class="patient-info">
-        <h2>👤 患者信息</h2>
-        <p><strong>姓名:</strong> {self.current_patient['name']}</p>
-        <p><strong>性别:</strong> {self.current_patient['gender']}</p>
-        <p><strong>年龄:</strong> {self.current_patient['age']}岁</p>
-        <p><strong>身高:</strong> {self.current_patient.get('height', '未填写')}cm</p>
-        <p><strong>体重:</strong> {self.current_patient.get('weight', '未填写')}kg</p>
-    </div>
-    
-    <div class="analysis-results">
-        <h2>📊 分析结果</h2>
-        <p><strong>检测会话:</strong> {self.current_session['name']}</p>
-        <p><strong>AI可信度:</strong> {analysis_result['confidence_score']:.1%}</p>
-        <p><strong>检测完成步骤:</strong> {len(analysis_result['analysis_data']['steps_data'])}个</p>
-    </div>
-    
-    <div class="recommendations">
-        <h2>💡 建议与推荐</h2>
-        <ul>
-        """
-            
-            for rec in analysis_result['recommendations']:
-                html_content += f"<li>{rec}</li>"
-            
-            html_content += """
-        </ul>
-    </div>
-    
-    <div class="footer">
-        <p>🏥 威海聚桥工业科技有限公司 - 智能肌少症检测系统</p>
-        <p>本报告由AI智能分析生成，仅供参考，请结合临床诊断使用</p>
-    </div>
-</body>
-</html>
-            """
-            
-            # 保存报告文件
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            analysis_result['report_path'] = report_path
-            
-        except Exception as e:
-            print(f"[ERROR] 生成分析报告失败: {e}")
-    
-    def on_analysis_complete(self, progress_dialog, analysis_result):
-        """分析完成回调"""
-        try:
-            progress_dialog.destroy()
-            
-            messagebox.showinfo("分析完成", 
-                              f"AI分析已完成！\n\n"
-                              f"可信度: {analysis_result['confidence_score']:.1%}\n"
-                              f"报告已生成: {analysis_result.get('report_path', '未知')}")
-            
-            # 如果有报告文件，询问是否打开
-            if 'report_path' in analysis_result and os.path.exists(analysis_result['report_path']):
-                if messagebox.askyesno("打开报告", "是否要打开分析报告？"):
-                    os.startfile(analysis_result['report_path'])  # Windows
-                    
-        except Exception as e:
-            messagebox.showerror("错误", f"显示分析结果失败：{e}")
-            print(f"[ERROR] 分析完成回调失败: {e}")
-    
-    def on_analysis_error(self, progress_dialog, error_msg):
-        """分析错误回调"""
-        try:
-            progress_dialog.destroy()
-            messagebox.showerror("分析失败", f"AI分析失败：{error_msg}")
-        except Exception:
-            pass
 
 def main():
     # 创建主窗口
