@@ -2219,11 +2219,16 @@ class PressureSensorUI:
                                              wraplength=350, justify=tk.CENTER)
                 self.message_label.pack(pady=(0, 15))
                 
-                # 进度条
-                self.progress = ttk.Progressbar(main_frame, mode='indeterminate',
-                                              length=300)
+                # 进度条（支持两种模式）
+                self.progress = ttk.Progressbar(main_frame, mode='determinate',
+                                              length=300, maximum=100)
                 self.progress.pack(pady=(0, 10))
-                self.progress.start(10)
+                self.progress['value'] = 0
+                
+                # 添加一个标识来控制是否使用动画
+                self._use_animation = True
+                self._animation_value = 0
+                self._start_progress_animation()
                 
                 # 提示文本
                 tip_label = ttk.Label(main_frame, text="⚠️ 请勿关闭此窗口",
@@ -2235,71 +2240,110 @@ class PressureSensorUI:
                 self.dialog.grab_set()
                 self.dialog.update()
             
+            def _start_progress_animation(self):
+                """启动进度动画"""
+                def animate():
+                    if self._use_animation and hasattr(self, 'progress'):
+                        # 模拟进度增长（在没有实际进度时）
+                        self._animation_value = (self._animation_value + 1) % 100
+                        if self._animation_value < 90:  # 不让动画到达100%
+                            self.progress['value'] = self._animation_value
+                        self.dialog.after(200, animate)  # 每200ms更新一次
+                
+                animate()
+            
             def update_message(self, new_message):
                 """更新消息文本"""
                 self.message_label.config(text=new_message)
                 self.dialog.update()
             
+            def update_progress(self, value):
+                """更新进度条值"""
+                if hasattr(self, 'progress'):
+                    self._use_animation = False  # 停止动画
+                    self.progress['value'] = min(100, max(0, value))
+                    self.dialog.update()
+            
             def close(self):
                 """关闭对话框"""
-                self.progress.stop()
+                self._use_animation = False
                 self.dialog.grab_release()
                 self.dialog.destroy()
         
         return LoadingDialog(self.root, title, message)
     
-    def send_multi_file_analysis(self, csv_files, patient_info):
-        """发送多文件分析请求到 sarcneuro-edge"""
+    def send_multi_file_analysis_with_loading(self, csv_files, patient_info, title="AI分析中"):
+        """发送多文件分析请求到 sarcneuro-edge（带loading界面）"""
         try:
             import requests
             
             # 创建加载对话框
-            loading_dialog = self.create_loading_dialog("AI分析中", "正在提交数据到AI分析服务...\n请勿重复点击或关闭窗口")
+            loading_dialog = self.create_loading_dialog(title, "正在提交数据到AI分析服务...\n请勿重复点击或关闭窗口")
             
             try:
-                # 准备多文件上传数据
-                files = []
-                for csv_file in csv_files:
-                    files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
-                
-                # 准备表单数据
-                form_data = {
-                    'patient_name': patient_info['name'],
-                    'patient_age': str(patient_info['age']),
-                    'patient_gender': patient_info['gender'],
-                    'patient_height': patient_info.get('height', ''),
-                    'patient_weight': patient_info.get('weight', ''),
-                    'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
-                }
-                
-                # 调试：打印实际发送的请求参数
-                self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
-                for i, (field, (filename, content, content_type)) in enumerate(files):
-                    content_preview = content[:100] + "..." if len(content) > 100 else content
-                    self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
-                self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
-                
-                # 更新加载对话框文本
-                loading_dialog.update_message("正在上传数据到服务器...")
-                
-                # 发送到 standalone_upload 的 /upload 接口
-                response = requests.post(
-                    f"{self.sarcneuro_service.base_url}/upload",
-                    files=files,
-                    data=form_data,
-                    timeout=300  # 5分钟超时
-                )
+                return self._send_multi_file_analysis_internal(csv_files, patient_info, loading_dialog)
             finally:
                 # 关闭加载对话框
                 loading_dialog.close()
+                
+        except Exception as e:
+            self.log_ai_message(f"[ERROR] 多文件分析失败: {e}")
+            return {'status': 'error', 'message': str(e)}
+    
+    def send_multi_file_analysis(self, csv_files, patient_info):
+        """发送多文件分析请求到 sarcneuro-edge（兼容原方法）"""
+        return self.send_multi_file_analysis_with_loading(csv_files, patient_info, "AI分析中")
+    
+    def _send_multi_file_analysis_internal(self, csv_files, patient_info, loading_dialog=None):
+        """内部方法：发送多文件分析请求"""
+        try:
+            import requests
+            
+            # 准备多文件上传数据
+            files = []
+            for csv_file in csv_files:
+                files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
+            
+            # 准备表单数据
+            form_data = {
+                'patient_name': patient_info['name'],
+                'patient_age': str(patient_info['age']),
+                'patient_gender': patient_info['gender'],
+                'patient_height': patient_info.get('height', ''),
+                'patient_weight': patient_info.get('weight', ''),
+                'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
+            }
+            
+            # 调试：打印实际发送的请求参数
+            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
+            for i, (field, (filename, content, content_type)) in enumerate(files):
+                content_preview = content[:100] + "..." if len(content) > 100 else content
+                self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
+            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
+            
+            # 更新加载对话框文本
+            if loading_dialog:
+                loading_dialog.update_message("正在上传数据到服务器...")
+                loading_dialog.update_progress(10)  # 上传开始时设为10%
+            
+            # 发送到 standalone_upload 的 /upload 接口
+            response = requests.post(
+                f"{self.sarcneuro_service.base_url}/upload",
+                files=files,
+                data=form_data,
+                timeout=300  # 5分钟超时
+            )
+            
+            if loading_dialog:
+                loading_dialog.update_progress(20)  # 上传完成设为20%
             
             if response.status_code == 200:
                 upload_result = response.json()
                 task_id = upload_result.get('task_id')
                 
                 if task_id:
-                    # 轮询任务状态
-                    return self.poll_analysis_result(task_id)
+                    # 轮询任务状态（传递loading对话框用于更新进度）
+                    return self.poll_analysis_result_with_dialog(task_id, loading_dialog)
                 else:
                     raise Exception("未获得任务ID")
             else:
@@ -2309,13 +2353,10 @@ class PressureSensorUI:
             self.log_ai_message(f"[ERROR] 多文件分析失败: {e}")
             return {'status': 'error', 'message': str(e)}
     
-    def poll_analysis_result(self, task_id):
-        """轮询分析结果"""
+    def poll_analysis_result_with_dialog(self, task_id, loading_dialog):
+        """轮询分析结果（使用现有的loading对话框）"""
         import requests
         import time
-        
-        # 创建加载对话框
-        loading_dialog = self.create_loading_dialog("AI分析中", "正在进行AI分析...\n这可能需要几分钟时间")
         
         try:
             max_attempts = 60  # 最多等待10分钟
@@ -2332,6 +2373,7 @@ class PressureSensorUI:
                         
                         # 更新加载对话框
                         loading_dialog.update_message(f"分析进度: {progress}%\n状态: {status}")
+                        loading_dialog.update_progress(progress)  # 更新进度条
                         
                         self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
                         
@@ -2341,6 +2383,7 @@ class PressureSensorUI:
                             self.log_ai_message(f"[DEBUG] comprehensive_report_url: {status_data.get('comprehensive_report_url')}")
                             
                             loading_dialog.update_message("分析完成！正在生成报告...")
+                            loading_dialog.update_progress(100)  # 设置为100%
                             
                             # 分析完成，构造结果
                             result = {
@@ -2381,6 +2424,16 @@ class PressureSensorUI:
             loading_dialog.close()
         
         return {'status': 'error', 'message': '分析超时'}
+    
+    def poll_analysis_result(self, task_id):
+        """轮询分析结果（兼容方法，创建自己的loading对话框）"""
+        # 创建加载对话框
+        loading_dialog = self.create_loading_dialog("AI分析中", "正在进行AI分析...\n这可能需要几分钟时间")
+        
+        try:
+            return self.poll_analysis_result_with_dialog(task_id, loading_dialog)
+        finally:
+            loading_dialog.close()
     
     def import_csv_for_analysis(self):
         """导入CSV文件进行AI分析并生成报告"""
@@ -3645,23 +3698,29 @@ class PressureSensorUI:
                     break
             
             if incomplete_session:
-                # 有未完成的会话，询问是否恢复
-                response = messagebox.askyesno(
-                    "发现未完成会话",
-                    f"患者 {self.current_patient['name']} 有未完成的检测会话：\n\n"
-                    f"会话名称：{incomplete_session['session_name']}\n"
-                    f"进度：{incomplete_session['current_step']}/{incomplete_session['total_steps']}\n"
-                    f"状态：{'进行中' if incomplete_session['status'] == 'in_progress' else '已中断'}\n\n"
-                    f"是否恢复该会话？",
-                    icon='question'
-                )
+                # 有未完成的会话，检查是否真正完成
+                session_steps = db.get_session_steps(incomplete_session['id'])
+                completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                total_steps = incomplete_session['total_steps']
                 
-                if response:
-                    # 恢复会话
-                    print(f"[DEBUG] 恢复未完成会话: {incomplete_session['session_name']}")
+                print(f"[DEBUG] 检查会话状态: 已完成{completed_steps}/{total_steps}步")
+                
+                if completed_steps >= total_steps:
+                    # 实际上已经完成了，更新会话状态
+                    print(f"[DEBUG] 会话实际已完成，更新状态")
+                    db.update_test_session_progress(incomplete_session['id'], total_steps, 'completed')
+                    # 继续创建新会话的流程
+                else:
+                    # 确实未完成，直接恢复（不询问）
+                    print(f"[DEBUG] 自动恢复未完成会话: {incomplete_session['session_name']}")
                     self.current_session = incomplete_session
                     self.detection_in_progress = True
                     self.start_detection_btn.config(text="🔄 检测中...", state="disabled")
+                    
+                    # 显示恢复信息（简短提示）
+                    messagebox.showinfo("恢复检测", 
+                                      f"自动恢复患者 {self.current_patient['name']} 的检测\n"
+                                      f"进度：{completed_steps}/{total_steps} 步")
                     
                     # 启动检测向导恢复会话
                     self.show_detection_wizard()
@@ -3688,24 +3747,26 @@ class PressureSensorUI:
             # 检查当日是否已有任何检测记录（包括完成和未完成的）
             if today_sessions:
                 session_info = today_sessions[0]  # 取第一个（最新的）会话
-                status_text = {
-                    'completed': '已完成',
-                    'in_progress': '进行中', 
-                    'interrupted': '已中断',
-                    'pending': '待进行'
-                }.get(session_info['status'], '未知状态')
                 
-                messagebox.showwarning(
-                    "患者当日已有检测记录", 
-                    f"患者 {self.current_patient['name']} 今天已经有检测记录。\n\n"
-                    f"会话名称：{session_info['session_name']}\n"
-                    f"检测状态：{status_text}\n"
-                    f"创建时间：{session_info['created_time'][:19].replace('T', ' ')}\n\n"
-                    "每位患者每天只能进行一次检测。\n\n"
-                    "请选择其他患者或查看已有的检测记录。",
-                    icon='warning'
-                )
-                return  # 阻止继续检测流程
+                if session_info['status'] == 'completed':
+                    # 已完成的会话，询问是否生成报告
+                    response = messagebox.askyesno(
+                        "检测已完成",
+                        f"患者 {self.current_patient['name']} 今天的检测已完成。\n\n"
+                        f"会话名称：{session_info['session_name']}\n"
+                        f"完成时间：{session_info['created_time'][:19].replace('T', ' ')}\n\n"
+                        "是否生成AI分析报告？",
+                        icon='question'
+                    )
+                    
+                    if response:
+                        # 生成报告
+                        self.generate_report_for_session(session_info['id'])
+                    return
+                else:
+                    # 未完成的会话，自动恢复（已在上面处理过了，这里不应该到达）
+                    print(f"[DEBUG] 意外情况：今日会话未完成但未被上面的逻辑捕获")
+                    return
             
             # 如果当日没有检测记录，开始新的检测
             self.start_new_detection()
@@ -4159,7 +4220,9 @@ class PressureSensorUI:
                 for i, csv_file in enumerate(all_csv_data):
                     self.log_ai_message(f"[DEBUG 会话分析] 文件{i+1}: {csv_file['filename']} ({csv_file['rows']}行)")
                 self.log_ai_message(f"[DEBUG 会话分析] 患者信息: {patient_info}")
-                result = self.send_multi_file_analysis(all_csv_data, patient_info)
+                
+                # 为会话分析也创建loading对话框
+                result = self.send_multi_file_analysis_with_loading(all_csv_data, patient_info, "会话分析中")
                 
                 if result and result.get('status') == 'success':
                     analysis_data = result['data']

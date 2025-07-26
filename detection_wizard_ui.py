@@ -523,10 +523,16 @@ class DetectionWizardDialog:
             # 启用下一步按钮或显示完成
             if self.current_step < self.total_steps:
                 self.next_btn.config(state="normal")
-                # 询问是否自动跳转到下一步
-                if messagebox.askyesno("步骤完成", f"第{self.current_step}步检测完成！\n\n是否自动进入下一步？"):
-                    # 延迟500ms后自动跳转到下一步
+                
+                # 检查是否是自动完成
+                if hasattr(self, '_auto_finishing') and self._auto_finishing:
+                    # 自动完成时直接跳转到下一步，不询问
                     self.dialog.after(500, self.auto_next_step)
+                else:
+                    # 手动完成时询问是否自动跳转到下一步
+                    if messagebox.askyesno("步骤完成", f"第{self.current_step}步检测完成！\n\n是否自动进入下一步？"):
+                        # 延迟500ms后自动跳转到下一步
+                        self.dialog.after(500, self.auto_next_step)
             else:
                 messagebox.showinfo("检测完成", "🎉 所有检测步骤已完成！\n\n即将生成分析报告。")
                 self.complete_all_steps()
@@ -793,21 +799,24 @@ class DetectionWizardDialog:
     def auto_finish_step(self):
         """自动完成步骤（用于定时步骤）"""
         if self.is_running:
-            # 直接完成当前步骤，不弹出确认对话框
+            # 直接完成当前步骤，设置标记表示这是自动完成
+            self._auto_finishing = True
             self.finish_current_step()
-            
-            # 如果不是最后一步，自动跳转到下一步
-            if self.current_step < self.total_steps:
-                # 延迟500ms后自动跳转到下一步
-                self.dialog.after(500, self.auto_next_step)
+            # 不要立即重置标记，让auto_next_step完成后再重置
     
     def auto_next_step(self):
         """自动跳转到下一步"""
         try:
             if self.current_step < self.total_steps:
                 self.next_step()
+            # 重置自动完成标记
+            if hasattr(self, '_auto_finishing'):
+                self._auto_finishing = False
         except Exception as e:
             print(f"[ERROR] 自动跳转下一步失败: {e}")
+            # 即使出错也要重置标记
+            if hasattr(self, '_auto_finishing'):
+                self._auto_finishing = False
     
     def on_closing(self):
         """窗口关闭事件"""

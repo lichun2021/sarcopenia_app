@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 echo ========================================
 echo SarcopeniaApp 最终版本打包
@@ -42,7 +43,7 @@ if exist "dist\SarcopeniaApp.exe" (
     
     set /p choice="运行程序测试? (y/n): "
     if /i "!choice!"=="y" (
-        echo [INFO] 启动程序 (无控制台窗口)...
+        echo [INFO] 启动程序 (无控制台窗口)
         start "" "dist\SarcopeniaApp.exe"
     )
     
