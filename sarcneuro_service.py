@@ -142,15 +142,25 @@ class SarcNeuroEdgeService:
             force_log(f"正在启动 SarcNeuro Edge 服务 (端口 {self.port})...")
             
             # 检查端口是否被占用
+            force_log(f"检查端口 {self.port} 是否被占用...")
             if self._is_port_in_use():
-                logger.warning(f"端口 {self.port} 已被占用，尝试连接现有服务...")
-                if self._check_service_health():
-                    self.is_running = True
-                    self._start_monitor()
-                    return True
-                else:
-                    logger.error("现有服务无响应")
+                force_log(f"端口 {self.port} 已被占用，尝试连接现有服务...")
+                try:
+                    # 使用更短的超时时间快速检查
+                    response = requests.get(f"{self.base_url}/health", timeout=3)
+                    if response.status_code == 200:
+                        force_log("现有服务响应正常，将复用现有服务")
+                        self.is_running = True
+                        # 不启动监控，避免干扰
+                        return True
+                    else:
+                        force_log(f"现有服务状态异常: {response.status_code}")
+                        return False
+                except Exception as e:
+                    force_log(f"现有服务连接失败: {e}")
                     return False
+            else:
+                force_log(f"端口 {self.port} 未被占用，准备启动新服务")
             
             # 启动前检查
             force_log(f"服务目录: {self.service_dir}")
@@ -214,14 +224,20 @@ class SarcNeuroEdgeService:
                     return False
                 
             else:
-                # 开发环境使用子进程
-                logger.info(f"开发环境：使用子进程启动服务，端口: {self.port}")
+                # 开发环境使用子进程 - 恢复demo 1.0逻辑
+                force_log(f"开发环境：使用子进程启动服务，端口: {self.port}")
                 python_exe = sys.executable
                 cmd = [python_exe, "standalone_upload.py"]
                 
-                # 设置环境变量
+                force_log(f"启动命令: {' '.join(cmd)}")
+                force_log(f"工作目录: {self.service_dir}")
+                
+                # 设置环境变量 - 简化为demo 1.0逻辑
                 env = os.environ.copy()
                 env["PYTHONPATH"] = str(self.service_dir)
+                env["SARCNEURO_PORT"] = str(self.port)
+                
+                force_log(f"环境变量设置: PYTHONPATH={env['PYTHONPATH']}, SARCNEURO_PORT={env['SARCNEURO_PORT']}")
                 
                 # 启动子进程
                 startupinfo = None
@@ -230,15 +246,22 @@ class SarcNeuroEdgeService:
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     startupinfo.wShowWindow = subprocess.SW_HIDE
                 
-                self.process = subprocess.Popen(
-                    cmd,
-                    cwd=str(self.service_dir),
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    startupinfo=startupinfo,
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
-                )
+                try:
+                    force_log("正在启动子进程...")
+                    
+                    self.process = subprocess.Popen(
+                        cmd,
+                        cwd=str(self.service_dir),  # 恢复demo 1.0逻辑：使用service_dir
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        startupinfo=startupinfo,
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+                    )
+                    force_log(f"子进程已启动，PID: {self.process.pid}")
+                except Exception as e:
+                    force_log(f"启动子进程失败: {e}")
+                    return False
             
             # 等待服务启动
             logger.info("等待服务启动...")
@@ -257,31 +280,49 @@ class SarcNeuroEdgeService:
                         return False
                 else:
                     # 开发环境检查进程状态
-                    if self.process.poll() is not None:
+                    poll_result = self.process.poll()
+                    if poll_result is not None:
                         stdout, stderr = self.process.communicate()
                         exit_code = self.process.returncode
-                        logger.error(f"服务启动失败，进程已退出 (退出码: {exit_code})")
-                        logger.error(f"使用的命令: {' '.join(cmd)}")
-                        logger.error(f"工作目录: {str(self.service_dir)}")
-                        logger.error(f"环境变量 PYTHONPATH: {env.get('PYTHONPATH')}")
+                        force_log(f"服务启动失败，进程已退出 (退出码: {exit_code})")
+                        force_log(f"使用的命令: {' '.join(cmd)}")
+                        force_log(f"工作目录: {str(self.service_dir)}")
+                        force_log(f"环境变量 PYTHONPATH: {env.get('PYTHONPATH')}")
                         if stdout:
-                            logger.info(f"标准输出: {stdout.decode('utf-8', errors='ignore')}")
+                            stdout_text = stdout.decode('utf-8', errors='ignore').strip()
+                            if stdout_text:
+                                force_log(f"标准输出: {stdout_text}")
                         if stderr:
-                            logger.error(f"错误输出: {stderr.decode('utf-8', errors='ignore')}")
+                            stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                            if stderr_text:
+                                force_log(f"错误输出: {stderr_text}")
                         return False
+                    else:
+                        if check_count <= 3:  # 前3次检查时显示进程状态
+                            force_log(f"子进程状态正常，PID: {self.process.pid}")
                 
-                # 每10秒打印一次进度
-                if check_count % 5 == 0:
+                # 每5秒打印一次进度
+                if check_count % 3 == 0:
                     logger.info(f"等待服务响应... ({elapsed:.1f}s/{self.startup_timeout}s)")
                 
                 # 检查服务健康状态
+                force_log(f"健康检查第{check_count}次: http://127.0.0.1:{self.port}/health")
                 if self._check_service_health():
+                    force_log("SarcNeuro Edge 服务启动成功!")
                     logger.info("SarcNeuro Edge 服务启动成功!")
                     self.is_running = True
-                    self._start_monitor()
+                    # 暂时禁用监控以避免干扰分析流程
+                    # self._start_monitor()
                     return True
+                else:
+                    if check_count <= 5:  # 前5次失败时详细记录
+                        force_log(f"健康检查失败，继续等待... (尝试 {check_count})")
                 
-                time.sleep(2)
+                # 更频繁地检查早期失败，减少检查间隔
+                if elapsed < 10:
+                    time.sleep(0.5)  # 前10秒每0.5秒检查一次
+                else:
+                    time.sleep(2)  # 10秒后每2秒检查一次
             
             # 启动超时，获取进程输出用于调试
             logger.error(f"服务启动超时 ({self.startup_timeout}秒)")
@@ -362,9 +403,15 @@ class SarcNeuroEdgeService:
     
     def _check_service_health(self) -> bool:
         """检查服务健康状态"""
+        # 如果监控被暂停（比如正在进行AI分析），跳过健康检查
+        if self._pause_monitoring:
+            logger.debug("监控已暂停，跳过健康检查")
+            return True  # 假设服务正常，避免标记为不可用
+        
         try:
             logger.debug(f"检查服务健康状态: {self.base_url}/health")
-            response = requests.get(f"{self.base_url}/health", timeout=15)
+            # 恢复demo 1.0的超时设置
+            response = requests.get(f"{self.base_url}/health", timeout=15) 
             logger.debug(f"健康检查响应: 状态码={response.status_code}")
             
             if response.status_code == 200:
@@ -380,12 +427,15 @@ class SarcNeuroEdgeService:
                 
         except requests.exceptions.ConnectionError as e:
             logger.debug(f"连接错误: {e}")
+            force_log(f"健康检查连接错误: {e}")
             return False
         except requests.exceptions.Timeout as e:
-            logger.debug(f"请求超时: {e}")
+            logger.warning(f"请求超时: {e}")
+            force_log(f"健康检查超时: {e}")
             return False
         except Exception as e:
             logger.debug(f"健康检查失败: {e}")
+            force_log(f"健康检查异常: {e}")
             return False
     
     def _start_monitor(self):
@@ -409,10 +459,12 @@ class SarcNeuroEdgeService:
                 # 如果监控被暂停，跳过健康检查
                 if self._pause_monitoring:
                     logger.debug("监控已暂停，跳过健康检查")
+                    consecutive_failures = 0  # 重置失败计数
                     continue
                 
                 if self._check_service_health():
                     consecutive_failures = 0
+                    logger.debug("服务健康检查通过")
                 else:
                     consecutive_failures += 1
                     logger.warning(f"服务健康检查失败 ({consecutive_failures}/{max_failures})")

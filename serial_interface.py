@@ -373,21 +373,21 @@ class SerialInterface:
                     # 清空已处理的数据
                     device_ready_data.clear()
                     
-                    # 调试输出 - 增强版
-                    if self.frame_count % 100 == 0:
-                        jq_success_count = len([r for r in jq_transform_results if "JQ转化成功" in r])
-                        print(f"📊 多端口数据水平合并 [帧#{self.frame_count}]:")
-                        print(f"   合并设备数: {len(self.serial_ports)}")
-                        print(f"   合并矩阵大小: {combined_matrix.shape} (水平拼接)")
-                        print(f"   合并数据长度: {len(combined_data)}字节")
-                        print(f"   JQ转化状态: {jq_success_count}/{len(self.serial_ports)} 成功")
-                        print(f"   JQ转化详情: {jq_transform_results}")
-                        
-                        # 显示每个设备的数据概览
-                        for device_id in sorted(device_ready_data.keys()):
-                            raw_data = device_ready_data[device_id]
-                            data_sum = sum(raw_data) if raw_data else 0
-                            print(f"     设备{device_id}: {len(raw_data)}字节, 数据和={data_sum}")
+                    # 调试输出 - 增强版 (已禁用以减少日志输出)
+                    # if self.frame_count % 100 == 0:
+                    #     jq_success_count = len([r for r in jq_transform_results if "JQ转化成功" in r])
+                    #     print(f"📊 多端口数据水平合并 [帧#{self.frame_count}]:")
+                    #     print(f"   合并设备数: {len(self.serial_ports)}")
+                    #     print(f"   合并矩阵大小: {combined_matrix.shape} (水平拼接)")
+                    #     print(f"   合并数据长度: {len(combined_data)}字节")
+                    #     print(f"   JQ转化状态: {jq_success_count}/{len(self.serial_ports)} 成功")
+                    #     print(f"   JQ转化详情: {jq_transform_results}")
+                    #     
+                    #     # 显示每个设备的数据概览
+                    #     for device_id in sorted(device_ready_data.keys()):
+                    #         raw_data = device_ready_data[device_id]
+                    #         data_sum = sum(raw_data) if raw_data else 0
+                    #         print(f"     设备{device_id}: {len(raw_data)}字节, 数据和={data_sum}")
                 
                 # 短暂休眠
                 time.sleep(0.001)

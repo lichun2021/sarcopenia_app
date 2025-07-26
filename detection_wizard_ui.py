@@ -337,20 +337,160 @@ class DetectionWizardDialog:
             self.next_btn.config(state="normal" if self.current_step < self.total_steps else "disabled")
             self.start_btn.config(state="disabled", text="✅ 已完成")
             self.finish_btn.config(state="disabled")
+            # 显示设备信息（已完成状态）
+            current_device_type = step_config['device']
+            self.device_label.config(text=f"{current_device_type} ✅", foreground="#4caf50")
         else:
-            # 未完成的步骤
-            self.next_btn.config(state="disabled")
-            self.start_btn.config(state="normal", text="🚀 开始检测")
-            self.finish_btn.config(state="disabled")
+            # 检查设备是否已配置
+            device_configured = self.check_device_configured()
+            current_device_type = step_config['device']
+            
+            if device_configured:
+                # 设备已配置，正常状态
+                self.next_btn.config(state="disabled")
+                self.start_btn.config(state="normal", text="🚀 开始检测")
+                self.finish_btn.config(state="disabled")
+                # 更新设备标签显示配置状态
+                self.device_label.config(text=f"{current_device_type} ✅", foreground="#4caf50")
+            else:
+                # 设备未配置，显示警告状态
+                self.next_btn.config(state="disabled")
+                self.start_btn.config(state="normal", text="⚠️ 需要配置设备")
+                self.finish_btn.config(state="disabled")
+                # 更新设备标签显示未配置状态
+                self.device_label.config(text=f"{current_device_type} ❌", foreground="#f44336")
         
         # 重置运行状态
         self.is_running = False
         self.start_time = None
         self.auto_finish = step_config.get('auto_finish', False)
     
+    def check_device_configured(self):
+        """检查当前步骤所需设备是否已配置"""
+        if not self.main_ui or not hasattr(self.main_ui, 'device_manager'):
+            print(f"[INFO] 第{self.current_step}步：无法访问设备管理器，跳过设备检查")
+            return True  # 如果无法访问设备管理器，则跳过检查
+        
+        current_device_type = self.steps_config[self.current_step]['device']
+        device_manager = self.main_ui.device_manager
+        
+        print(f"[INFO] 第{self.current_step}步检查：需要【{current_device_type}】设备")
+        
+        # 设备类型映射
+        device_type_mapping = {
+            '坐垫': 'cushion',
+            '脚垫': 'footpad', 
+            '步道': 'walkway_dual'
+        }
+        
+        required_device_key = device_type_mapping.get(current_device_type)
+        if not required_device_key:
+            print(f"[WARN] 第{self.current_step}步：未知设备类型 '{current_device_type}'，跳过检查")
+            return True  # 未知设备类型，跳过检查
+        
+        # 检查设备是否已配置
+        is_configured = required_device_key in device_manager.devices
+        
+        if is_configured:
+            print(f"[INFO] 第{self.current_step}步：【{current_device_type}】设备已配置 ✅")
+        else:
+            print(f"[WARN] 第{self.current_step}步：【{current_device_type}】设备未配置 ❌")
+        
+        return is_configured
+    
+    def prompt_device_configuration(self):
+        """提示用户配置设备"""
+        current_device_type = self.steps_config[self.current_step]['device']
+        
+        result = messagebox.askyesno(
+            "设备未配置",
+            f"第{self.current_step}步检测需要使用【{current_device_type}】设备，但该设备尚未配置。\n\n"
+            f"请确保：\n"
+            f"1. {current_device_type}设备已正确连接到电脑\n"
+            f"2. {current_device_type}设备已开机并正常工作\n\n"
+            f"是否现在打开设备配置向导进行配置？\n\n"
+            f"点击【是】：打开设备配置\n"
+            f"点击【否】：返回检测向导"
+        )
+        
+        if result:
+            # 打开设备配置对话框
+            try:
+                from device_config import DeviceConfigDialog
+                config_dialog = DeviceConfigDialog(self.main_ui.root)
+                if config_dialog.result:
+                    # 应用新的设备配置
+                    self.main_ui.device_manager.setup_devices(config_dialog.result)
+                    messagebox.showinfo(
+                        "配置成功", 
+                        f"{current_device_type}设备配置完成！\n现在可以开始检测了。"
+                    )
+                    return True
+                else:
+                    messagebox.showwarning(
+                        "配置取消",
+                        f"{current_device_type}设备配置被取消。\n请配置设备后再开始检测。"
+                    )
+                    return False
+            except Exception as e:
+                messagebox.showerror(
+                    "配置失败",
+                    f"打开设备配置时出错：{e}\n\n请手动配置设备后重试。"
+                )
+                return False
+        return False
+    
+    def switch_to_required_device(self):
+        """切换到当前步骤所需的设备"""
+        if not self.main_ui or not hasattr(self.main_ui, 'device_manager'):
+            return
+        
+        current_device_type = self.steps_config[self.current_step]['device']
+        device_manager = self.main_ui.device_manager
+        
+        # 设备类型映射
+        device_type_mapping = {
+            '坐垫': 'cushion',
+            '脚垫': 'footpad', 
+            '步道': 'walkway_dual'
+        }
+        
+        required_device_key = device_type_mapping.get(current_device_type)
+        if required_device_key and required_device_key in device_manager.devices:
+            # 切换到所需设备
+            success = device_manager.switch_device(required_device_key)
+            if success:
+                print(f"[INFO] 检测向导已切换到{current_device_type}设备")
+                
+                # 更新主界面的串口接口
+                if hasattr(self.main_ui, 'serial_interface'):
+                    new_interface = device_manager.get_current_serial_interface()
+                    if new_interface:
+                        self.main_ui.serial_interface = new_interface
+                        print(f"[INFO] 主界面串口接口已更新为{current_device_type}设备")
+            else:
+                print(f"[WARN] 切换到{current_device_type}设备失败")
+    
     def start_current_step(self):
         """开始当前步骤"""
         try:
+            # 检查设备是否已配置
+            if not self.check_device_configured():
+                if not self.prompt_device_configuration():
+                    return  # 用户取消配置或配置失败，不开始检测
+                
+                # 重新检查设备是否已配置
+                if not self.check_device_configured():
+                    messagebox.showwarning(
+                        "设备未配置",
+                        f"第{self.current_step}步检测所需的【{self.steps_config[self.current_step]['device']}】设备仍未配置。\n"
+                        "请先配置设备再开始检测。"
+                    )
+                    return
+            
+            # 自动切换到对应的设备
+            self.switch_to_required_device()
+            
             self.is_running = True
             self.start_time = datetime.now()
             
@@ -508,13 +648,17 @@ class DetectionWizardDialog:
                     return
                 self.is_running = False
             
+            old_step = self.current_step
             self.current_step -= 1
+            print(f"[INFO] 步骤切换：第{old_step}步 → 第{self.current_step}步")
             self.update_step_content()
     
     def next_step(self):
         """下一步"""
         if self.current_step < self.total_steps:
+            old_step = self.current_step
             self.current_step += 1
+            print(f"[INFO] 步骤切换：第{old_step}步 → 第{self.current_step}步")
             self.update_step_content()
     
     def complete_all_steps(self):
