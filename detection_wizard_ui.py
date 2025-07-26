@@ -150,6 +150,9 @@ class DetectionWizardDialog:
         self.center_window()
         self.dialog.deiconify()
         
+        # 初始检查：如果当前步骤设备未配置，给出提示
+        self.check_initial_device_status()
+        
         # 等待对话框关闭
         self.dialog.wait_window()
     
@@ -311,7 +314,7 @@ class DetectionWizardDialog:
         self.step_title.config(text=f"第{self.current_step}步：{step_config['name']}")
         
         # 更新设备和时长信息，添加状态图标
-        device_configured, _ = self.check_device_configured()
+        device_configured, device_type = self.check_device_configured()
         status_icon = "✅" if device_configured else "❌"
         self.device_label.config(text=f"{status_icon} {step_config['device']}")
         self.duration_label.config(text=f"{step_config['duration']}秒")
@@ -319,7 +322,13 @@ class DetectionWizardDialog:
         # 更新描述
         self.description_text.config(state='normal')
         self.description_text.delete(1.0, tk.END)
-        self.description_text.insert(1.0, step_config['description'])
+        
+        # 如果设备未配置，添加警告信息
+        if not device_configured:
+            warning_text = f"⚠️ 警告：{device_type}设备未配置！\n请先在设备管理中配置设备。\n\n"
+            self.description_text.insert(1.0, warning_text + step_config['description'])
+        else:
+            self.description_text.insert(1.0, step_config['description'])
         self.description_text.config(state='disabled')
         
         # 重置状态
@@ -342,7 +351,11 @@ class DetectionWizardDialog:
         else:
             # 未完成的步骤
             self.next_btn.config(state="disabled")
-            self.start_btn.config(state="normal", text="🚀 开始检测")
+            # 如果设备未配置，禁用开始按钮
+            if not device_configured:
+                self.start_btn.config(state="disabled", text="❌ 设备未配置")
+            else:
+                self.start_btn.config(state="normal", text="🚀 开始检测")
             self.finish_btn.config(state="disabled")
         
         # 重置运行状态
@@ -394,15 +407,16 @@ class DetectionWizardDialog:
             # 检查设备配置
             device_configured, device_type = self.check_device_configured()
             if not device_configured:
-                response = messagebox.askyesno(
+                messagebox.showerror(
                     "设备未配置",
                     f"当前步骤需要使用【{device_type}】设备，但尚未配置。\n\n"
-                    f"是否继续开始检测？\n\n"
-                    f"建议：先配置{device_type}设备后再开始检测。",
-                    icon='warning'
+                    f"请先在设备管理中配置{device_type}设备后再开始检测。\n\n"
+                    f"检测向导将关闭。"
                 )
-                if not response:
-                    return  # 用户选择不继续
+                # 更新会话状态并关闭检测向导
+                self.on_device_error_close()
+                self.dialog.destroy()
+                return
             
             self.is_running = True
             self.start_time = datetime.now()
@@ -652,6 +666,12 @@ class DetectionWizardDialog:
             if not hasattr(self, 'current_data_file') or not self.current_data_file:
                 return
             
+            # 检查当前设备是否匹配当前步骤所需的设备
+            device_configured, required_device_type = self.check_device_configured()
+            if not device_configured:
+                print(f"[WARNING] 当前步骤需要{required_device_type}设备，但未配置，跳过数据记录")
+                return
+            
             import csv
             import time
             
@@ -784,6 +804,56 @@ class DetectionWizardDialog:
     def on_closing(self):
         """窗口关闭事件"""
         self.exit_wizard()
+    
+    def on_device_error_close(self):
+        """因设备错误关闭窗口"""
+        try:
+            # 更新会话状态为中断，并记录原因
+            if hasattr(self, 'session_info') and self.session_info:
+                # 获取已完成的步骤数
+                completed_steps = len([r for r in self.step_results.values() if r['status'] == 'completed'])
+                
+                # 更新会话状态
+                db.update_test_session_progress(
+                    self.session_info['id'], 
+                    self.current_step - 1,  # 当前步骤未完成
+                    'interrupted'
+                )
+            
+            self.is_running = False
+            # 不调用 exit_wizard，直接关闭
+            
+        except Exception as e:
+            print(f"[ERROR] 设备错误关闭失败: {e}")
+    
+    def check_initial_device_status(self):
+        """初始检查设备状态"""
+        try:
+            # 统计所有步骤的设备配置状态
+            missing_devices = []
+            for step_num in range(1, self.total_steps + 1):
+                # 临时切换到该步骤检查设备
+                current_step_backup = self.current_step
+                self.current_step = step_num
+                device_configured, device_type = self.check_device_configured()
+                self.current_step = current_step_backup
+                
+                if not device_configured:
+                    step_name = self.steps_config[step_num]['name']
+                    missing_devices.append(f"第{step_num}步 ({step_name}): 需要{device_type}设备")
+            
+            # 如果有缺失的设备，给出提示
+            if missing_devices:
+                missing_list = "\n".join(missing_devices)
+                messagebox.showwarning(
+                    "设备配置不完整",
+                    f"以下检测步骤缺少必要的设备配置：\n\n{missing_list}\n\n"
+                    f"缺少设备的步骤将无法进行检测。\n"
+                    f"建议先完成设备配置后再开始检测。"
+                )
+                
+        except Exception as e:
+            print(f"[ERROR] 检查初始设备状态失败: {e}")
 
 
 # 测试代码

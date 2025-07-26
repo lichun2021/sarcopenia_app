@@ -25,7 +25,7 @@ class PatientManagerDialog:
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
         
-        self.dialog.geometry("800x600")
+        self.dialog.geometry("1200x800")
         self.dialog.resizable(True, True)
         self.dialog.grab_set()  # 模态对话框
         
@@ -44,6 +44,9 @@ class PatientManagerDialog:
         # 加载患者数据
         self.refresh_patient_list()
         
+        # 启动刷新监听
+        self.start_refresh_listener()
+        
         # 居中显示并显示窗口
         self.center_window()
         self.dialog.deiconify()
@@ -56,9 +59,9 @@ class PatientManagerDialog:
         self.dialog.update_idletasks()
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
-        x = (screen_width - 800) // 2
-        y = (screen_height - 600) // 2
-        self.dialog.geometry(f"800x600+{x}+{y}")
+        x = (screen_width - 1200) // 2
+        y = (screen_height - 800) // 2
+        self.dialog.geometry(f"1200x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
@@ -108,12 +111,12 @@ class PatientManagerDialog:
         list_frame = ttk.LabelFrame(main_frame, text="患者档案列表", padding="5")
         list_frame.pack(fill="both", expand=True, pady=(0, 10))
         
-        # 创建树状视图 - 支持多选
-        columns = ("姓名", "性别", "年龄", "身高", "体重", "电话", "创建时间")
+        # 创建树状视图 - 支持多选，添加检测状态列
+        columns = ("姓名", "性别", "年龄", "身高", "体重", "电话", "检测状态", "创建时间")
         self.patient_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15, selectmode="extended")
         
         # 设置列标题和宽度
-        column_widths = {"姓名": 120, "性别": 80, "年龄": 80, "身高": 100, "体重": 100, "电话": 140, "创建时间": 170}
+        column_widths = {"姓名": 120, "性别": 80, "年龄": 80, "身高": 100, "体重": 100, "电话": 140, "检测状态": 120, "创建时间": 170}
         for col in columns:
             self.patient_tree.heading(col, text=col)
             self.patient_tree.column(col, width=column_widths.get(col, 100), minwidth=50, anchor="center")
@@ -134,6 +137,9 @@ class PatientManagerDialog:
         # 绑定选择事件
         self.patient_tree.bind("<<TreeviewSelect>>", self.on_patient_select)
         self.patient_tree.bind("<Double-1>", self.on_patient_double_click)
+        
+        # 绑定右键菜单
+        self.patient_tree.bind("<Button-3>", self.on_patient_right_click)
         
         # 患者详情区域
         detail_frame = ttk.LabelFrame(main_frame, text="患者详情", padding="10")
@@ -184,6 +190,26 @@ class PatientManagerDialog:
         
         # 填充数据
         for patient in patients:
+            # 获取患者最新检测状态
+            latest_session = db.get_patient_latest_session(patient['id'])
+            if latest_session:
+                if latest_session['status'] == 'completed':
+                    # 检查是否有报告文件
+                    reports = db.find_session_reports(latest_session['id'])
+                    if reports:
+                        detection_status = "✅ 已完成(有报告)"
+                    else:
+                        detection_status = "⚠️ 已完成(无报告)"
+                elif latest_session['status'] == 'in_progress':
+                    progress = f"{latest_session['current_step']}/{latest_session['total_steps']}"
+                    detection_status = f"🔄 进行中({progress})"
+                elif latest_session['status'] == 'interrupted':
+                    detection_status = "❌ 已中断"
+                else:
+                    detection_status = "⏳ 未开始"
+            else:
+                detection_status = "⏳ 未检测"
+            
             values = (
                 patient['name'],
                 patient['gender'],
@@ -191,6 +217,7 @@ class PatientManagerDialog:
                 f"{patient['height']:.1f}cm" if patient['height'] else "-",
                 f"{patient['weight']:.1f}kg" if patient['weight'] else "-",
                 patient['phone'] or "-",
+                detection_status,
                 patient['created_time'][:19].replace('T', ' ')
             )
             # 将patient_id存储在tags中用于后续操作
@@ -271,20 +298,36 @@ class PatientManagerDialog:
         height_str = f"{patient['height']:.1f}cm" if patient['height'] else "未填写"
         weight_str = f"{patient['weight']:.1f}kg" if patient['weight'] else "未填写"
         
-        detail_text = f"""基本信息:
-• 姓名: {patient['name']}
-• 性别: {patient['gender']}
-• 年龄: {patient['age']}岁
-• 身高: {height_str}
-• 体重: {weight_str}
-• 电话: {patient['phone'] or "未填写"}
-
-档案信息:
-• 创建时间: {patient['created_time'][:19].replace('T', ' ')}
-• 更新时间: {patient['updated_time'][:19].replace('T', ' ')}
-
-备注信息:
-{patient['notes'] or "无"}"""
+        # 获取检测状态详情
+        latest_session = db.get_patient_latest_session(patient['id'])
+        detection_status = "尚未检测"
+        report_info = ""
+        
+        if latest_session:
+            status_map = {
+                'completed': '已完成',
+                'in_progress': '进行中',
+                'interrupted': '已中断'
+            }
+            detection_status = status_map.get(latest_session['status'], '未知状态')
+            
+            if latest_session['status'] == 'completed':
+                reports = db.find_session_reports(latest_session['id'])
+                if reports:
+                    report_info = f" • 报告: {len(reports)}个"
+                else:
+                    report_info = " • 报告: 无"
+            elif latest_session['status'] == 'in_progress':
+                detection_status += f" ({latest_session['current_step']}/{latest_session['total_steps']})"
+        
+        # 简化显示内容
+        detail_text = f"""基本信息: {patient['name']} ({patient['gender']}, {patient['age']}岁)
+身高体重: {height_str} / {weight_str}  •  电话: {patient['phone'] or "未填写"}
+检测状态: {detection_status}{report_info}
+创建时间: {patient['created_time'][:16].replace('T', ' ')}"""
+        
+        if patient['notes']:
+            detail_text += f"\n备注: {patient['notes'][:50]}{'...' if len(patient['notes']) > 50 else ''}"
 
         self.detail_text.config(state='normal')
         self.detail_text.delete(1.0, tk.END)  
@@ -292,11 +335,88 @@ class PatientManagerDialog:
         self.detail_text.config(state='disabled')
     
     def on_patient_double_click(self, event=None):
-        """患者双击事件"""
+        """患者双击事件 - 优先打开报告"""
         if self.select_mode:
             self.select_patient()
         else:
-            self.edit_patient()
+            # 检查是否有报告可以打开
+            selection = self.patient_tree.selection()
+            if selection:
+                item = self.patient_tree.item(selection[0])
+                patient_id = int(item['tags'][0])
+                
+                # 获取最新会话
+                latest_session = db.get_patient_latest_session(patient_id)
+                if latest_session and latest_session['status'] == 'completed':
+                    reports = db.find_session_reports(latest_session['id'])
+                    if reports:
+                        self.open_report(reports[0])
+                        return
+            
+            # 如果没有报告，提示用户并询问是否编辑患者信息
+            if messagebox.askyesno("没有报告", "该患者暂无检测报告。\n\n是否要编辑患者信息？"):
+                self.edit_patient()
+    
+    def on_patient_right_click(self, event=None):
+        """患者右键菜单事件"""
+        # 获取点击的行
+        item = self.patient_tree.identify_row(event.y)
+        if item:
+            # 选中该行
+            self.patient_tree.selection_set(item)
+            
+            # 获取患者信息
+            patient_id = int(self.patient_tree.item(item)['tags'][0])
+            latest_session = db.get_patient_latest_session(patient_id)
+            
+            # 创建右键菜单
+            context_menu = tk.Menu(self.dialog, tearoff=0)
+            
+            # 编辑患者信息
+            context_menu.add_command(label="✏️ 编辑患者信息", command=self.edit_patient)
+            
+            # 如果有已完成的检测，添加查看报告选项
+            if latest_session and latest_session['status'] == 'completed':
+                reports = db.find_session_reports(latest_session['id'])
+                if reports:
+                    context_menu.add_separator()
+                    context_menu.add_command(label="📄 查看检测报告", 
+                                          command=lambda: self.open_report(reports[0]))
+                    
+                    # 如果有多个报告，添加子菜单
+                    if len(reports) > 1:
+                        report_submenu = tk.Menu(context_menu, tearoff=0)
+                        for i, report_path in enumerate(reports):
+                            report_name = f"报告 {i+1}: {report_path.split('/')[-1]}"
+                            report_submenu.add_command(label=report_name,
+                                                    command=lambda path=report_path: self.open_report(path))
+                        context_menu.add_cascade(label="📁 所有报告", menu=report_submenu)
+            
+            context_menu.add_separator()
+            context_menu.add_command(label="🗑️ 删除患者", command=self.delete_patients)
+            
+            # 显示菜单
+            try:
+                context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                context_menu.grab_release()
+    
+    def open_report(self, report_path):
+        """打开检测报告"""
+        import os
+        import webbrowser
+        from tkinter import messagebox
+        
+        try:
+            if os.path.exists(report_path):
+                # 使用默认浏览器打开HTML报告
+                webbrowser.open(f'file:///{os.path.abspath(report_path)}')
+                print(f"[INFO] 打开报告: {report_path}")
+            else:
+                messagebox.showerror("错误", f"报告文件不存在：\n{report_path}")
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开报告文件：\n{str(e)}")
+            print(f"[ERROR] 打开报告失败: {e}")
     
     def new_patient(self):
         """新建患者"""
@@ -407,10 +527,79 @@ class PatientManagerDialog:
         if self.selected_patient:
             self.dialog.destroy()
     
+    def check_patient_today_completed(self, patient_id: int) -> bool:
+        """检查患者当日是否有已完成的检测会话"""
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # 获取患者所有会话
+        sessions = db.get_patient_sessions(patient_id)
+        
+        for session in sessions:
+            # 检查是否为当日创建且已完成的会话
+            session_date = session['created_time'][:10]  # 提取日期部分
+            if session_date == today and session['status'] == 'completed':
+                return True
+        
+        return False
+    
+    def check_patient_today_has_records(self, patient_id: int) -> bool:
+        """检查患者当日是否有任何检测记录（包括完成和未完成的）"""
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # 获取患者所有会话
+        sessions = db.get_patient_sessions(patient_id)
+        
+        for session in sessions:
+            # 检查是否为当日创建的会话
+            session_date = session['created_time'][:10]  # 提取日期部分
+            if session_date == today:
+                return True
+        
+        return False
+    
     def cancel(self):
         """取消选择"""
         self.selected_patient = None
         self.dialog.destroy()
+    
+    def start_refresh_listener(self):
+        """启动刷新监听器，监听报告生成完成事件"""
+        self.last_refresh_time = 0
+        self.check_refresh_flag()
+    
+    def check_refresh_flag(self):
+        """定期检查刷新标记文件"""
+        try:
+            import os
+            import time
+            refresh_flag_file = "patient_list_refresh.flag"
+            
+            if os.path.exists(refresh_flag_file):
+                # 读取文件内容
+                with open(refresh_flag_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 解析刷新时间
+                for line in content.split('\n'):
+                    if line.startswith('refresh_time:'):
+                        refresh_time = float(line.split(':')[1])
+                        
+                        # 如果是新的刷新请求，执行刷新
+                        if refresh_time > self.last_refresh_time:
+                            self.last_refresh_time = refresh_time
+                            self.refresh_patient_list()
+                            print(f"[INFO] 检测到报告生成完成，已刷新患者列表")
+                            break
+            
+        except Exception as e:
+            # 静默处理错误，避免影响正常使用
+            pass
+        
+        # 如果对话框还存在，继续监听（每2秒检查一次）
+        if self.dialog.winfo_exists():
+            self.dialog.after(2000, self.check_refresh_flag)
     
     def close_dialog(self):
         """关闭对话框"""

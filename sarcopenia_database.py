@@ -564,6 +564,137 @@ class SarcopeniaDatabase:
         finally:
             conn.close()
     
+    def get_patient_sessions(self, patient_id: int) -> List[Dict]:
+        """获取患者所有检测会话"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT id, session_name, test_date, status, current_step, total_steps,
+                       created_time, completed_time
+                FROM test_sessions
+                WHERE patient_id = ?
+                ORDER BY created_time DESC
+            ''', (patient_id,))
+            
+            rows = cursor.fetchall()
+            sessions = []
+            for row in rows:
+                sessions.append({
+                    'id': row[0],
+                    'session_name': row[1],
+                    'test_date': row[2],
+                    'status': row[3],
+                    'current_step': row[4],
+                    'total_steps': row[5],
+                    'created_time': row[6],
+                    'completed_time': row[7]
+                })
+            return sessions
+            
+        except Exception as e:
+            print(f"[ERROR] 获取患者检测会话失败: {e}")
+            return []
+        finally:
+            conn.close()
+    
+    def get_patient_latest_session(self, patient_id: int) -> Optional[Dict]:
+        """获取患者最新的检测会话状态"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT id, session_name, test_date, status, current_step, total_steps,
+                       created_time, completed_time
+                FROM test_sessions
+                WHERE patient_id = ?
+                ORDER BY created_time DESC
+                LIMIT 1
+            ''', (patient_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                return dict(zip(columns, row))
+            return None
+            
+        except Exception as e:
+            print(f"[ERROR] 获取患者最新会话失败: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    def find_session_reports(self, session_id: int) -> List[str]:
+        """查找会话相关的报告文件"""
+        import glob
+        import os
+        
+        report_files = []
+        
+        # 首先查询数据库中存储的报告路径
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # 从分析结果表中查找报告路径
+            cursor.execute('''
+                SELECT ai_report_path FROM analysis_results 
+                WHERE session_id = ? AND ai_report_path IS NOT NULL
+            ''', (session_id,))
+            
+            db_reports = cursor.fetchall()
+            for (report_path,) in db_reports:
+                if report_path and os.path.exists(report_path):
+                    report_files.append(report_path)
+        except Exception as e:
+            print(f"[DEBUG] 数据库查询报告路径失败: {e}")
+        finally:
+            conn.close()
+        
+        # 如果数据库中没有找到，使用文件系统搜索
+        if not report_files:
+            report_patterns = [
+                f"*{session_id}*.html",
+                f"comprehensive_report_*.html",  # 修改模式以匹配综合报告
+                f"*综合报告*.html",
+                f"*分析报告*.html"
+            ]
+            
+            # 在多个可能的目录中搜索
+            search_dirs = [
+                ".",
+                "analysis_reports",
+                "reports", 
+                "sarcneuro_data/reports",
+                "sarcneuro-edge/reports"
+            ]
+            
+            # 按日期搜索
+            from datetime import datetime
+            today = datetime.now().strftime("%Y-%m-%d")
+            search_dirs.extend([
+                today,
+                f"tmp/{today}",
+                f"{today}/analysis_reports"
+            ])
+            
+            for search_dir in search_dirs:
+                if os.path.exists(search_dir):
+                    for pattern in report_patterns:
+                        files = glob.glob(os.path.join(search_dir, pattern))
+                        # 对于综合报告，按修改时间排序，获取最新的
+                        if pattern.startswith("comprehensive_report_") and files:
+                            files.sort(key=os.path.getmtime, reverse=True)
+                            # 只取最新的一个综合报告
+                            report_files.extend(files[:1])
+                        else:
+                            report_files.extend(files)
+        
+        # 去重并返回
+        return list(set(report_files))
+    
     def delete_test_session(self, session_id: int) -> bool:
         """删除检测会话及其所有步骤"""
         conn = sqlite3.connect(self.db_path)

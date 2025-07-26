@@ -2960,8 +2960,14 @@ class PressureSensorUI:
             self.log_ai_message(f"[ERROR] 获取分析结果错误: {e}")
             raise
     
-    def show_analysis_complete_dialog(self, analysis_data, report_path):
-        """显示分析完成对话框"""
+    def show_analysis_complete_dialog(self, analysis_data, report_path, is_patient_linked=False):
+        """显示分析完成对话框
+        
+        Args:
+            analysis_data: 分析结果数据
+            report_path: 报告文件路径
+            is_patient_linked: 是否与患者账号关联（默认False，CSV导入时为False，检测会话时为True）
+        """
         overall_score = analysis_data.get('overall_score', 0)
         risk_level = analysis_data.get('risk_level', 'UNKNOWN')
         confidence = analysis_data.get('confidence', 0)
@@ -2988,6 +2994,10 @@ class PressureSensorUI:
 
 是否立即打开报告文件？"""
         
+        # 只有在与患者账号关联时才通知患者管理界面刷新列表状态
+        if is_patient_linked:
+            self.notify_patient_list_refresh()
+        
         result = messagebox.askyesno("分析完成", message)
         if result and report_path:
             try:
@@ -3005,6 +3015,29 @@ class PressureSensorUI:
                 messagebox.showinfo("打开文件", f"请手动打开报告文件:\n{report_path}")
         elif result and not report_path:
             messagebox.showinfo("提示", "报告文件未保存，请检查分析服务状态或重试分析")
+    
+    def notify_patient_list_refresh(self):
+        """通知患者管理界面刷新列表状态"""
+        try:
+            # 创建或更新一个全局标记文件，患者管理界面可以监听此文件的变化
+            import os
+            import time
+            refresh_flag_file = "patient_list_refresh.flag"
+            with open(refresh_flag_file, 'w', encoding='utf-8') as f:
+                f.write(f"refresh_time:{time.time()}\n")
+                f.write("reason:report_generated\n")
+            
+            # 如果能找到患者管理界面的实例，直接调用刷新方法
+            # 这需要一个全局注册机制或事件系统
+            if hasattr(self, '_notify_patient_refresh_callbacks'):
+                for callback in self._notify_patient_refresh_callbacks:
+                    try:
+                        callback()
+                    except Exception as e:
+                        print(f"[WARN] 患者列表刷新回调失败: {e}")
+                        
+        except Exception as e:
+            print(f"[WARN] 通知患者列表刷新失败: {e}")
     
     def collect_and_analyze_data(self, patient_info):
         """收集实时数据并进行分析"""
@@ -3164,9 +3197,9 @@ class PressureSensorUI:
         list_frame = ttk.LabelFrame(main_frame, text="检测会话列表", padding="10")
         list_frame.pack(fill="both", expand=True, pady=(0, 20))
         
-        # 创建树状视图
+        # 创建树状视图 - 支持多选
         columns = ("患者姓名", "性别", "年龄", "会话名称", "状态", "进度", "创建时间")
-        session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15)
+        session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15, selectmode="extended")
         
         # 设置列标题和宽度
         column_widths = {"患者姓名": 100, "性别": 60, "年龄": 60, "会话名称": 180, "状态": 80, "进度": 80, "创建时间": 150}
@@ -3205,94 +3238,194 @@ class PressureSensorUI:
         
         def on_resume():
             selection = session_tree.selection()
-            if selection:
-                # 获取选中项的索引
-                tags = session_tree.item(selection[0])['tags']
-                if tags:
-                    session_index = int(tags[0])  # 获取会话索引
-                    session = sessions[session_index]  # 从sessions列表中获取会话对象
-                    
-                    # 先选中对应的患者
-                    patient_info = {
-                        'id': session['patient_id'],
-                        'name': session['patient_name'],
-                        'gender': session.get('patient_gender', ''),
-                        'age': session.get('patient_age', 0)
-                    }
-                    self.current_patient = patient_info
-                    
-                    # 标记正在恢复会话，避免触发自动检查
-                    self._resuming_session = True
-                    self.update_patient_status()
-                    self._resuming_session = False
-                    
-                    if session['status'] in ['pending', 'in_progress', 'interrupted']:
-                        # 设置当前会话
-                        self.current_session = {
-                            'id': session['id'],
-                            'name': session['session_name'],
-                            'patient_id': session['patient_id'],
-                            'current_step': session['current_step'],
-                            'total_steps': session['total_steps']
-                        }
-                        self.detection_in_progress = True
-                        dialog.destroy()
-                        # 直接显示检测向导，它会自动跳转到正确的步骤
-                        self.show_detection_wizard()
-                    else:
-                        messagebox.showwarning("无法恢复", "只能恢复未完成的检测会话")
-            else:
+            if not selection:
                 messagebox.showwarning("提示", "请选择要恢复的检测会话")
+                return
+            
+            if len(selection) > 1:
+                messagebox.showwarning("提示", "一次只能恢复一个检测会话")
+                return
+            
+            # 获取选中项的索引
+            tags = session_tree.item(selection[0])['tags']
+            if tags:
+                session_index = int(tags[0])  # 获取会话索引
+                session = sessions[session_index]  # 从sessions列表中获取会话对象
+                
+                # 先选中对应的患者
+                patient_info = {
+                    'id': session['patient_id'],
+                    'name': session['patient_name'],
+                    'gender': session.get('patient_gender', ''),
+                    'age': session.get('patient_age', 0)
+                }
+                self.current_patient = patient_info
+                
+                # 标记正在恢复会话，避免触发自动检查
+                self._resuming_session = True
+                self.update_patient_status()
+                self._resuming_session = False
+                
+                if session['status'] in ['pending', 'in_progress', 'interrupted']:
+                    # 设置当前会话
+                    self.current_session = {
+                        'id': session['id'],
+                        'name': session['session_name'],
+                        'patient_id': session['patient_id'],
+                        'current_step': session['current_step'],
+                        'total_steps': session['total_steps']
+                    }
+                    self.detection_in_progress = True
+                    dialog.destroy()
+                    # 直接显示检测向导，它会自动跳转到正确的步骤
+                    self.show_detection_wizard()
+                else:
+                    messagebox.showwarning("无法恢复", "只能恢复未完成的检测会话")
         
         def on_generate_report():
             selection = session_tree.selection()
-            if selection:
-                # 获取选中项的索引
-                tags = session_tree.item(selection[0])['tags']
-                if tags:
-                    session_index = int(tags[0])
-                    session = sessions[session_index]
-                    if session['status'] == 'completed':
-                        dialog.destroy()
-                        self.generate_report_for_session(session['id'])
-                    else:
-                        messagebox.showwarning("无法生成报告", "只能为已完成的检测会话生成报告")
-            else:
+            if not selection:
                 messagebox.showwarning("提示", "请选择要生成报告的检测会话")
+                return
+            
+            if len(selection) > 1:
+                messagebox.showwarning("提示", "一次只能为一个会话生成报告")
+                return
+            
+            # 获取选中项的索引
+            tags = session_tree.item(selection[0])['tags']
+            if tags:
+                session_index = int(tags[0])
+                session = sessions[session_index]
+                if session['status'] == 'completed':
+                    dialog.destroy()
+                    self.generate_report_for_session(session['id'])
+                else:
+                    messagebox.showwarning("无法生成报告", "只能为已完成的检测会话生成报告")
         
         def on_delete_session():
+            """删除会话（支持批量删除）"""
             selection = session_tree.selection()
-            if selection:
-                # 获取选中项的索引
-                tags = session_tree.item(selection[0])['tags']
+            if not selection:
+                messagebox.showwarning("提示", "请选择要删除的检测会话")
+                return
+            
+            # 获取要删除的会话信息
+            sessions_to_delete = []
+            for item_id in selection:
+                tags = session_tree.item(item_id)['tags']
                 if tags:
                     session_index = int(tags[0])
                     session = sessions[session_index]
-                    
-                    # 确认删除
-                    if messagebox.askyesno("确认删除", 
-                                         f"确定要删除患者 {session['patient_name']} 的会话吗？\n\n"
-                                         f"会话：{session['session_name']}\n"
-                                         f"状态：{session['status']}\n\n"
-                                         "此操作不可恢复！"):
-                        try:
-                            # 删除会话
-                            if db.delete_test_session(session['id']):
-                                messagebox.showinfo("删除成功", "会话已成功删除")
-                                dialog.destroy()
-                                # 重新打开会话管理界面
-                                self.show_session_manager()
-                            else:
-                                messagebox.showerror("删除失败", "删除会话时发生错误")
-                        except Exception as e:
-                            messagebox.showerror("删除失败", f"删除会话失败：{e}")
+                    sessions_to_delete.append((session['id'], session['patient_name'], session['session_name']))
+            
+            # 确认删除
+            if len(sessions_to_delete) == 1:
+                # 单个删除
+                session_id, patient_name, session_name = sessions_to_delete[0]
+                confirm_msg = f"确定要删除患者 {patient_name} 的会话吗？\n\n会话：{session_name}\n\n此操作不可恢复！"
             else:
-                messagebox.showwarning("提示", "请选择要删除的检测会话")
+                # 批量删除
+                if len(sessions_to_delete) <= 5:
+                    sessions_list = "\n".join([f"• {name} - {session}" for _, name, session in sessions_to_delete])
+                else:
+                    sessions_list = "\n".join([f"• {name} - {session}" for _, name, session in sessions_to_delete[:5]])
+                    sessions_list += f"\n• ... 等共 {len(sessions_to_delete)} 个会话"
+                
+                confirm_msg = f"确定要删除以下 {len(sessions_to_delete)} 个检测会话吗？\n\n{sessions_list}\n\n此操作不可恢复！"
+            
+            if messagebox.askyesno("确认删除", confirm_msg):
+                # 执行删除
+                success_count = 0
+                failed_sessions = []
+                
+                for session_id, patient_name, session_name in sessions_to_delete:
+                    try:
+                        if db.delete_test_session(session_id):
+                            success_count += 1
+                            # 从树状视图中移除已删除的项
+                            for item_id in selection:
+                                tags = session_tree.item(item_id)['tags']
+                                if tags:
+                                    idx = int(tags[0])
+                                    if sessions[idx]['id'] == session_id:
+                                        session_tree.delete(item_id)
+                                        break
+                        else:
+                            failed_sessions.append(f"{patient_name} - {session_name}")
+                    except Exception as e:
+                        failed_sessions.append(f"{patient_name} - {session_name}")
+                        print(f"[ERROR] 删除会话失败 {session_id}: {e}")
+                
+                # 显示结果
+                if failed_sessions:
+                    failed_list = "\n".join(failed_sessions[:5])
+                    if len(failed_sessions) > 5:
+                        failed_list += f"\n... 等共 {len(failed_sessions)} 个会话"
+                    messagebox.showwarning("部分删除失败", 
+                                         f"成功删除 {success_count} 个会话\n\n"
+                                         f"删除失败的会话：\n{failed_list}")
+                else:
+                    if len(sessions_to_delete) == 1:
+                        messagebox.showinfo("删除成功", "会话已成功删除")
+                    else:
+                        messagebox.showinfo("批量删除成功", f"成功删除 {success_count} 个会话")
+                
+                # 更新删除按钮文本（如果还有选中项）
+                remaining_selection = session_tree.selection()
+                if remaining_selection:
+                    delete_btn.config(text=f"🗑️ 删除会话 ({len(remaining_selection)})")
+                else:
+                    delete_btn.config(text="🗑️ 删除会话")
         
-        # 按钮布局 - 删除在左边，其他在右边
-        # 左侧删除按钮
-        delete_btn = ttk.Button(button_frame, text="🗑️ 删除会话", command=on_delete_session)
+        # 绑定选择事件
+        def on_session_select(event=None):
+            """会话选择事件"""
+            selection = session_tree.selection()
+            
+            # 更新全选按钮状态
+            all_items = session_tree.get_children()
+            if len(selection) == len(all_items) and len(all_items) > 0:
+                select_all_btn.config(text="❌ 取消全选")
+            else:
+                select_all_btn.config(text="✅ 全选")
+            
+            # 更新删除按钮文本
+            if len(selection) > 1:
+                delete_btn.config(text=f"🗑️ 删除会话 ({len(selection)})")
+            else:
+                delete_btn.config(text="🗑️ 删除会话")
+        
+        session_tree.bind("<<TreeviewSelect>>", on_session_select)
+        
+        # 按钮布局 - 删除和全选在左边，其他在右边
+        # 左侧按钮
+        left_buttons = ttk.Frame(button_frame)
+        left_buttons.pack(side="left")
+        
+        delete_btn = ttk.Button(left_buttons, text="🗑️ 删除会话", command=on_delete_session)
         delete_btn.pack(side="left", padx=(0, 10))
+        
+        # 全选/取消全选按钮
+        def toggle_select_all():
+            """切换全选/取消全选"""
+            all_items = session_tree.get_children()
+            if not all_items:
+                return
+            
+            current_selection = session_tree.selection()
+            
+            if len(current_selection) == len(all_items):
+                # 当前是全选状态，取消全选
+                session_tree.selection_remove(*all_items)
+                select_all_btn.config(text="✅ 全选")
+            else:
+                # 当前不是全选状态，进行全选
+                session_tree.selection_set(all_items)
+                select_all_btn.config(text="❌ 取消全选")
+        
+        select_all_btn = ttk.Button(left_buttons, text="✅ 全选", command=toggle_select_all)
+        select_all_btn.pack(side="left", padx=(0, 10))
         
         # 右侧操作按钮
         right_buttons = ttk.Frame(button_frame)
@@ -3308,6 +3441,49 @@ class PressureSensorUI:
         def on_double_click(event):
             on_resume()
         session_tree.bind("<Double-1>", on_double_click)
+        
+        # 绑定右键菜单
+        def on_right_click(event):
+            """右键菜单事件"""
+            # 获取点击的行
+            item = session_tree.identify_row(event.y)
+            if item:
+                # 如果点击的行不在当前选中项中，则选中该行
+                if item not in session_tree.selection():
+                    session_tree.selection_set(item)
+                
+                # 创建右键菜单
+                context_menu = tk.Menu(dialog, tearoff=0)
+                
+                selection = session_tree.selection()
+                if len(selection) == 1:
+                    # 单选菜单
+                    tags = session_tree.item(selection[0])['tags']
+                    if tags:
+                        session_index = int(tags[0])
+                        session = sessions[session_index]
+                        
+                        if session['status'] in ['pending', 'in_progress', 'interrupted']:
+                            context_menu.add_command(label="🔄 恢复检测", command=on_resume)
+                        
+                        if session['status'] == 'completed':
+                            context_menu.add_command(label="📄 生成报告", command=on_generate_report)
+                        
+                        context_menu.add_separator()
+                
+                # 删除选项（单选和多选都有）
+                if len(selection) > 1:
+                    context_menu.add_command(label=f"🗑️ 删除 {len(selection)} 个会话", command=on_delete_session)
+                else:
+                    context_menu.add_command(label="🗑️ 删除会话", command=on_delete_session)
+                
+                # 显示菜单
+                try:
+                    context_menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    context_menu.grab_release()
+        
+        session_tree.bind("<Button-3>", on_right_click)
     
     def select_patient_for_detection(self):
         """为检测选择患者"""
@@ -3358,8 +3534,8 @@ class PressureSensorUI:
                 if not self.select_patient_for_detection():
                     return
             
-            # 先检查当天是否有未完成的会话
-            sessions = db.get_patient_test_sessions(self.current_patient['id'])
+            # 检查当天是否已有检测会话
+            sessions = db.get_patient_sessions(self.current_patient['id'])
             
             # 只保留当天的会话
             today = datetime.now().strftime('%Y-%m-%d')
@@ -3376,66 +3552,30 @@ class PressureSensorUI:
                 if session_date == today:
                     today_sessions.append(s)
             
-            # 从当天会话中筛选未完成的
-            unfinished_sessions = [s for s in today_sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
+            # 检查当日是否已有任何检测记录（包括完成和未完成的）
+            if today_sessions:
+                session_info = today_sessions[0]  # 取第一个（最新的）会话
+                status_text = {
+                    'completed': '已完成',
+                    'in_progress': '进行中', 
+                    'interrupted': '已中断',
+                    'pending': '待进行'
+                }.get(session_info['status'], '未知状态')
+                
+                messagebox.showwarning(
+                    "患者当日已有检测记录", 
+                    f"患者 {self.current_patient['name']} 今天已经有检测记录。\n\n"
+                    f"会话名称：{session_info['session_name']}\n"
+                    f"检测状态：{status_text}\n"
+                    f"创建时间：{session_info['created_time'][:19].replace('T', ' ')}\n\n"
+                    "每位患者每天只能进行一次检测。\n\n"
+                    "请选择其他患者或查看已有的检测记录。",
+                    icon='warning'
+                )
+                return  # 阻止继续检测流程
             
-            # 如果有未完成的会话，检查是否需要恢复
-            if unfinished_sessions:
-                # 优先找进行中的会话
-                active_session = None
-                for session in unfinished_sessions:
-                    if session['status'] == 'in_progress':
-                        active_session = session
-                        break
-                
-                # 如果没有进行中的，找最新的未完成会话
-                if not active_session:
-                    active_session = unfinished_sessions[0]  # 已按时间排序，第一个是最新的
-                
-                # 检查会话的进度
-                print(f"[DEBUG] 检查会话: {active_session['session_name']}, 状态: {active_session['status']}, 步骤: {active_session['current_step']}/{active_session['total_steps']}")
-                
-                # 如果已经有步骤进展（不是第0步），则提示恢复
-                if active_session['current_step'] > 0:
-                    if messagebox.askyesno("发现未完成检测", 
-                                     f"患者 {self.current_patient['name']} 有未完成的检测会话。\n\n"
-                                     f"会话：{active_session['session_name']}\n"
-                                     f"进度：第 {active_session['current_step']}/{active_session['total_steps']} 步\n\n"
-                                     "是否要恢复检测？"):
-                        # 设置当前会话信息并恢复
-                        self.current_session = {
-                            'id': active_session['id'],
-                            'name': active_session['session_name'],
-                            'patient_id': self.current_patient['id'],
-                            'current_step': active_session['current_step'],
-                            'total_steps': active_session['total_steps']
-                        }
-                        self.detection_in_progress = True
-                        self.show_detection_wizard()
-                    else:
-                        # 用户选择不恢复，删除旧会话并新建
-                        self.delete_old_sessions_and_start_new()
-                else:
-                    # 会话存在但还没开始任何步骤，可以选择继续或新建
-                    if messagebox.askyesno("发现未开始的检测会话", 
-                                         f"患者 {self.current_patient['name']} 有一个未开始的检测会话。\n\n"
-                                         f"会话：{active_session['session_name']}\n\n"
-                                         "是否要继续这个会话？"):
-                        # 继续使用这个会话
-                        self.current_session = {
-                            'id': active_session['id'],
-                            'name': active_session['session_name'],
-                            'patient_id': self.current_patient['id'],
-                            'current_step': 0,
-                            'total_steps': active_session['total_steps']
-                        }
-                        self.detection_in_progress = True
-                        self.show_detection_wizard()
-                    else:
-                        # 用户选择不继续，删除旧会话并新建
-                        self.delete_old_sessions_and_start_new()
-            else:
-                self.start_new_detection()
+            # 如果当日没有检测记录，开始新的检测
+            self.start_new_detection()
                 
         except Exception as e:
             messagebox.showerror("错误", f"启动检测失败：{e}")
@@ -3910,11 +4050,11 @@ class PressureSensorUI:
                         local_report_path = self.download_and_save_html_report(report_url, patient_info)
                         if local_report_path:
                             self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                            # 显示成功对话框，传递本地报告路径
-                            self.show_analysis_complete_dialog(analysis_data, local_report_path)
+                            # 显示成功对话框，传递本地报告路径（这是检测会话，与患者关联）
+                            self.show_analysis_complete_dialog(analysis_data, local_report_path, is_patient_linked=True)
                         else:
                             self.log_ai_message("[WARN] HTML报告保存失败")
-                            self.show_analysis_complete_dialog(analysis_data, None)
+                            self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
                     else:
                         # 如果 analysis_data 中没有报告URL，再尝试获取详细结果（备用方案）
                         analysis_id = analysis_data.get('analysis_id')
@@ -3940,19 +4080,19 @@ class PressureSensorUI:
                                     local_report_path = self.download_and_save_html_report(report_url, patient_info)
                                     if local_report_path:
                                         self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                                        # 显示成功对话框，传递本地报告路径
-                                        self.show_analysis_complete_dialog(analysis_data, local_report_path)
+                                        # 显示成功对话框，传递本地报告路径（这是检测会话，与患者关联）
+                                        self.show_analysis_complete_dialog(analysis_data, local_report_path, is_patient_linked=True)
                                     else:
                                         self.log_ai_message("[WARN] HTML报告保存失败")
-                                        self.show_analysis_complete_dialog(analysis_data, None)
+                                        self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
                                 else:
                                     self.log_ai_message("[WARN] 未找到报告链接")
-                                    self.show_analysis_complete_dialog(analysis_data, None)
+                                    self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
                             else:
                                 raise Exception("无法获取分析详细结果")
                         else:
                             self.log_ai_message("[WARN] 分析结果中缺少必要的ID信息")
-                            self.show_analysis_complete_dialog(analysis_data, None)
+                            self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
                 else:
                     raise Exception(f"分析失败: {result.get('message', '未知错误')}")
                         
@@ -3973,47 +4113,56 @@ class PressureSensorUI:
         missing_count = len(missing_files)
         missing_steps = ', '.join([f"步骤{f['step_number']}({f['step_name']})" for f in missing_files])
         
-        msg = f"检测已完成，但有 {missing_count} 个数据文件丢失：\n\n{missing_steps}\n\n是否要手动选择这些CSV数据文件进行分析？"
+        msg = f"检测已完成，但有 {missing_count} 个数据文件丢失：\n\n{missing_steps}\n\n请一次性选择所有缺失的CSV数据文件进行分析。\n\n注意：请按照步骤顺序选择文件，系统将按选择顺序分配给对应步骤。"
         
         if not messagebox.askyesno("数据文件丢失", msg):
             return []
         
+        # 一次性选择多个文件
+        file_paths = filedialog.askopenfilenames(
+            title=f"选择 {missing_count} 个缺失的CSV数据文件（按步骤顺序选择）",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ],
+            initialdir="detection_data"  # 默认从检测数据目录开始
+        )
+        
+        if not file_paths:
+            return []
+        
         selected_files = []
         
-        for missing_file in missing_files:
-            while True:
-                file_path = filedialog.askopenfilename(
-                    title=f"选择步骤{missing_file['step_number']}的CSV数据文件 - {missing_file['step_name']}",
-                    filetypes=[
-                        ("CSV files", "*.csv"),
-                        ("All files", "*.*")
-                    ],
-                    initialdir="detection_data"  # 默认从检测数据目录开始
-                )
+        # 如果选择的文件数量不匹配，给出提示
+        if len(file_paths) != len(missing_files):
+            msg = f"您选择了 {len(file_paths)} 个文件，但缺失 {len(missing_files)} 个文件。\n\n是否继续使用已选择的文件？未匹配的步骤将被跳过。"
+            if not messagebox.askyesno("文件数量不匹配", msg):
+                return self.ask_for_missing_files(missing_files)  # 重新选择
+        
+        # 验证每个选择的文件并分配给对应步骤
+        for i, file_path in enumerate(file_paths):
+            if i >= len(missing_files):
+                break  # 超出缺失文件数量
                 
-                if not file_path:
-                    # 用户取消了选择
-                    if messagebox.askyesno("跳过文件", f"跳过步骤{missing_file['step_number']}的数据文件吗？\n\n注意：跳过此文件可能影响分析结果的完整性。"):
-                        break  # 跳过这个文件
-                    else:
-                        continue  # 重新选择
+            missing_file = missing_files[i]
+            
+            try:
+                # 简单验证CSV文件格式
+                import pandas as pd
+                df = pd.read_csv(file_path)
+                if 'data' not in df.columns:
+                    self.log_ai_message(f"[WARN] 文件 {os.path.basename(file_path)} 缺少'data'列，但仍将使用")
                 
-                # 验证选择的文件
-                try:
-                    # 简单验证CSV文件格式
-                    import pandas as pd
-                    df = pd.read_csv(file_path)
-                    if 'data' not in df.columns:
-                        messagebox.showerror("文件格式错误", "选择的CSV文件格式不正确，必须包含'data'列")
-                        continue
-                    
-                    selected_files.append(file_path)
-                    self.log_ai_message(f"[OK] 手动选择文件: {os.path.basename(file_path)} (步骤{missing_file['step_number']})")
-                    break
-                    
-                except Exception as e:
-                    messagebox.showerror("文件读取错误", f"无法读取选择的文件：{e}")
+                selected_files.append(file_path)
+                self.log_ai_message(f"[OK] 手动选择文件: {os.path.basename(file_path)} -> 步骤{missing_file['step_number']}({missing_file['step_name']})")
+                
+            except Exception as e:
+                self.log_ai_message(f"[ERROR] 无法读取文件 {os.path.basename(file_path)}: {e}")
+                # 询问是否跳过此文件
+                if messagebox.askyesno("文件读取错误", f"无法读取文件 {os.path.basename(file_path)}：\n{e}\n\n是否跳过此文件？"):
                     continue
+                else:
+                    return self.ask_for_missing_files(missing_files)  # 重新选择所有文件
         
         return selected_files
     
