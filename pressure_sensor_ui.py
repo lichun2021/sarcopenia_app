@@ -30,7 +30,8 @@ try:
     from patient_info_dialog import PatientInfoDialog
     SARCNEURO_AVAILABLE = True
 except ImportError as e:
-    print(f"[WARN] SarcNeuro Edge 功能不可用: {e}")
+    from logger_utils import log_warn
+    log_warn(f"SarcNeuro Edge 功能不可用: {e}", "INTEGRATION")
     SARCNEURO_AVAILABLE = False
 
 class PressureSensorUI:
@@ -261,7 +262,8 @@ class PressureSensorUI:
             
             if saved_config:
                 # 找到已保存的配置，直接加载
-                print(f"[OK] 检测到已保存的配置，包含 {len(saved_config)} 个设备，自动加载中...")
+                from logger_utils import log_info
+                log_info(f"检测到已保存的配置，包含 {len(saved_config)} 个设备，自动加载中...", "DEVICE")
                 self.log_message(f"[OK] 自动加载已保存的配置 ({len(saved_config)} 个设备)")
                 
                 # 直接设置设备配置，无需显示对话框

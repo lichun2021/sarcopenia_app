@@ -78,20 +78,9 @@ logger = logging.getLogger(__name__)
 
 # 可配置的日志函数
 def force_log(message):
-    """可配置的日志记录"""
-    if app_config['save_logs']:
-        logger.info(message)
-    
-    if app_config['enable_debug']:
-        print(f"[DEBUG] {message}")
-    
-    if app_config['save_logs'] and app_config['enable_debug']:
-        debug_file = os.path.join(app_config['logs_dir'], "startup_debug.log")
-        with open(debug_file, 'a', encoding='utf-8') as f:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{timestamp}] {message}\n")
-            f.flush()
+    """可配置的日志记录 - 使用统一日志系统"""
+    from logger_utils import log_info
+    log_info(message, "SERVICE")
 
 class SarcNeuroEdgeService:
     """SarcNeuro Edge 服务管理器"""
