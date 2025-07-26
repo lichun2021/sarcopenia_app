@@ -2185,40 +2185,113 @@ class PressureSensorUI:
         
         return result.get('patient_info', None)
     
+    def create_loading_dialog(self, title, message):
+        """创建加载中对话框"""
+        class LoadingDialog:
+            def __init__(self, parent, title, message):
+                self.dialog = tk.Toplevel(parent)
+                self.dialog.title(title)
+                self.dialog.geometry("400x200")
+                self.dialog.resizable(False, False)
+                self.dialog.transient(parent)
+                
+                # 禁用关闭按钮
+                self.dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+                
+                # 居中
+                self.dialog.update_idletasks()
+                x = (self.dialog.winfo_screenwidth() - 400) // 2
+                y = (self.dialog.winfo_screenheight() - 200) // 2
+                self.dialog.geometry(f"400x200+{x}+{y}")
+                
+                # 主框架
+                main_frame = ttk.Frame(self.dialog, padding="20")
+                main_frame.pack(fill=tk.BOTH, expand=True)
+                
+                # 标题
+                title_label = ttk.Label(main_frame, text=title, 
+                                      font=('Microsoft YaHei UI', 14, 'bold'))
+                title_label.pack(pady=(0, 10))
+                
+                # 消息
+                self.message_label = ttk.Label(main_frame, text=message,
+                                             font=('Microsoft YaHei UI', 10),
+                                             wraplength=350, justify=tk.CENTER)
+                self.message_label.pack(pady=(0, 15))
+                
+                # 进度条
+                self.progress = ttk.Progressbar(main_frame, mode='indeterminate',
+                                              length=300)
+                self.progress.pack(pady=(0, 10))
+                self.progress.start(10)
+                
+                # 提示文本
+                tip_label = ttk.Label(main_frame, text="⚠️ 请勿关闭此窗口",
+                                    font=('Microsoft YaHei UI', 9),
+                                    foreground='#ff6b35')
+                tip_label.pack()
+                
+                # 设置为模态
+                self.dialog.grab_set()
+                self.dialog.update()
+            
+            def update_message(self, new_message):
+                """更新消息文本"""
+                self.message_label.config(text=new_message)
+                self.dialog.update()
+            
+            def close(self):
+                """关闭对话框"""
+                self.progress.stop()
+                self.dialog.grab_release()
+                self.dialog.destroy()
+        
+        return LoadingDialog(self.root, title, message)
+    
     def send_multi_file_analysis(self, csv_files, patient_info):
         """发送多文件分析请求到 sarcneuro-edge"""
         try:
             import requests
             
-            # 准备多文件上传数据
-            files = []
-            for csv_file in csv_files:
-                files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
+            # 创建加载对话框
+            loading_dialog = self.create_loading_dialog("AI分析中", "正在提交数据到AI分析服务...\n请勿重复点击或关闭窗口")
             
-            # 准备表单数据
-            form_data = {
-                'patient_name': patient_info['name'],
-                'patient_age': str(patient_info['age']),
-                'patient_gender': patient_info['gender'],
-                'patient_height': patient_info.get('height', ''),
-                'patient_weight': patient_info.get('weight', ''),
-                'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
-            }
-            
-            # 调试：打印实际发送的请求参数
-            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
-            for i, (field, (filename, content, content_type)) in enumerate(files):
-                content_preview = content[:100] + "..." if len(content) > 100 else content
-                self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
-            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
-            
-            # 发送到 standalone_upload 的 /upload 接口
-            response = requests.post(
-                f"{self.sarcneuro_service.base_url}/upload",
-                files=files,
-                data=form_data,
-                timeout=300  # 5分钟超时
-            )
+            try:
+                # 准备多文件上传数据
+                files = []
+                for csv_file in csv_files:
+                    files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
+                
+                # 准备表单数据
+                form_data = {
+                    'patient_name': patient_info['name'],
+                    'patient_age': str(patient_info['age']),
+                    'patient_gender': patient_info['gender'],
+                    'patient_height': patient_info.get('height', ''),
+                    'patient_weight': patient_info.get('weight', ''),
+                    'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
+                }
+                
+                # 调试：打印实际发送的请求参数
+                self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
+                for i, (field, (filename, content, content_type)) in enumerate(files):
+                    content_preview = content[:100] + "..." if len(content) > 100 else content
+                    self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
+                self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
+                
+                # 更新加载对话框文本
+                loading_dialog.update_message("正在上传数据到服务器...")
+                
+                # 发送到 standalone_upload 的 /upload 接口
+                response = requests.post(
+                    f"{self.sarcneuro_service.base_url}/upload",
+                    files=files,
+                    data=form_data,
+                    timeout=300  # 5分钟超时
+                )
+            finally:
+                # 关闭加载对话框
+                loading_dialog.close()
             
             if response.status_code == 200:
                 upload_result = response.json()
@@ -2241,56 +2314,71 @@ class PressureSensorUI:
         import requests
         import time
         
-        max_attempts = 60  # 最多等待10分钟
-        attempt = 0
+        # 创建加载对话框
+        loading_dialog = self.create_loading_dialog("AI分析中", "正在进行AI分析...\n这可能需要几分钟时间")
         
-        while attempt < max_attempts:
-            try:
-                response = requests.get(f"{self.sarcneuro_service.base_url}/status/{task_id}")
-                
-                if response.status_code == 200:
-                    status_data = response.json()
-                    status = status_data.get('status')
-                    progress = status_data.get('progress', 0)
+        try:
+            max_attempts = 60  # 最多等待10分钟
+            attempt = 0
+            
+            while attempt < max_attempts:
+                try:
+                    response = requests.get(f"{self.sarcneuro_service.base_url}/status/{task_id}")
                     
-                    self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
-                    
-                    if status == "COMPLETED":
-                        # 调试：记录服务返回的完整状态数据
-                        self.log_ai_message(f"[DEBUG] SarcNeuro服务状态数据字段: {list(status_data.keys())}")
-                        self.log_ai_message(f"[DEBUG] comprehensive_report_url: {status_data.get('comprehensive_report_url')}")
+                    if response.status_code == 200:
+                        status_data = response.json()
+                        status = status_data.get('status')
+                        progress = status_data.get('progress', 0)
                         
-                        # 分析完成，构造结果
-                        return {
-                            'status': 'success',
-                            'data': {
-                                'overall_score': status_data.get('overall_score', 85),
-                                'risk_level': status_data.get('risk_level', 'LOW'),
-                                'confidence': status_data.get('confidence', 0.75),
-                                'analysis_summary': '多文件综合分析完成',
-                                'report_url': status_data.get('comprehensive_report_url'),
-                                'task_id': task_id,
-                                'analysis_id': status_data.get('comprehensive_report_id', task_id),
-                                'test_id': task_id,
-                                'results': status_data.get('results', [])
+                        # 更新加载对话框
+                        loading_dialog.update_message(f"分析进度: {progress}%\n状态: {status}")
+                        
+                        self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
+                        
+                        if status == "COMPLETED":
+                            # 调试：记录服务返回的完整状态数据
+                            self.log_ai_message(f"[DEBUG] SarcNeuro服务状态数据字段: {list(status_data.keys())}")
+                            self.log_ai_message(f"[DEBUG] comprehensive_report_url: {status_data.get('comprehensive_report_url')}")
+                            
+                            loading_dialog.update_message("分析完成！正在生成报告...")
+                            
+                            # 分析完成，构造结果
+                            result = {
+                                'status': 'success',
+                                'data': {
+                                    'overall_score': status_data.get('overall_score', 85),
+                                    'risk_level': status_data.get('risk_level', 'LOW'),
+                                    'confidence': status_data.get('confidence', 0.75),
+                                    'analysis_summary': '多文件综合分析完成',
+                                    'report_url': status_data.get('comprehensive_report_url'),
+                                    'task_id': task_id,
+                                    'analysis_id': status_data.get('comprehensive_report_id', task_id),
+                                    'test_id': task_id,
+                                    'results': status_data.get('results', [])
+                                }
                             }
-                        }
-                    elif status == "FAILED":
-                        return {
-                            'status': 'error',
-                            'message': '分析任务失败'
-                        }
-                    
-                    # 继续等待
-                    time.sleep(10)  # 等待10秒
+                            return result
+                        elif status == "FAILED":
+                            result = {
+                                'status': 'error',
+                                'message': '分析任务失败'
+                            }
+                            return result
+                        
+                        # 继续等待
+                        time.sleep(10)  # 等待10秒
+                        attempt += 1
+                    else:
+                        raise Exception(f"状态查询失败: HTTP {response.status_code}")
+                        
+                except Exception as e:
+                    self.log_ai_message(f"[WARN] 状态查询错误: {e}")
+                    time.sleep(5)
                     attempt += 1
-                else:
-                    raise Exception(f"状态查询失败: HTTP {response.status_code}")
-                    
-            except Exception as e:
-                self.log_ai_message(f"[WARN] 状态查询错误: {e}")
-                time.sleep(5)
-                attempt += 1
+        
+        finally:
+            # 确保关闭loading对话框
+            loading_dialog.close()
         
         return {'status': 'error', 'message': '分析超时'}
     
@@ -3662,7 +3750,7 @@ class PressureSensorUI:
                     'id': session_id,
                     'name': session_name,
                     'patient_id': self.current_patient['id'],
-                    'current_step': 0,
+                    'current_step': 1,  # 新建会话从第1步开始
                     'total_steps': 6
                 }
                 
@@ -4214,6 +4302,11 @@ class PressureSensorUI:
     def generate_report_for_patient(self):
         """为当前选中的患者生成报告"""
         try:
+            # 防止重复点击
+            if hasattr(self, '_generating_report') and self._generating_report:
+                messagebox.showwarning("提示", "正在生成报告中，请勿重复点击")
+                return
+            
             # 检查是否选中了患者
             if not self.current_patient:
                 messagebox.showwarning("提示", "请先选择一个患者")
@@ -4234,12 +4327,21 @@ class PressureSensorUI:
             else:
                 session_id = completed_sessions[0]['id']
             
+            # 设置生成标志并禁用按钮
+            self._generating_report = True
+            self.generate_report_btn.config(state="disabled", text="📊 生成中...")
+            
             # 为选中的会话生成报告
             self.generate_report_for_session(session_id)
             
         except Exception as e:
             messagebox.showerror("错误", f"生成报告失败：{e}")
             print(f"[ERROR] 生成报告失败: {e}")
+        finally:
+            # 恢复按钮状态
+            self._generating_report = False
+            if hasattr(self, 'generate_report_btn'):
+                self.generate_report_btn.config(state="normal", text="📊 生成报告")
     
     def generate_report_for_patient_id(self, patient_id):
         """为指定患者ID生成报告"""

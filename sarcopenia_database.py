@@ -367,8 +367,8 @@ class SarcopeniaDatabase:
             current_time = datetime.now().isoformat()
             cursor.execute('''
                 INSERT INTO test_sessions 
-                (patient_id, session_name, test_date, status, created_time)
-                VALUES (?, ?, ?, 'pending', ?)
+                (patient_id, session_name, test_date, status, current_step, created_time)
+                VALUES (?, ?, ?, 'pending', 1, ?)
             ''', (patient_id, session_name, current_time, current_time))
             
             session_id = cursor.lastrowid

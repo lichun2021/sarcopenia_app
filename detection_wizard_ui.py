@@ -32,11 +32,13 @@ class DetectionWizardDialog:
         self.total_steps = 6
         
         # 从会话信息中恢复当前步骤
-        if session_info and 'current_step' in session_info:
-            # 获取会话的当前步骤
-            current = session_info['current_step']
+        if session_info and 'id' in session_info:
             # 获取已完成的步骤信息
             session_steps = db.get_session_steps(session_info['id'])
+            
+            print(f"[DEBUG] 会话步骤数据: {len(session_steps)} 个步骤")
+            for step in session_steps:
+                print(f"[DEBUG] 步骤{step['step_number']}: {step['step_name']} - 状态: {step['status']}")
             
             # 找到最后一个已完成步骤的下一步
             last_completed_step = 0
@@ -66,6 +68,7 @@ class DetectionWizardDialog:
                         'end_time': step.get('end_time', '')
                     }
         else:
+            print(f"[DEBUG] 新建会话，从第1步开始")
             self.current_step = 1
             self.step_results = {}
         self.is_running = False
