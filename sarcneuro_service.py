@@ -135,22 +135,26 @@ class SarcNeuroEdgeService:
         try:
             # 强制打印调试信息
             force_log(f"start_service called, is_running={self.is_running}")
-            if self.is_running:
-                force_log("服务已在运行中")
+            
+            # 先进行健康检查，看服务是否已经在运行
+            force_log(f"先检查服务健康状态...")
+            if self._check_service_health():
+                force_log(f"服务已在运行且健康，直接使用现有服务")
+                self.is_running = True
+                self._start_monitor()
                 return True
+            
+            # 如果内部标记为运行中但健康检查失败，重置状态
+            if self.is_running:
+                force_log("服务标记为运行但健康检查失败，重置状态")
+                self.is_running = False
                 
             force_log(f"正在启动 SarcNeuro Edge 服务 (端口 {self.port})...")
             
-            # 检查端口是否被占用
+            # 检查端口是否被占用（但服务不健康）
             if self._is_port_in_use():
-                logger.warning(f"端口 {self.port} 已被占用，尝试连接现有服务...")
-                if self._check_service_health():
-                    self.is_running = True
-                    self._start_monitor()
-                    return True
-                else:
-                    logger.error("现有服务无响应")
-                    return False
+                logger.warning(f"端口 {self.port} 已被占用但服务不健康")
+                return False
             
             # 启动前检查
             force_log(f"服务目录: {self.service_dir}")
@@ -162,6 +166,12 @@ class SarcNeuroEdgeService:
             # 对于打包环境，尝试直接在主进程中启动服务
             if getattr(sys, 'frozen', False):
                 force_log(f"打包环境：尝试在主进程中启动服务，端口: {self.port}")
+                
+                # 检查是否已有线程在运行
+                if hasattr(self, 'process') and self.process and hasattr(self.process, 'is_alive') and self.process.is_alive():
+                    force_log("服务线程已在运行，跳过重复启动")
+                    return False
+                
                 try:
                     # 设置环境变量
                     os.environ["SARCNEURO_DATA_DIR"] = str(self.data_dir)
@@ -364,7 +374,8 @@ class SarcNeuroEdgeService:
         """检查服务健康状态"""
         try:
             logger.debug(f"检查服务健康状态: {self.base_url}/health")
-            response = requests.get(f"{self.base_url}/health", timeout=15)
+            # 缩短健康检查的超时时间到5秒
+            response = requests.get(f"{self.base_url}/health", timeout=5)
             logger.debug(f"健康检查响应: 状态码={response.status_code}")
             
             if response.status_code == 200:
@@ -555,13 +566,19 @@ class SarcNeuroEdgeService:
 
 # 全局服务实例
 _service_instance = None
+_service_started = False  # 添加标记，表示是否已尝试启动服务
 
 def get_sarcneuro_service(port: int = 8000) -> SarcNeuroEdgeService:
     """获取全局服务实例"""
-    global _service_instance
+    global _service_instance, _service_started
     
     if _service_instance is None:
         _service_instance = SarcNeuroEdgeService(port=port)
+    
+    # 如果服务实例存在但未启动过，尝试启动
+    if not _service_started and not _service_instance.is_running:
+        logger.info("首次获取服务实例，尝试启动服务...")
+        _service_started = _service_instance.start_service()
     
     return _service_instance
 

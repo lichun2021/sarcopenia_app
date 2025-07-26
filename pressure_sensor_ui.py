@@ -3339,23 +3339,33 @@ class PressureSensorUI:
                 success_count = 0
                 failed_sessions = []
                 
+                # 先收集所有要删除的item_id
+                items_to_delete = []
+                
                 for session_id, patient_name, session_name in sessions_to_delete:
                     try:
                         if db.delete_test_session(session_id):
                             success_count += 1
-                            # 从树状视图中移除已删除的项
+                            # 找到对应的树状视图项
                             for item_id in selection:
                                 tags = session_tree.item(item_id)['tags']
                                 if tags:
                                     idx = int(tags[0])
                                     if sessions[idx]['id'] == session_id:
-                                        session_tree.delete(item_id)
+                                        items_to_delete.append(item_id)
                                         break
                         else:
                             failed_sessions.append(f"{patient_name} - {session_name}")
                     except Exception as e:
                         failed_sessions.append(f"{patient_name} - {session_name}")
                         print(f"[ERROR] 删除会话失败 {session_id}: {e}")
+                
+                # 统一删除所有已删除会话对应的树状视图项
+                for item_id in items_to_delete:
+                    try:
+                        session_tree.delete(item_id)
+                    except Exception as e:
+                        print(f"[ERROR] 删除树状视图项失败: {e}")
                 
                 # 显示结果
                 if failed_sessions:
@@ -3371,12 +3381,14 @@ class PressureSensorUI:
                     else:
                         messagebox.showinfo("批量删除成功", f"成功删除 {success_count} 个会话")
                 
-                # 更新删除按钮文本（如果还有选中项）
-                remaining_selection = session_tree.selection()
-                if remaining_selection:
-                    delete_btn.config(text=f"🗑️ 删除会话 ({len(remaining_selection)})")
-                else:
-                    delete_btn.config(text="🗑️ 删除会话")
+                # 清除选择并更新按钮状态
+                session_tree.selection_remove(*session_tree.selection())
+                delete_btn.config(text="🗑️ 删除会话", state="disabled")
+                report_btn.config(state="disabled")
+                resume_btn.config(state="disabled")
+                
+                # 更新全选按钮状态
+                select_all_btn.config(text="✅ 全选")
         
         # 绑定选择事件
         def on_session_select(event=None):
@@ -3532,6 +3544,39 @@ class PressureSensorUI:
             # 检查是否选择了患者
             if not self.current_patient:
                 if not self.select_patient_for_detection():
+                    return
+            
+            # 先检查是否有未完成的会话
+            sessions = db.get_patient_test_sessions(self.current_patient['id'])
+            incomplete_session = None
+            
+            # 查找最新的未完成会话
+            for session in sessions:
+                if session['status'] in ['in_progress', 'interrupted']:
+                    incomplete_session = session
+                    break
+            
+            if incomplete_session:
+                # 有未完成的会话，询问是否恢复
+                response = messagebox.askyesno(
+                    "发现未完成会话",
+                    f"患者 {self.current_patient['name']} 有未完成的检测会话：\n\n"
+                    f"会话名称：{incomplete_session['session_name']}\n"
+                    f"进度：{incomplete_session['current_step']}/{incomplete_session['total_steps']}\n"
+                    f"状态：{'进行中' if incomplete_session['status'] == 'in_progress' else '已中断'}\n\n"
+                    f"是否恢复该会话？",
+                    icon='question'
+                )
+                
+                if response:
+                    # 恢复会话
+                    print(f"[DEBUG] 恢复未完成会话: {incomplete_session['session_name']}")
+                    self.current_session = incomplete_session
+                    self.detection_in_progress = True
+                    self.start_detection_btn.config(text="🔄 检测中...", state="disabled")
+                    
+                    # 启动检测向导恢复会话
+                    self.show_detection_wizard()
                     return
             
             # 检查当天是否已有检测会话

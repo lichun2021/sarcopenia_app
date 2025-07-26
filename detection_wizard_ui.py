@@ -38,17 +38,22 @@ class DetectionWizardDialog:
             # 获取已完成的步骤信息
             session_steps = db.get_session_steps(session_info['id'])
             
-            # 找到最后一个未完成的步骤
-            last_incomplete_step = 1
+            # 找到最后一个已完成步骤的下一步
+            last_completed_step = 0
             for step in session_steps:
-                if step['status'] != 'completed':
-                    last_incomplete_step = step['step_number']
-                    break
-                elif step['step_number'] == self.total_steps:
-                    # 所有步骤都完成了
-                    last_incomplete_step = self.total_steps
+                if step['status'] == 'completed':
+                    last_completed_step = max(last_completed_step, step['step_number'])
             
-            self.current_step = max(1, min(last_incomplete_step, self.total_steps))
+            # 如果有已完成的步骤，从下一步开始；否则从第1步开始
+            if last_completed_step > 0 and last_completed_step < self.total_steps:
+                self.current_step = last_completed_step + 1
+            elif last_completed_step >= self.total_steps:
+                # 所有步骤都完成了
+                self.current_step = self.total_steps
+            else:
+                self.current_step = 1
+            
+            print(f"[DEBUG] 恢复会话：最后完成步骤={last_completed_step}, 当前步骤={self.current_step}")
             
             # 恢复已完成步骤的结果
             self.step_results = {}
