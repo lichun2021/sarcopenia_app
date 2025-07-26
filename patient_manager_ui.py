@@ -20,7 +20,7 @@ class PatientManagerDialog:
         
         # 创建对话框窗口 - 优化显示避免闪烁
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title(f"👥 {title}")
+        self.dialog.title(title)
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
@@ -109,14 +109,14 @@ class PatientManagerDialog:
         list_frame.pack(fill="both", expand=True, pady=(0, 10))
         
         # 创建树状视图 - 支持多选
-        columns = ("ID", "姓名", "性别", "年龄", "身高", "体重", "电话", "创建时间")
+        columns = ("姓名", "性别", "年龄", "身高", "体重", "电话", "创建时间")
         self.patient_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15, selectmode="extended")
         
         # 设置列标题和宽度
-        column_widths = {"ID": 50, "姓名": 100, "性别": 60, "年龄": 60, "身高": 80, "体重": 80, "电话": 120, "创建时间": 150}
+        column_widths = {"姓名": 120, "性别": 80, "年龄": 80, "身高": 100, "体重": 100, "电话": 140, "创建时间": 170}
         for col in columns:
             self.patient_tree.heading(col, text=col)
-            self.patient_tree.column(col, width=column_widths.get(col, 100), minwidth=50)
+            self.patient_tree.column(col, width=column_widths.get(col, 100), minwidth=50, anchor="center")
         
         # 滚动条
         tree_scrollbar_v = ttk.Scrollbar(list_frame, orient="vertical", command=self.patient_tree.yview)
@@ -185,7 +185,6 @@ class PatientManagerDialog:
         # 填充数据
         for patient in patients:
             values = (
-                patient['id'],
                 patient['name'],
                 patient['gender'],
                 f"{patient['age']}岁",
@@ -194,7 +193,8 @@ class PatientManagerDialog:
                 patient['phone'] or "-",
                 patient['created_time'][:19].replace('T', ' ')
             )
-            self.patient_tree.insert("", "end", values=values)
+            # 将patient_id存储在tags中用于后续操作
+            self.patient_tree.insert("", "end", values=values, tags=(patient['id'],))
     
     def on_search_change(self, event=None):
         """搜索框内容变化事件"""
@@ -225,9 +225,9 @@ class PatientManagerDialog:
                 # 显示所选患者列表
                 for i, item_id in enumerate(selection, 1):
                     item = self.patient_tree.item(item_id)
-                    patient_name = item['values'][1]
-                    patient_gender = item['values'][2]
-                    patient_age = item['values'][3]
+                    patient_name = item['values'][0]  # 调整索引：姓名现在是第0列
+                    patient_gender = item['values'][1]  # 性别现在是第1列
+                    patient_age = item['values'][2]  # 年龄现在是第2列
                     self.detail_text.insert(tk.END, f"{i}. {patient_name} ({patient_gender}, {patient_age})\n")
                 
                 self.detail_text.config(state='disabled')
@@ -241,7 +241,7 @@ class PatientManagerDialog:
             else:
                 # 单选状态
                 item = self.patient_tree.item(selection[0])
-                patient_id = item['values'][0]
+                patient_id = int(item['tags'][0])  # 从tags中获取patient_id
                 
                 # 获取患者详细信息
                 patient = db.get_patient_by_id(patient_id)
@@ -316,7 +316,7 @@ class PatientManagerDialog:
             return
         
         item = self.patient_tree.item(selection[0])
-        patient_id = item['values'][0]
+        patient_id = int(item['tags'][0])  # 从tags中获取patient_id
         patient = db.get_patient_by_id(patient_id)
         
         if patient:
@@ -339,8 +339,8 @@ class PatientManagerDialog:
         patients_to_delete = []
         for item_id in selection:
             item = self.patient_tree.item(item_id)
-            patient_id = item['values'][0]
-            patient_name = item['values'][1]
+            patient_id = int(item['tags'][0])  # 从tags中获取patient_id
+            patient_name = item['values'][0]  # 姓名现在是第0列
             patients_to_delete.append((patient_id, patient_name))
         
         # 确认删除

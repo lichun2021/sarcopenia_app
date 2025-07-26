@@ -65,6 +65,9 @@ class PressureSensorUI:
             # 如果图标文件不存在，使用默认图标
             pass
         
+        # 清理过期会话数据
+        self._cleanup_expired_sessions()
+        
         # 初始化多设备管理器
         self.device_manager = DeviceManager()
         self.serial_interface = None  # 将根据当前设备动态获取
@@ -153,6 +156,9 @@ class PressureSensorUI:
         
         # 集成肌少症分析功能
         self.integrate_sarcneuro_analysis()
+        
+        # 延迟2秒启动SarcNeuro Edge服务，避免影响UI启动速度
+        self.root.after(2000, self._delayed_start_sarcneuro_service)
         
         # 第四阶段：自动加载配置（600ms后）
         self.root.after(600, self._stage4_load_config)
@@ -774,10 +780,7 @@ class PressureSensorUI:
         
         # 添加分析菜单项
         analysis_menu.add_command(label="📄 导入CSV生成报告", command=self.import_csv_for_analysis)
-        analysis_menu.add_command(label="📊 实时数据生成报告", command=self.generate_pdf_report)
-        analysis_menu.add_separator()
-        analysis_menu.add_command(label="📈 查看分析历史", command=self.show_analysis_history)
-        analysis_menu.add_command(label="🤖 AI服务状态", command=self.show_service_status)
+        analysis_menu.add_command(label="🤖 Sarcneuro Edge服务状态", command=self.show_service_status)
         
         # 创建"帮助"菜单（使用医疗绿色主题）
         help_menu = tk.Menu(menubar, tearoff=0,
@@ -794,17 +797,17 @@ class PressureSensorUI:
         
         # 添加帮助菜单项
         help_menu.add_command(label="📖 操作指南手册", command=self.show_help_dialog)
-        help_menu.add_command(label="🚀 快速入门教程", command=lambda: messagebox.showinfo("快速入门", 
-                                "智能肌少症检测系统快速入门:\n\n1️⃣ 设备配置\n   • 点击'设备配置'选择设备类型\n   • 配置COM端口连接\n\n2️⃣ 开始检测\n   • 确保设备连接正常\n   • 观察热力图实时显示\n\n3️⃣ 数据分析\n   • 查看右侧统计数据\n   • 保存检测快照和日志"))
-        help_menu.add_separator()
-        help_menu.add_command(label="🏥 产品介绍", command=lambda: messagebox.showinfo("产品介绍", 
-                                "智能肌少症检测系统\n\n🔬 专业医疗设备\n• 压力传感器阵列技术\n• 实时数据可视化分析\n• 标准化检测流程\n\n🏥 适用场景\n• 医院康复科\n• 体检中心\n• 养老机构\n• 健康管理中心"))
-        help_menu.add_separator()
-        help_menu.add_command(label="🌐 官方网站", command=lambda: messagebox.showinfo("联系方式", 
-                                "威海聚桥工业科技有限公司\n\n🌐 官方网站: www.jq-tech.com\n📧 技术支持: support@jq-tech.com\n📱 客服热线: 400-xxx-xxxx"))
-        help_menu.add_command(label="📞 技术支持", command=lambda: messagebox.showinfo("技术支持", 
-                                "24小时技术支持服务:\n\n📧 邮箱: support@jq-tech.com\n📱 热线: 400-xxx-xxxx\n💬 微信: JQ-Tech-Support\n⏰ 服务时间: 7×24小时\n\n🔧 远程协助服务可用"))
-        help_menu.add_separator()
+        # help_menu.add_command(label="🚀 快速入门教程", command=lambda: messagebox.showinfo("快速入门", 
+        #                         "智能肌少症检测系统快速入门:\n\n1️⃣ 设备配置\n   • 点击'设备配置'选择设备类型\n   • 配置COM端口连接\n\n2️⃣ 开始检测\n   • 确保设备连接正常\n   • 观察热力图实时显示\n\n3️⃣ 数据分析\n   • 查看右侧统计数据\n   • 保存检测快照和日志"))
+        # help_menu.add_separator()
+        # help_menu.add_command(label="🏥 产品介绍", command=lambda: messagebox.showinfo("产品介绍", 
+        #                         "智能肌少症检测系统\n\n🔬 专业医疗设备\n• 压力传感器阵列技术\n• 实时数据可视化分析\n• 标准化检测流程\n\n🏥 适用场景\n• 医院康复科\n• 体检中心\n• 养老机构\n• 健康管理中心"))
+        # help_menu.add_separator()
+        # help_menu.add_command(label="🌐 官方网站", command=lambda: messagebox.showinfo("联系方式", 
+        #                         "威海聚桥工业科技有限公司\n\n🌐 官方网站: www.jq-tech.com\n📧 技术支持: support@jq-tech.com\n📱 客服热线: 400-xxx-xxxx"))
+        # help_menu.add_command(label="📞 技术支持", command=lambda: messagebox.showinfo("技术支持", 
+        #                         "24小时技术支持服务:\n\n📧 邮箱: support@jq-tech.com\n📱 热线: 400-xxx-xxxx\n💬 微信: JQ-Tech-Support\n⏰ 服务时间: 7×24小时\n\n🔧 远程协助服务可用"))
+        # help_menu.add_separator()
         help_menu.add_command(label="ℹ️ 关于本系统", command=self.show_about_dialog)
     
   
@@ -980,7 +983,7 @@ class PressureSensorUI:
 
 本指南将帮助您快速掌握智能肌少症检测系统的各项功能和操作方法。
 
-[START] 快速开始
+快速开始
 
 1. 首次使用系统
    • 启动程序后会自动弹出设备配置对话框
@@ -1030,15 +1033,13 @@ class PressureSensorUI:
 
 菜单栏功能
 
-[INFO] 检测菜单
-   • 新建档案：创建新的检测档案，录入被检测者信息
-   • [INFO] 检测流程：查看标准化7步检测流程说明
+
 
 其他菜单
    • 操作帮助：查看本操作指南（当前页面）
    • 关于系统：查看系统版本和开发信息
 
-[SCAN] 设备配置详解
+设备配置详解
 
 支持的设备类型
    • 32x32阵列：标准检测模式，适用于静态平衡测试
@@ -1058,7 +1059,7 @@ class PressureSensorUI:
    • 快速模式：run_ui_fast.py - 100 FPS，高刷新率显示
    • 极速模式：run_ui_ultra.py - 200 FPS，极致响应速度
 
-[REFRESH] 数据处理
+数据处理
    • JQ变换：威海聚桥工业科技专用数据变换算法
    • 自动应用于32x32和32x96阵列数据
    • 提供数据镜像翻转和重排序功能
@@ -1066,7 +1067,7 @@ class PressureSensorUI:
 
 故障排除
 
-[ERROR] 常见问题
+常见问题
    • 设备无法连接：检查USB线缆和端口选择
    • 数据接收异常：确认设备电源和波特率设置
    • 热力图不更新：检查设备连接状态和数据流
@@ -1184,12 +1185,9 @@ class PressureSensorUI:
         
         info_items = [
             ("🏷️ 软件版本:", "v1.2.0 模块化专业版", "#27ae60"),
-            ("🏢 开发公司:", "威海聚桥工业科技有限公司", "#3498db"),
-            ("🔧 技术支持:", "JQ工业科技压力传感器阵列", "#e67e22"),
             ("📐 支持阵列:", "32×32, 32×64, 32×96 多规格", "#9b59b6"),
             ("📅 开发时间:", "2024年 (持续更新中)", "#34495e"),
             ("💻 运行环境:", "Windows 10/11, Python 3.7+", "#16a085"),
-            ("⚡ 性能模式:", "标准/快速/极速 三种模式", "#f39c12"),
             ("🌐 通信协议:", "串口 1000000 bps 高速传输", "#e74c3c"),
         ]
         
@@ -1220,7 +1218,7 @@ class PressureSensorUI:
         features_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
         
         features_list = [
-            "实时压力数据可视化热力图显示 (16级颜色梯度)",
+            "实时压力数据可视化热力图显示",
             "多设备智能配置和无缝切换管理系统",
             "标准化健康检测流程指导和档案管理",
             "智能端口检测和自动连接重连机制",
@@ -1243,12 +1241,12 @@ class PressureSensorUI:
         specs_title.pack(anchor="w", padx=20, pady=(15, 10))
         
         specs_text = """
-📡 通信参数: 串口通信，波特率1,000,000 bps，帧头AA 55 03 99
-📐 阵列规格: 支持32×32(1024点)、32×64(2048点)、32×96(3072点)
-🎯 数据精度: 8位无符号整数 (0-255)，压力范围0-60mmHg
-⚡ 刷新性能: 标准20FPS/快速100FPS/极速200FPS三种模式
-💻 系统要求: Windows 10/11，Python 3.7+，4GB内存，USB端口
-[REFRESH] 数据处理: JQ变换算法，NumPy向量化计算，多线程架构
+通信参数: 串口通信，波特率1,000,000 bps，帧头AA 55 03 99
+阵列规格: 支持32×32(1024点)、32×64(2048点)、32×96(3072点)
+数据精度: 8位无符号整数 (0-255)，压力范围0-60mmHg
+刷新性能: 标准20FPS/快速100FPS/极速200FPS三种模式
+系统要求: Windows 10/11，Python 3.7+，4GB内存，USB端口
+数据处理: JQ变换算法，NumPy向量化计算，多线程架构
         """
         
         specs_label = tk.Label(specs_card, text=specs_text.strip(), 
@@ -1258,60 +1256,50 @@ class PressureSensorUI:
         specs_label.pack(anchor="w", padx=20, pady=(0, 15))
         
         # 联系方式卡片
-        contact_card = tk.Frame(main_frame, bg='#2c3e50')
-        contact_card.pack(fill=tk.X, pady=(0, 20))
+        # contact_card = tk.Frame(main_frame, bg='#2c3e50')
+        # contact_card.pack(fill=tk.X, pady=(0, 20))
         
-        contact_title = tk.Label(contact_card, text="📞 联系方式与技术支持", 
-                                font=("Microsoft YaHei UI", 14, "bold"),
-                                bg='#2c3e50', fg='#ffffff')
-        contact_title.pack(anchor="w", padx=20, pady=(15, 10))
+        # contact_title = tk.Label(contact_card, text="📞 联系方式与技术支持", 
+        #                         font=("Microsoft YaHei UI", 14, "bold"),
+        #                         bg='#2c3e50', fg='#ffffff')
+        # contact_title.pack(anchor="w", padx=20, pady=(15, 10))
         
-        contact_info = [
-            "🏢 威海聚桥工业科技有限公司",
-            "🌐 官方网站: www.jq-tech.com",
-            "📧 技术支持: support@jq-tech.com", 
-            "📱 客服热线: 400-xxx-xxxx (工作日 9:00-18:00)",
-            "📍 公司地址: 山东省威海市环翠区工业园区",
-            "💬 微信客服: JQ-Tech-Support",
-        ]
+        # contact_info = [
+        #     "🏢 威海聚桥工业科技有限公司",
+        #     "🌐 官方网站: www.jq-tech.com",
+        #     "📧 技术支持: support@jq-tech.com", 
+        #     "📱 客服热线: 400-xxx-xxxx (工作日 9:00-18:00)",
+        #     "📍 公司地址: 山东省威海市环翠区工业园区",
+        #     "💬 微信客服: JQ-Tech-Support",
+        # ]
         
-        for info in contact_info:
-            info_label = tk.Label(contact_card, text=info, 
-                                 font=("Microsoft YaHei UI", 10),
-                                 bg='#2c3e50', fg='#ecf0f1')
-            info_label.pack(anchor="w", padx=20, pady=2)
+        # for info in contact_info:
+        #     info_label = tk.Label(contact_card, text=info, 
+        #                          font=("Microsoft YaHei UI", 10),
+        #                          bg='#2c3e50', fg='#ecf0f1')
+        #     info_label.pack(anchor="w", padx=20, pady=2)
         
-        contact_bottom = tk.Label(contact_card, text="🤝 感谢您使用智能肌少症检测系统！", 
-                                 font=("Microsoft YaHei UI", 11, "bold"),
-                                 bg='#2c3e50', fg='#f1c40f')
-        contact_bottom.pack(anchor="center", pady=(10, 15))
+        # contact_bottom = tk.Label(contact_card, text="🤝 感谢您使用智能肌少症检测系统！", 
+        #                          font=("Microsoft YaHei UI", 11, "bold"),
+        #                          bg='#2c3e50', fg='#f1c40f')
+        # contact_bottom.pack(anchor="center", pady=(10, 15))
         
         # 按钮区域
-        btn_frame = tk.Frame(main_frame, bg='#f8f9fa')
-        btn_frame.pack(pady=(20, 10))
+        # btn_frame = tk.Frame(main_frame, bg='#f8f9fa')
+        # btn_frame.pack(pady=(0, 0))
         
-        # 创建更美观的按钮
-        close_btn = tk.Button(btn_frame, text="[OK] 关闭", 
-                             command=dialog.destroy,
-                             font=("Microsoft YaHei UI", 11, "bold"),
-                             bg='#3498db', fg='white',
-                             activebackground='#2980b9',
-                             activeforeground='white',
-                             relief='flat', bd=0,
-                             padx=25, pady=8,
-                             cursor='hand2')
-        close_btn.pack(side=tk.LEFT, padx=5)
+
         
-        info_btn = tk.Button(btn_frame, text="🌐 官网", 
-                            command=lambda: messagebox.showinfo("官方网站", "请访问: www.jq-tech.com"),
+        info_btn = tk.Button(main_frame, text="https://www.jq-tech.com", 
+                            command=self.open_website,
                             font=("Microsoft YaHei UI", 11),
                             bg='#27ae60', fg='white',
-                            activebackground='#229954',
-                            activeforeground='white',
+                            # activebackground='#229954',
+                            # activeforeground='white',
                             relief='flat', bd=0,
-                            padx=20, pady=8,
+                            # padx=20, pady=8,
                             cursor='hand2')
-        info_btn.pack(side=tk.LEFT, padx=5)
+        info_btn.pack(anchor="center", pady=10)
         
         # 打包滚动区域
         canvas.pack(side="left", fill="both", expand=True)
@@ -1396,11 +1384,16 @@ class PressureSensorUI:
                   command=self.show_device_config, 
                   style='Hospital.TButton').grid(row=0, column=2, padx=(0, 25))
         
+        # 创建一个Frame用于右对齐患者信息
+        right_frame = ttk.Frame(control_frame)
+        right_frame.grid(row=0, column=10, sticky='e', padx=(0, 10))
+        control_frame.columnconfigure(10, weight=1)  # 让这一列占据剩余空间
+        
         # 状态标签 - 医院配色
-        self.status_label = tk.Label(control_frame, text="⚙️ 未配置设备", 
+        self.status_label = tk.Label(right_frame, text="⚙️ 未选择患者", 
                                    foreground="#ff6b35", bg='#ffffff',
                                    font=('Microsoft YaHei UI', 10, 'bold'))
-        self.status_label.grid(row=0, column=3, padx=(0, 25))
+        self.status_label.pack(side='right')
         
         # 端口信息显示
         self.port_info_label = tk.Label(control_frame, text="端口: 未知",
@@ -1444,7 +1437,7 @@ class PressureSensorUI:
         stats_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.stats_labels = {}
-        stats_items = [("最大值:", "max_value"), ("最小值:", "min_value"), ("平均值:", "mean_value"), 
+        stats_items = [("最大值:", "max_value"),  ("平均值:", "mean_value"), 
                        ("标准差:", "std_value"), ("有效点:", "nonzero_count")]
         
         for i, (text, key) in enumerate(stats_items):
@@ -1885,6 +1878,28 @@ class PressureSensorUI:
             print(f"[WARN] 肌少症分析功能集成失败: {e}")
             # 不影响主程序运行，继续使用原有功能
             self.sarcneuro_panel = None
+    
+    def _delayed_start_sarcneuro_service(self):
+        """延迟启动SarcNeuro Edge服务"""
+        try:
+            self.init_sarcneuro_service()
+            self.log_message("🚀 SarcNeuro Edge服务已在后台启动")
+        except Exception as e:
+            self.log_message(f"⚠️ SarcNeuro Edge服务启动失败: {e}")
+    
+    def _cleanup_expired_sessions(self):
+        """清理过期的会话数据"""
+        try:
+            # 获取今天的日期
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            # 由于没有get_all_test_sessions方法，我们需要通过其他方式清理
+            # 这里可以通过SQL直接清理，或者后续完善数据库接口
+            # 暂时跳过此功能，避免影响系统启动
+            print(f"[INFO] 过期会话清理功能暂时跳过")
+                
+        except Exception as e:
+            print(f"[ERROR] 清理过期会话失败: {e}")
     
     # ============= SarcNeuro Edge AI 分析功能 =============
     
@@ -2878,7 +2893,7 @@ class PressureSensorUI:
             
             # 创建按日期组织的目录结构
             today = datetime.now().strftime("%Y-%m-%d")
-            report_dir = os.path.join(base_dir, today)
+            report_dir = os.path.join(base_dir, "tmp", today, "reports")
             os.makedirs(report_dir, exist_ok=True)
             
             # 生成本地文件名
@@ -3049,40 +3064,91 @@ class PressureSensorUI:
     def show_session_manager(self):
         """显示检测会话管理界面"""
         try:
-            if not self.current_patient:
-                messagebox.showwarning("提示", "请先选择患者档案")
-                return
+            # 获取所有患者的当天检测会话
+            today_sessions = self.get_all_today_sessions()
             
-            # 获取当前患者的所有检测会话
-            sessions = db.get_patient_test_sessions(self.current_patient['id'])
-            
-            if not sessions:
-                messagebox.showinfo("无检测会话", f"患者 {self.current_patient['name']} 还没有检测会话记录")
+            if not today_sessions:
+                messagebox.showinfo("无检测会话", "今天还没有任何检测会话记录")
                 return
             
             # 显示会话管理界面
-            self.create_session_manager_dialog(sessions)
+            self.create_session_manager_dialog(today_sessions)
             
         except Exception as e:
             messagebox.showerror("错误", f"打开检测会话管理失败：{e}")
             print(f"[ERROR] 检测会话管理错误: {e}")
     
+    def get_all_today_sessions(self):
+        """获取所有患者的当天会话"""
+        try:
+            # 获取所有患者
+            patients = db.get_all_patients()
+            today = datetime.now().strftime('%Y-%m-%d')
+            all_today_sessions = []
+            
+            print(f"[DEBUG] 检查当天会话，今天日期: {today}")
+            
+            for patient in patients:
+                sessions = db.get_patient_test_sessions(patient['id'])
+                print(f"[DEBUG] 患者 {patient['name']} 有 {len(sessions)} 个会话")
+                
+                for s in sessions:
+                    # 解析会话创建时间
+                    created_time = s['created_time']
+                    print(f"[DEBUG] 会话创建时间: {created_time}")
+                    
+                    # 处理ISO格式的时间
+                    if 'T' in created_time:
+                        session_date = created_time.split('T')[0]
+                    else:
+                        session_date = created_time.split(' ')[0] if ' ' in created_time else created_time
+                    
+                    print(f"[DEBUG] 解析的日期: {session_date}, 比较: {session_date == today}")
+                    
+                    if session_date == today:
+                        # 添加患者信息到会话
+                        s['patient_name'] = patient['name']
+                        s['patient_id'] = patient['id']
+                        s['patient_gender'] = patient['gender']
+                        s['patient_age'] = patient['age']
+                        all_today_sessions.append(s)
+            
+            print(f"[DEBUG] 找到 {len(all_today_sessions)} 个当天会话")
+            
+            # 按创建时间排序
+            all_today_sessions.sort(key=lambda x: x['created_time'], reverse=True)
+            return all_today_sessions
+            
+        except Exception as e:
+            print(f"[ERROR] 获取当天所有会话失败: {e}")
+            return []
+    
     def create_session_manager_dialog(self, sessions):
         """创建检测会话管理对话框"""
         dialog = tk.Toplevel(self.root)
-        dialog.title(f"检测会话管理 - {self.current_patient['name']}")
-        dialog.geometry("800x500")
+        dialog.title("检测会话管理 - 今日会话")
         dialog.resizable(True, True)
         dialog.grab_set()
         dialog.transient(self.root)
+        
+        # 设置窗口图标
+        try:
+            dialog.iconbitmap("icon.ico")
+        except Exception:
+            # 如果图标文件不存在，使用默认图标
+            pass
         
         # 居中显示
         dialog.update_idletasks()
         screen_width = dialog.winfo_screenwidth()
         screen_height = dialog.winfo_screenheight()
-        x = (screen_width - 800) // 2
-        y = (screen_height - 500) // 2
-        dialog.geometry(f"800x500+{x}+{y}")
+        
+        # 设置合适的窗口大小
+        window_width = 1000
+        window_height = 650
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        dialog.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
         # 主框架
         main_frame = ttk.Frame(dialog, padding="20")
@@ -3090,39 +3156,41 @@ class PressureSensorUI:
         
         # 标题
         title_label = ttk.Label(main_frame, 
-                               text=f"患者 {self.current_patient['name']} 的检测会话",
+                               text="今日所有检测会话",
                                font=('Microsoft YaHei UI', 14, 'bold'))
         title_label.pack(pady=(0, 15))
         
         # 会话列表
         list_frame = ttk.LabelFrame(main_frame, text="检测会话列表", padding="10")
-        list_frame.pack(fill="both", expand=True, pady=(0, 15))
+        list_frame.pack(fill="both", expand=True, pady=(0, 20))
         
         # 创建树状视图
-        columns = ("会话名称", "状态", "进度", "创建时间", "更新时间")
+        columns = ("患者姓名", "性别", "年龄", "会话名称", "状态", "进度", "创建时间")
         session_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15)
         
         # 设置列标题和宽度
-        column_widths = {"会话名称": 200, "状态": 100, "进度": 100, "创建时间": 150, "更新时间": 150}
+        column_widths = {"患者姓名": 100, "性别": 60, "年龄": 60, "会话名称": 180, "状态": 80, "进度": 80, "创建时间": 150}
         for col in columns:
             session_tree.heading(col, text=col)
-            session_tree.column(col, width=column_widths.get(col, 120), minwidth=80)
+            session_tree.column(col, width=column_widths.get(col, 100), minwidth=60, anchor="center")
         
         # 填充数据
-        for session in sessions:
+        for i, session in enumerate(sessions):
             status_text = "已完成" if session['status'] == 'completed' else \
                          "进行中" if session['status'] == 'in_progress' else \
                          "已中断" if session['status'] == 'interrupted' else \
                          "等待中" if session['status'] == 'pending' else session['status']
             
             values = (
+                session.get('patient_name', '未知'),
+                session.get('patient_gender', ''),
+                f"{session.get('patient_age', '')}岁",
                 session['session_name'],
                 status_text,
                 f"{session['current_step']}/{session['total_steps']}",
-                session['created_time'][:19].replace('T', ' '),
-                session['updated_time'][:19].replace('T', ' ') if session['updated_time'] else "-"
+                session['created_time'][:19].replace('T', ' ')
             )
-            session_tree.insert("", "end", values=values)
+            session_tree.insert("", "end", values=values, tags=(str(i),))
         
         # 添加滚动条
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=session_tree.yview)
@@ -3131,49 +3199,110 @@ class PressureSensorUI:
         session_tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # 按钮区域
+        # 按钮区域 - 增加垂直间距和高度
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x")
+        button_frame.pack(fill="x", pady=(10, 0))
         
         def on_resume():
             selection = session_tree.selection()
             if selection:
-                item = session_tree.item(selection[0])
-                session_name = item['values'][0]
-                # 根据名称找到对应的会话
-                for s in sessions:
-                    if s['session_name'] == session_name:
-                        if s['status'] in ['pending', 'in_progress', 'interrupted']:
-                            self.current_session = s
-                            dialog.destroy()
-                            self.show_detection_wizard()
-                        else:
-                            messagebox.showwarning("无法恢复", "只能恢复未完成的检测会话")
-                        break
+                # 获取选中项的索引
+                tags = session_tree.item(selection[0])['tags']
+                if tags:
+                    session_index = int(tags[0])  # 获取会话索引
+                    session = sessions[session_index]  # 从sessions列表中获取会话对象
+                    
+                    # 先选中对应的患者
+                    patient_info = {
+                        'id': session['patient_id'],
+                        'name': session['patient_name'],
+                        'gender': session.get('patient_gender', ''),
+                        'age': session.get('patient_age', 0)
+                    }
+                    self.current_patient = patient_info
+                    
+                    # 标记正在恢复会话，避免触发自动检查
+                    self._resuming_session = True
+                    self.update_patient_status()
+                    self._resuming_session = False
+                    
+                    if session['status'] in ['pending', 'in_progress', 'interrupted']:
+                        # 设置当前会话
+                        self.current_session = {
+                            'id': session['id'],
+                            'name': session['session_name'],
+                            'patient_id': session['patient_id'],
+                            'current_step': session['current_step'],
+                            'total_steps': session['total_steps']
+                        }
+                        self.detection_in_progress = True
+                        dialog.destroy()
+                        # 直接显示检测向导，它会自动跳转到正确的步骤
+                        self.show_detection_wizard()
+                    else:
+                        messagebox.showwarning("无法恢复", "只能恢复未完成的检测会话")
             else:
                 messagebox.showwarning("提示", "请选择要恢复的检测会话")
         
         def on_generate_report():
             selection = session_tree.selection()
             if selection:
-                item = session_tree.item(selection[0])
-                session_name = item['values'][0]
-                # 根据名称找到对应的会话
-                for s in sessions:
-                    if s['session_name'] == session_name:
-                        if s['status'] == 'completed':
-                            dialog.destroy()
-                            self.generate_report_for_session(s['id'])
-                        else:
-                            messagebox.showwarning("无法生成报告", "只能为已完成的检测会话生成报告")
-                        break
+                # 获取选中项的索引
+                tags = session_tree.item(selection[0])['tags']
+                if tags:
+                    session_index = int(tags[0])
+                    session = sessions[session_index]
+                    if session['status'] == 'completed':
+                        dialog.destroy()
+                        self.generate_report_for_session(session['id'])
+                    else:
+                        messagebox.showwarning("无法生成报告", "只能为已完成的检测会话生成报告")
             else:
                 messagebox.showwarning("提示", "请选择要生成报告的检测会话")
         
-        # 按钮
-        ttk.Button(button_frame, text="🚪 关闭", command=dialog.destroy).pack(side="right", padx=(10, 0))
-        ttk.Button(button_frame, text="📄 生成报告", command=on_generate_report).pack(side="right", padx=(0, 10))
-        ttk.Button(button_frame, text="🔄 恢复检测", command=on_resume).pack(side="right")
+        def on_delete_session():
+            selection = session_tree.selection()
+            if selection:
+                # 获取选中项的索引
+                tags = session_tree.item(selection[0])['tags']
+                if tags:
+                    session_index = int(tags[0])
+                    session = sessions[session_index]
+                    
+                    # 确认删除
+                    if messagebox.askyesno("确认删除", 
+                                         f"确定要删除患者 {session['patient_name']} 的会话吗？\n\n"
+                                         f"会话：{session['session_name']}\n"
+                                         f"状态：{session['status']}\n\n"
+                                         "此操作不可恢复！"):
+                        try:
+                            # 删除会话
+                            if db.delete_test_session(session['id']):
+                                messagebox.showinfo("删除成功", "会话已成功删除")
+                                dialog.destroy()
+                                # 重新打开会话管理界面
+                                self.show_session_manager()
+                            else:
+                                messagebox.showerror("删除失败", "删除会话时发生错误")
+                        except Exception as e:
+                            messagebox.showerror("删除失败", f"删除会话失败：{e}")
+            else:
+                messagebox.showwarning("提示", "请选择要删除的检测会话")
+        
+        # 按钮布局 - 删除在左边，其他在右边
+        # 左侧删除按钮
+        delete_btn = ttk.Button(button_frame, text="🗑️ 删除会话", command=on_delete_session)
+        delete_btn.pack(side="left", padx=(0, 10))
+        
+        # 右侧操作按钮
+        right_buttons = ttk.Frame(button_frame)
+        right_buttons.pack(side="right")
+        
+        resume_btn = ttk.Button(right_buttons, text="🔄 恢复检测", command=on_resume)
+        resume_btn.pack(side="right", padx=(10, 0))
+        
+        report_btn = ttk.Button(right_buttons, text="📄 生成报告", command=on_generate_report)
+        report_btn.pack(side="right", padx=(10, 0))
         
         # 绑定双击事件
         def on_double_click(event):
@@ -3208,8 +3337,8 @@ class PressureSensorUI:
             
             
             # 只在非检测流程中检查未完成检测，避免重复弹窗
-            # 通过标记来区分是否是从开始检测按钮触发的患者选择
-            if not getattr(self, '_selecting_for_detection', False):
+            # 通过标记来区分是否是从开始检测按钮触发的患者选择或正在恢复会话
+            if not getattr(self, '_selecting_for_detection', False) and not getattr(self, '_resuming_session', False):
                 self.root.after(500, self.check_and_resume_detection)
         else:
             self.status_label.config(text="⚙️ 未选择患者", foreground="#ff6b35")
@@ -3229,12 +3358,82 @@ class PressureSensorUI:
                 if not self.select_patient_for_detection():
                     return
             
-            # 检查是否有进行中的检测
-            if self.detection_in_progress:
-                if messagebox.askyesno("检测进行中", "当前有检测正在进行，是否继续之前的检测？"):
-                    self.resume_detection()
+            # 先检查当天是否有未完成的会话
+            sessions = db.get_patient_test_sessions(self.current_patient['id'])
+            
+            # 只保留当天的会话
+            today = datetime.now().strftime('%Y-%m-%d')
+            today_sessions = []
+            for s in sessions:
+                # 解析会话创建时间
+                created_time = s['created_time']
+                # 处理ISO格式的时间
+                if 'T' in created_time:
+                    session_date = created_time.split('T')[0]
                 else:
-                    self.start_new_detection()
+                    session_date = created_time.split(' ')[0] if ' ' in created_time else created_time
+                
+                if session_date == today:
+                    today_sessions.append(s)
+            
+            # 从当天会话中筛选未完成的
+            unfinished_sessions = [s for s in today_sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
+            
+            # 如果有未完成的会话，检查是否需要恢复
+            if unfinished_sessions:
+                # 优先找进行中的会话
+                active_session = None
+                for session in unfinished_sessions:
+                    if session['status'] == 'in_progress':
+                        active_session = session
+                        break
+                
+                # 如果没有进行中的，找最新的未完成会话
+                if not active_session:
+                    active_session = unfinished_sessions[0]  # 已按时间排序，第一个是最新的
+                
+                # 检查会话的进度
+                print(f"[DEBUG] 检查会话: {active_session['session_name']}, 状态: {active_session['status']}, 步骤: {active_session['current_step']}/{active_session['total_steps']}")
+                
+                # 如果已经有步骤进展（不是第0步），则提示恢复
+                if active_session['current_step'] > 0:
+                    if messagebox.askyesno("发现未完成检测", 
+                                     f"患者 {self.current_patient['name']} 有未完成的检测会话。\n\n"
+                                     f"会话：{active_session['session_name']}\n"
+                                     f"进度：第 {active_session['current_step']}/{active_session['total_steps']} 步\n\n"
+                                     "是否要恢复检测？"):
+                        # 设置当前会话信息并恢复
+                        self.current_session = {
+                            'id': active_session['id'],
+                            'name': active_session['session_name'],
+                            'patient_id': self.current_patient['id'],
+                            'current_step': active_session['current_step'],
+                            'total_steps': active_session['total_steps']
+                        }
+                        self.detection_in_progress = True
+                        self.show_detection_wizard()
+                    else:
+                        # 用户选择不恢复，删除旧会话并新建
+                        self.delete_old_sessions_and_start_new()
+                else:
+                    # 会话存在但还没开始任何步骤，可以选择继续或新建
+                    if messagebox.askyesno("发现未开始的检测会话", 
+                                         f"患者 {self.current_patient['name']} 有一个未开始的检测会话。\n\n"
+                                         f"会话：{active_session['session_name']}\n\n"
+                                         "是否要继续这个会话？"):
+                        # 继续使用这个会话
+                        self.current_session = {
+                            'id': active_session['id'],
+                            'name': active_session['session_name'],
+                            'patient_id': self.current_patient['id'],
+                            'current_step': 0,
+                            'total_steps': active_session['total_steps']
+                        }
+                        self.detection_in_progress = True
+                        self.show_detection_wizard()
+                    else:
+                        # 用户选择不继续，删除旧会话并新建
+                        self.delete_old_sessions_and_start_new()
             else:
                 self.start_new_detection()
                 
@@ -3242,12 +3441,36 @@ class PressureSensorUI:
             messagebox.showerror("错误", f"启动检测失败：{e}")
             print(f"[ERROR] 启动检测错误: {e}")
     
+    def delete_old_sessions_and_start_new(self):
+        """删除旧会话并开始新的检测"""
+        try:
+            # 获取当前患者的所有会话
+            sessions = db.get_patient_test_sessions(self.current_patient['id'])
+            
+            # 删除所有旧会话
+            deleted_count = 0
+            for session in sessions:
+                if db.delete_test_session(session['id']):
+                    deleted_count += 1
+            
+            if deleted_count > 0:
+                print(f"[INFO] 已删除 {deleted_count} 个旧会话")
+            
+            # 开始新的检测
+            self.start_new_detection()
+            
+        except Exception as e:
+            print(f"[ERROR] 删除旧会话失败: {e}")
+            messagebox.showerror("错误", f"删除旧会话失败：{e}")
+    
     def start_new_detection(self):
         """开始新的检测"""
         try:
             # 创建新的检测会话
             session_name = f"检测-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            print(f"[DEBUG] 创建会话: 患者ID={self.current_patient['id']}, 会话名={session_name}")
             session_id = db.create_test_session(self.current_patient['id'], session_name)
+            print(f"[DEBUG] 创建会话结果: session_id={session_id}")
             
             if session_id > 0:
                 self.current_session = {
@@ -3286,7 +3509,24 @@ class PressureSensorUI:
             
             # 获取患者的未完成检测会话
             sessions = db.get_patient_test_sessions(self.current_patient['id'])
-            unfinished_sessions = [s for s in sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
+            
+            # 只保留当天的会话
+            today = datetime.now().strftime('%Y-%m-%d')
+            today_sessions = []
+            for s in sessions:
+                # 解析会话创建时间
+                created_time = s['created_time']
+                # 处理ISO格式的时间
+                if 'T' in created_time:
+                    session_date = created_time.split('T')[0]
+                else:
+                    session_date = created_time.split(' ')[0] if ' ' in created_time else created_time
+                
+                if session_date == today:
+                    today_sessions.append(s)
+            
+            # 从当天会话中筛选未完成的
+            unfinished_sessions = [s for s in today_sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
             
             if not unfinished_sessions:
                 messagebox.showinfo("无未完成检测", "该患者没有未完成的检测会话")
@@ -3417,7 +3657,24 @@ class PressureSensorUI:
             
             # 获取患者的未完成检测会话
             sessions = db.get_patient_test_sessions(self.current_patient['id'])
-            unfinished_sessions = [s for s in sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
+            
+            # 只保留当天的会话
+            today = datetime.now().strftime('%Y-%m-%d')
+            today_sessions = []
+            for s in sessions:
+                # 解析会话创建时间
+                created_time = s['created_time']
+                # 处理ISO格式的时间
+                if 'T' in created_time:
+                    session_date = created_time.split('T')[0]
+                else:
+                    session_date = created_time.split(' ')[0] if ' ' in created_time else created_time
+                
+                if session_date == today:
+                    today_sessions.append(s)
+            
+            # 从当天会话中筛选未完成的
+            unfinished_sessions = [s for s in today_sessions if s['status'] in ['pending', 'in_progress', 'interrupted']]
             
             # 只有确实存在未完成的检测会话才提示
             if unfinished_sessions and len(unfinished_sessions) > 0:
@@ -3997,6 +4254,19 @@ class PressureSensorUI:
         except Exception as e:
             messagebox.showerror("错误", f"AI分析失败：{e}")
             print(f"[ERROR] AI分析失败: {e}")
+    
+    def open_website(self):
+        """打开官方网站"""
+        import webbrowser
+        try:
+            webbrowser.open("https://www.jq-tech.com")
+        except Exception as e:
+            # 如果无法打开浏览器，显示网址
+            messagebox.showinfo("官方网站", 
+                              "无法自动打开浏览器，请手动访问:\n\n"
+                              "https://www.jq-tech.com\n\n"
+                              "您可以复制此链接到浏览器地址栏访问。")
+            print(f"[ERROR] 打开网站失败: {e}")
     
 
 def main():

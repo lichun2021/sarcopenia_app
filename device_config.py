@@ -23,6 +23,7 @@ class DeviceConfigDialog:
         self.dialog = None
         self.device_configs = {}
         self.scanning = True
+        self._refreshing = False
         
         # 设备类型定义
         self.device_types = {
@@ -902,6 +903,12 @@ class DeviceConfigDialog:
     
     def refresh_ports(self):
         """手动刷新端口 - 立即显示，不自动检测"""
+        # 防止重复点击
+        if hasattr(self, '_refreshing') and self._refreshing:
+            self.log_message("⚠️ 正在刷新中，请稍候...")
+            return
+            
+        self._refreshing = True
         self.log_message("🔄 开始手动刷新端口...")
         self.scan_status_label.config(text="正在刷新...", foreground="orange")
         self.ports_list_label.config(text="发现的端口: 刷新中...")
@@ -944,6 +951,7 @@ class DeviceConfigDialog:
         
         # 刷新完成
         self.scanning = False
+        self._refreshing = False
     
     def immediate_scan(self):
         """立即扫描 - 只扫描端口，不检测有效性"""

@@ -29,9 +29,40 @@ class DetectionWizardDialog:
         
         self.patient_info = patient_info
         self.session_info = session_info
-        self.current_step = 1
         self.total_steps = 6
-        self.step_results = {}
+        
+        # 从会话信息中恢复当前步骤
+        if session_info and 'current_step' in session_info:
+            # 获取会话的当前步骤
+            current = session_info['current_step']
+            # 获取已完成的步骤信息
+            session_steps = db.get_session_steps(session_info['id'])
+            
+            # 找到最后一个未完成的步骤
+            last_incomplete_step = 1
+            for step in session_steps:
+                if step['status'] != 'completed':
+                    last_incomplete_step = step['step_number']
+                    break
+                elif step['step_number'] == self.total_steps:
+                    # 所有步骤都完成了
+                    last_incomplete_step = self.total_steps
+            
+            self.current_step = max(1, min(last_incomplete_step, self.total_steps))
+            
+            # 恢复已完成步骤的结果
+            self.step_results = {}
+            for step in session_steps:
+                if step['status'] == 'completed':
+                    self.step_results[step['step_number']] = {
+                        'status': 'completed',
+                        'data_file': step.get('data_file', ''),
+                        'start_time': step.get('start_time', ''),
+                        'end_time': step.get('end_time', '')
+                    }
+        else:
+            self.current_step = 1
+            self.step_results = {}
         self.is_running = False
         self.start_time = None
         self.timer_thread = None
@@ -55,7 +86,7 @@ class DetectionWizardDialog:
                 "name": "起坐测试",
                 "device": "坐垫",
                 "duration": 30, 
-                "auto_finish": False,
+                "auto_finish": True,
                 "description": "请患者进行5次起坐动作，从坐位到站立再到坐位。\n动作要缓慢平稳，测量动态起坐过程中的压力变化。"
             },
             3: {
@@ -299,9 +330,18 @@ class DetectionWizardDialog:
         
         # 更新按钮状态
         self.prev_btn.config(state="normal" if self.current_step > 1 else "disabled")
-        self.next_btn.config(state="disabled")
-        self.start_btn.config(state="normal", text="🚀 开始检测")
-        self.finish_btn.config(state="disabled")
+        
+        # 检查当前步骤是否已完成，决定下一步按钮状态
+        if self.current_step in self.step_results and self.step_results[self.current_step]['status'] == 'completed':
+            # 如果当前步骤已完成，可以进入下一步
+            self.next_btn.config(state="normal" if self.current_step < self.total_steps else "disabled")
+            self.start_btn.config(state="disabled", text="✅ 已完成")
+            self.finish_btn.config(state="disabled")
+        else:
+            # 未完成的步骤
+            self.next_btn.config(state="disabled")
+            self.start_btn.config(state="normal", text="🚀 开始检测")
+            self.finish_btn.config(state="disabled")
         
         # 重置运行状态
         self.is_running = False
@@ -408,7 +448,10 @@ class DetectionWizardDialog:
             # 启用下一步按钮或显示完成
             if self.current_step < self.total_steps:
                 self.next_btn.config(state="normal")
-                messagebox.showinfo("步骤完成", f"第{self.current_step}步检测完成！\n\n请点击\"下一步\"继续。")
+                # 询问是否自动跳转到下一步
+                if messagebox.askyesno("步骤完成", f"第{self.current_step}步检测完成！\n\n是否自动进入下一步？"):
+                    # 延迟500ms后自动跳转到下一步
+                    self.dialog.after(500, self.auto_next_step)
             else:
                 messagebox.showinfo("检测完成", "🎉 所有检测步骤已完成！\n\n即将生成分析报告。")
                 self.complete_all_steps()
@@ -522,10 +565,10 @@ class DetectionWizardDialog:
         try:
             import csv
             
-            # 创建数据目录
-            data_dir = "detection_data"
-            if not os.path.exists(data_dir):
-                os.makedirs(data_dir)
+            # 创建按日期组织的数据目录
+            today = datetime.now().strftime("%Y-%m-%d")
+            data_dir = os.path.join("tmp", today, "detection_data")
+            os.makedirs(data_dir, exist_ok=True)
             
             # 生成文件名 - 使用患者姓名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -669,8 +712,21 @@ class DetectionWizardDialog:
     def auto_finish_step(self):
         """自动完成步骤（用于定时步骤）"""
         if self.is_running:
-            messagebox.showinfo("自动完成", f"第{self.current_step}步检测时间已到，自动完成！")
+            # 直接完成当前步骤，不弹出确认对话框
             self.finish_current_step()
+            
+            # 如果不是最后一步，自动跳转到下一步
+            if self.current_step < self.total_steps:
+                # 延迟500ms后自动跳转到下一步
+                self.dialog.after(500, self.auto_next_step)
+    
+    def auto_next_step(self):
+        """自动跳转到下一步"""
+        try:
+            if self.current_step < self.total_steps:
+                self.next_step()
+        except Exception as e:
+            print(f"[ERROR] 自动跳转下一步失败: {e}")
     
     def on_closing(self):
         """窗口关闭事件"""

@@ -538,6 +538,33 @@ class SarcopeniaDatabase:
             return False
         finally:
             conn.close()
+    
+    def delete_test_session(self, session_id: int) -> bool:
+        """删除检测会话及其所有步骤"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # 先删除所有步骤
+            cursor.execute('DELETE FROM test_steps WHERE session_id = ?', (session_id,))
+            
+            # 再删除会话
+            cursor.execute('DELETE FROM test_sessions WHERE id = ?', (session_id,))
+            
+            success = cursor.rowcount > 0
+            conn.commit()
+            
+            if success:
+                print(f"[INFO] 成功删除会话 ID: {session_id}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"[ERROR] 删除检测会话失败: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
 
 # 全局数据库实例
 db = SarcopeniaDatabase()
