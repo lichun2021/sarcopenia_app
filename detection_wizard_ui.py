@@ -310,8 +310,10 @@ class DetectionWizardDialog:
         # 更新步骤标题
         self.step_title.config(text=f"第{self.current_step}步：{step_config['name']}")
         
-        # 更新设备和时长信息
-        self.device_label.config(text=step_config['device'])
+        # 更新设备和时长信息，添加状态图标
+        device_configured, _ = self.check_device_configured()
+        status_icon = "✅" if device_configured else "❌"
+        self.device_label.config(text=f"{status_icon} {step_config['device']}")
         self.duration_label.config(text=f"{step_config['duration']}秒")
         
         # 更新描述
@@ -348,9 +350,60 @@ class DetectionWizardDialog:
         self.start_time = None
         self.auto_finish = step_config.get('auto_finish', False)
     
+    def check_device_configured(self):
+        """检查当前步骤所需设备是否已配置"""
+        try:
+            # 获取当前步骤的设备类型
+            step_device_map = {
+                1: '坐垫',   # 静坐检测
+                2: '坐垫',   # 起坐测试  
+                3: '脚垫',   # 静态站立
+                4: '脚垫',   # 前后脚站立
+                5: '脚垫',   # 双脚前后站立
+                6: '步道'    # 4.5米步道折返
+            }
+            
+            current_device_type = step_device_map.get(self.current_step, '未知')
+            
+            # 检查设备管理器中的设备配置
+            if hasattr(self.main_ui, 'device_manager') and self.main_ui.device_manager:
+                device_manager = self.main_ui.device_manager
+                
+                # 设备类型映射到配置键
+                device_type_mapping = {
+                    '坐垫': 'cushion',
+                    '脚垫': 'footpad', 
+                    '步道': 'walkway_dual'
+                }
+                
+                required_device_key = device_type_mapping.get(current_device_type)
+                if required_device_key and required_device_key in device_manager.devices:
+                    return True, current_device_type
+                else:
+                    return False, current_device_type
+            
+            return False, current_device_type
+            
+        except Exception as e:
+            print(f"[ERROR] 检查设备配置失败: {e}")
+            return False, "未知"
+    
     def start_current_step(self):
         """开始当前步骤"""
         try:
+            # 检查设备配置
+            device_configured, device_type = self.check_device_configured()
+            if not device_configured:
+                response = messagebox.askyesno(
+                    "设备未配置",
+                    f"当前步骤需要使用【{device_type}】设备，但尚未配置。\n\n"
+                    f"是否继续开始检测？\n\n"
+                    f"建议：先配置{device_type}设备后再开始检测。",
+                    icon='warning'
+                )
+                if not response:
+                    return  # 用户选择不继续
+            
             self.is_running = True
             self.start_time = datetime.now()
             

@@ -2335,7 +2335,7 @@ class PressureSensorUI:
                 
                 # 启动服务（如果未启动）
                 if not self.sarcneuro_service.is_running:
-                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务 2...")
+                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
                     if not self.sarcneuro_service.start_service():
                         raise Exception("无法启动 SarcNeuro Edge 服务")
                 

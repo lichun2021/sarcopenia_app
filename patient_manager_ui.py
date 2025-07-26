@@ -20,7 +20,7 @@ class PatientManagerDialog:
         
         # 创建对话框窗口 - 优化显示避免闪烁
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title(title)
+        self.dialog.title(title)  # 移除了表情符号
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
