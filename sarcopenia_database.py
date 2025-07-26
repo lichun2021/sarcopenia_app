@@ -539,31 +539,6 @@ class SarcopeniaDatabase:
         finally:
             conn.close()
     
-    def get_test_session_by_id(self, session_id: int) -> Optional[Dict]:
-        """根据session_id获取检测会话信息"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                SELECT id, patient_id, session_name, test_date, status, current_step, total_steps,
-                       created_time, completed_time, notes
-                FROM test_sessions
-                WHERE id = ?
-            ''', (session_id,))
-            
-            row = cursor.fetchone()
-            if row:
-                columns = [desc[0] for desc in cursor.description]
-                return dict(zip(columns, row))
-            return None
-            
-        except Exception as e:
-            print(f"[ERROR] 获取检测会话失败: {e}")
-            return None
-        finally:
-            conn.close()
-    
     def delete_test_session(self, session_id: int) -> bool:
         """删除检测会话及其所有步骤"""
         conn = sqlite3.connect(self.db_path)

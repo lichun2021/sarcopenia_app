@@ -157,8 +157,8 @@ class PressureSensorUI:
         # 集成肌少症分析功能
         self.integrate_sarcneuro_analysis()
         
-        # 初始化SarcNeuro Edge服务（不启动）
-        self._init_sarcneuro_service()
+        # 延迟2秒启动SarcNeuro Edge服务，避免影响UI启动速度
+        self.root.after(2000, self._delayed_start_sarcneuro_service)
         
         # 第四阶段：自动加载配置（600ms后）
         self.root.after(600, self._stage4_load_config)
@@ -779,7 +779,7 @@ class PressureSensorUI:
                           activebackground='#f0f8ff', activeforeground='#0066cc')
         
         # 添加分析菜单项
-        analysis_menu.add_command(label="📄 手动导入CSV生成报告", command=self.import_csv_for_analysis)
+        analysis_menu.add_command(label="📄 导入CSV生成报告", command=self.import_csv_for_analysis)
         analysis_menu.add_command(label="🤖 Sarcneuro Edge服务状态", command=self.show_service_status)
         
         # 创建"帮助"菜单（使用医疗绿色主题）
@@ -1879,19 +1879,13 @@ class PressureSensorUI:
             # 不影响主程序运行，继续使用原有功能
             self.sarcneuro_panel = None
     
-    def _init_sarcneuro_service(self):
-        """初始化SarcNeuro Edge服务（不启动）"""
+    def _delayed_start_sarcneuro_service(self):
+        """延迟启动SarcNeuro Edge服务"""
         try:
-            # 只初始化服务，不启动
             self.init_sarcneuro_service()
-            if self.sarcneuro_service:
-                self.log_message("🔧 SarcNeuro Edge服务已初始化完成")
-                print("[INFO] SarcNeuro Edge服务已初始化，等待首次使用时启动")
-            else:
-                self.log_message("⚠️ SarcNeuro Edge服务初始化失败")
+            self.log_message("🚀 SarcNeuro Edge服务已在后台启动")
         except Exception as e:
-            print(f"[WARN] 初始化SarcNeuro Edge服务失败: {e}")
-            self.log_message(f"⚠️ SarcNeuro Edge服务初始化失败: {e}")
+            self.log_message(f"⚠️ SarcNeuro Edge服务启动失败: {e}")
     
     def _cleanup_expired_sessions(self):
         """清理过期的会话数据"""
@@ -2033,13 +2027,13 @@ class PressureSensorUI:
         # 性别
         tk.Label(info_frame, text="性别 *:", font=("Microsoft YaHei", 10, "bold"),
                 bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=2, column=0, sticky="e", padx=(0, 15), pady=8)
-        gender_var = tk.StringVar(value="男")  # 使用中文默认值
+        gender_var = tk.StringVar(value="MALE")
         gender_frame = tk.Frame(info_frame, bg='#ffffff')
         gender_frame.grid(row=2, column=1, sticky="w", pady=8)
-        tk.Radiobutton(gender_frame, text="男", variable=gender_var, value="男",
+        tk.Radiobutton(gender_frame, text="男", variable=gender_var, value="MALE",
                       font=("Microsoft YaHei", 10), bg='#ffffff', fg='#2d3748',
                       selectcolor='#e6fffa', activebackground='#ffffff').pack(side=tk.LEFT)
-        tk.Radiobutton(gender_frame, text="女", variable=gender_var, value="女",
+        tk.Radiobutton(gender_frame, text="女", variable=gender_var, value="FEMALE",
                       font=("Microsoft YaHei", 10), bg='#ffffff', fg='#2d3748',
                       selectcolor='#e6fffa', activebackground='#ffffff').pack(side=tk.LEFT, padx=(20, 0))
         
@@ -2201,15 +2195,11 @@ class PressureSensorUI:
             for csv_file in csv_files:
                 files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
             
-            # 性别转换：中文转英文，保持与demo 1.0一致
-            gender_map = {'男': 'MALE', '女': 'FEMALE', 'MALE': 'MALE', 'FEMALE': 'FEMALE'}
-            patient_gender_en = gender_map.get(patient_info['gender'], 'MALE')
-            
             # 准备表单数据
             form_data = {
                 'patient_name': patient_info['name'],
                 'patient_age': str(patient_info['age']),
-                'patient_gender': patient_gender_en,  # 使用转换后的英文性别
+                'patient_gender': patient_info['gender'],
                 'patient_height': patient_info.get('height', ''),
                 'patient_weight': patient_info.get('weight', ''),
                 'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
@@ -2343,14 +2333,10 @@ class PressureSensorUI:
                 self.log_ai_message("[SCAN] 正在分析CSV文件...")
                 self.root.config(cursor="wait")
                 
-                # 检查服务是否运行
-                if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
-                    self.log_ai_message("[INFO] 检测到服务未运行，尝试启动...")
-                    if not self.sarcneuro_service:
-                        self.init_sarcneuro_service()
-                    if self.sarcneuro_service and self.sarcneuro_service.start_service():
-                        self.log_ai_message("[OK] SarcNeuro Edge 服务启动成功")
-                    else:
+                # 启动服务（如果未启动）
+                if not self.sarcneuro_service.is_running:
+                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务 2...")
+                    if not self.sarcneuro_service.start_service():
                         raise Exception("无法启动 SarcNeuro Edge 服务")
                 
                 # 读取所有CSV文件
@@ -2603,28 +2589,13 @@ class PressureSensorUI:
     
     def start_sarcneuro_service(self):
         """启动SarcNeuro Edge服务"""
-        if not SARCNEURO_AVAILABLE:
+        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
             messagebox.showerror("服务不可用", "SarcNeuro Edge 服务不可用")
-            return
-        
-        # 如果服务未初始化，先初始化
-        if not self.sarcneuro_service:
-            self.init_sarcneuro_service()
-            
-        if not self.sarcneuro_service:
-            messagebox.showerror("服务不可用", "SarcNeuro Edge 服务初始化失败")
-            return
-        
-        # 检查服务是否已经运行
-        if self.sarcneuro_service.is_running:
-            status = self.sarcneuro_service.get_service_status()
-            messagebox.showinfo("服务状态", 
-                f"SarcNeuro Edge 服务已在运行中\n\n端口: {status['port']}\n进程ID: {status.get('process_id', 'N/A')}")
             return
         
         def start_service():
             try:
-                self.log_ai_message("[START] 手动启动 SarcNeuro Edge 服务...")
+                self.log_ai_message("[START] 启动 SarcNeuro Edge 服务...")
                 if self.sarcneuro_service.start_service():
                     self.log_ai_message("[OK] SarcNeuro Edge 服务启动成功！")
                     status = self.sarcneuro_service.get_service_status()
@@ -3832,21 +3803,11 @@ class PressureSensorUI:
     def start_sarcneuro_analysis_for_session(self):
         """使用SarcNeuro Edge API为检测会话进行分析"""
         try:
-            # 检查服务是否运行，如果未运行则尝试启动
-            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
-                self.log_ai_message("[INFO] 检测到 SarcNeuro Edge 服务未运行，尝试启动...")
-                
-                # 如果服务对象不存在，先初始化
-                if not self.sarcneuro_service:
-                    self.init_sarcneuro_service()
-                
-                # 尝试启动服务
-                if self.sarcneuro_service and self.sarcneuro_service.start_service():
-                    self.log_ai_message("[OK] SarcNeuro Edge 服务启动成功")
-                else:
-                    raise Exception("无法启动 SarcNeuro Edge 服务，请检查服务是否已在其他地方运行")
-            else:
-                self.log_ai_message("[INFO] SarcNeuro Edge 服务运行正常")
+            # 启动服务（如果未启动）
+            if not self.sarcneuro_service.is_running:
+                self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
+                if not self.sarcneuro_service.start_service():
+                    raise Exception("无法启动 SarcNeuro Edge 服务")
             
             # 获取会话的检测数据
             session_steps = db.get_session_steps(self.current_session['id'])
@@ -4241,45 +4202,19 @@ class PressureSensorUI:
     def generate_report_for_session(self, session_id):
         """为指定的检测会话生成报告"""
         try:
-            # 获取会话信息
-            session_info = db.get_test_session_by_id(session_id)
-            if not session_info:
-                messagebox.showerror("错误", f"无法找到会话ID {session_id} 的信息")
-                return
-            
-            # 获取患者信息
-            patient_info = db.get_patient_by_id(session_info['patient_id'])
-            if not patient_info:
-                messagebox.showerror("错误", f"无法找到患者ID {session_info['patient_id']} 的信息")
-                return
-            
-            # 保存原始状态
-            original_session = self.current_session
-            original_patient = self.current_patient
-            
             # 临时设置会话ID和患者信息
-            self.current_session = session_info
-            self.current_patient = patient_info
-            
-            print(f"[INFO] 开始为患者 {patient_info['name']} 的会话 {session_info['session_name']} 生成报告")
+            original_session = self.current_session
+            self.current_session = {'id': session_id}
             
             # 启动AI分析（会调用SarcNeuro Edge API）
             self.start_ai_analysis()
             
             # 恢复原会话
             self.current_session = original_session
-            self.current_patient = original_patient
             
         except Exception as e:
-            # 确保恢复原会话
-            if 'original_session' in locals():
-                self.current_session = original_session
-            if 'original_patient' in locals():
-                self.current_patient = original_patient
-            messagebox.showerror("错误", f"生成报告失败：{e}")
-            print(f"[ERROR] 生成报告失败: {e}")
-            import traceback
-            traceback.print_exc()
+            self.current_session = original_session  # 确保恢复原会话
+            raise
     
     def add_log(self, message):
         """添加日志信息（如果有日志控件的话）"""
