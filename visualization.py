@@ -271,6 +271,37 @@ class HeatmapVisualizer:
             # 调整布局，为颜色条预留空间，让热力图尽可能大
             self.fig.subplots_adjust(left=0.05, right=0.8, top=0.95, bottom=0.05)
             
+            # 关键：重新计算紧凑布局，适应新的宽高比
+            self.fig.tight_layout()
+            
+            # 强制canvas重新调整大小以适应新的figure
+            canvas_widget = self.canvas.get_tk_widget()
+            canvas_widget.pack_forget()  # 先取消pack
+            canvas_widget.pack(fill='both', expand=True)  # 重新pack
+            
+            # 关键：强制更新tkinter布局，获取正确的canvas大小
+            canvas_widget.update_idletasks()
+            
+            # 手动触发matplotlib的resize事件，模拟窗口缩放的效果
+            # 获取canvas的当前大小
+            canvas_width = canvas_widget.winfo_width()
+            canvas_height = canvas_widget.winfo_height()
+            
+            # 只有当canvas有有效大小时才触发resize
+            if canvas_width > 1 and canvas_height > 1:
+                # 手动触发matplotlib的resize，模拟窗口大小变化
+                # 创建一个resize事件并处理
+                try:
+                    self.canvas.resize(canvas_width, canvas_height)
+                except:
+                    # 如果resize方法不存在，尝试其他方法
+                    try:
+                        # 强制重新计算figure大小
+                        self.fig.set_size_inches(canvas_width/100, canvas_height/100)
+                        self.fig.tight_layout()
+                    except:
+                        pass
+            
             # 重绘画布
             self.canvas.draw()
             

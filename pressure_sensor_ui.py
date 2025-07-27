@@ -515,11 +515,8 @@ class PressureSensorUI:
                     
                     # 强制更新热力图显示区域
                     if self.visualizer and hasattr(self.visualizer, 'canvas'):
-                        # 更新画布
+                        # 确保画布更新
                         self.visualizer.canvas.draw_idle()
-                        # 如果有父容器，也更新它
-                        if hasattr(self, 'plot_frame'):
-                            self.plot_frame.update_idletasks()
                     
                     # 根据设备类型设置模式
                     device_type = device_info.get('device_type', 'single')
@@ -1480,6 +1477,13 @@ class PressureSensorUI:
         log_btn_frame = ttk.Frame(hw_log_frame, style='Hospital.TFrame')
         log_btn_frame.pack(fill=tk.X, pady=(0, 5))
         
+        # 暂停/继续日志按钮
+        self.log_paused = False
+        self.pause_log_btn = ttk.Button(log_btn_frame, text="⏸️ 暂停日志", 
+                                       command=self.toggle_log_pause,
+                                       style='Hospital.TButton')
+        self.pause_log_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
         ttk.Button(log_btn_frame, text="💾 保存日志", 
                   command=self.save_log,
                   style='Hospital.TButton').pack(side=tk.LEFT, padx=(0, 10))
@@ -1530,6 +1534,41 @@ class PressureSensorUI:
             array_rows=array_info['rows'], 
             array_cols=array_info['cols']
         )
+        
+        # 延迟触发布局更新，确保窗口最大化完成后热力图获取正确尺寸
+        def trigger_resize():
+            if self.visualizer and hasattr(self.visualizer, 'canvas'):
+                canvas_widget = self.visualizer.canvas.get_tk_widget()
+                
+                # 强制更新布局获取最新的canvas尺寸
+                canvas_widget.update_idletasks()
+                
+                # 获取canvas当前尺寸
+                canvas_width = canvas_widget.winfo_width()
+                canvas_height = canvas_widget.winfo_height()
+                
+                print(f"[DEBUG] 热力图初始化时canvas尺寸: {canvas_width}x{canvas_height}")
+                
+                # 如果canvas尺寸太小，说明窗口还没完全最大化，再等待
+                if canvas_width < 100 or canvas_height < 100:
+                    print("[DEBUG] canvas尺寸太小，窗口可能还在最大化中，再等待200ms")
+                    self.root.after(200, trigger_resize)
+                    return
+                
+                # 触发matplotlib的resize事件，让热力图适应正确的canvas尺寸
+                try:
+                    self.visualizer.canvas.resize(canvas_width, canvas_height)
+                except:
+                    # 如果resize方法不存在，尝试重新绘制
+                    try:
+                        self.visualizer.fig.set_size_inches(canvas_width/100, canvas_height/100)
+                        self.visualizer.fig.tight_layout()
+                    except:
+                        pass
+                self.visualizer.canvas.draw_idle()
+        
+        # 延迟500ms执行，等待窗口最大化完全完成
+        self.root.after(500, trigger_resize)
         
     def auto_config_array_size(self, array_size_str):
         """自动配置数组大小"""
@@ -1826,8 +1865,40 @@ class PressureSensorUI:
                 
 
             
+    def toggle_log_pause(self):
+        """切换日志暂停/继续状态"""
+        self.log_paused = not self.log_paused
+        if self.log_paused:
+            self.pause_log_btn.config(text="▶️ 继续日志")
+            # 强制记录系统消息，不受暂停影响
+            self._force_log_message("[SYSTEM] 日志已暂停")
+        else:
+            self.pause_log_btn.config(text="⏸️ 暂停日志")
+            # 强制记录系统消息，不受暂停影响
+            self._force_log_message("[SYSTEM] 日志已继续")
+
+    def _force_log_message(self, message):
+        """强制记录日志消息（不受暂停影响）"""
+        def add_log():
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}"
+            self.log_text.insert(tk.END, log_entry + "\n")
+            self.log_text.see(tk.END)
+            
+            # 限制日志行数
+            lines = self.log_text.get("1.0", tk.END).count('\n')
+            if lines > 1000:
+                self.log_text.delete("1.0", "100.0")
+                
+        # 在主线程中执行UI更新
+        self.root.after(0, add_log)
+
     def log_message(self, message):
         """添加硬件设备日志消息"""
+        # 如果日志被暂停，跳过记录（除了系统消息）
+        if hasattr(self, 'log_paused') and self.log_paused and not message.startswith("[SYSTEM]"):
+            return
+            
         def add_log():
             timestamp = datetime.now().strftime("%H:%M:%S")
             log_entry = f"[{timestamp}] {message}"
