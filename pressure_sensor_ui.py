@@ -720,7 +720,7 @@ class PressureSensorUI:
         
         # 添加文件菜单项
         file_menu.add_separator()
-        file_menu.add_command(label="💾 导出设备日志", command=self.save_log)
+        file_menu.add_command(label="💾 导出AI分析日志", command=self.save_log)
         file_menu.add_command(label="📸 保存热力图快照", command=self.save_snapshot)
         file_menu.add_separator()
         file_menu.add_command(label="❌ 退出系统", command=self.on_closing)
@@ -1435,29 +1435,25 @@ class PressureSensorUI:
             label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # 日志区域 - 使用grid布局确保均匀分配
-        log_container = ttk.Frame(right_frame)
-        log_container.pack(fill=tk.BOTH, expand=True)
-        
-        # 配置grid权重
-        log_container.grid_rowconfigure(0, weight=1)
-        log_container.grid_rowconfigure(1, weight=1)
-        log_container.grid_columnconfigure(0, weight=1)
-        
-        # AI分析日志 - 上半部分
-        ai_log_frame = ttk.LabelFrame(log_container, text="Sarcneuro Edge AI 日志", 
+        # AI分析日志区域 - 占用整个空间
+        ai_log_frame = ttk.LabelFrame(right_frame, text="AI 分析日志", 
                                     padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
-        ai_log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0), padx=0)
+        ai_log_frame.pack(fill=tk.BOTH, expand=True)
         
-        # AI日志控制按钮 - 保持结构一致
+        # AI日志控制按钮
         ai_btn_frame = ttk.Frame(ai_log_frame, style='Hospital.TFrame')
         ai_btn_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # 占位标签，保持视觉平衡
+        # AI分析状态标签
         ttk.Label(ai_btn_frame, text="AI分析状态", 
                  style='Hospital.TLabel').pack(side=tk.LEFT)
         
-        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=70,  # 增加宽度
+        # 清除AI日志按钮
+        ttk.Button(ai_btn_frame, text="🗑️ 清除日志", 
+                  command=self.clear_ai_log,
+                  style='Hospital.TButton').pack(side=tk.RIGHT)
+        
+        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=70,
                                                    font=("Consolas", 9),
                                                    bg='#f8f9ff',  # 淡蓝色背景
                                                    fg='#2c3e50',
@@ -1467,40 +1463,6 @@ class PressureSensorUI:
                                                    borderwidth=1,
                                                    relief='solid')
         self.ai_log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # 硬件设备日志 - 下半部分，带按钮
-        hw_log_frame = ttk.LabelFrame(log_container, text="设备日志", 
-                                    padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
-        hw_log_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 0), padx=0)
-        
-        # 日志控制按钮 - 放在日志框标题旁边
-        log_btn_frame = ttk.Frame(hw_log_frame, style='Hospital.TFrame')
-        log_btn_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # 暂停/继续日志按钮
-        self.log_paused = False
-        self.pause_log_btn = ttk.Button(log_btn_frame, text="⏸️ 暂停日志", 
-                                       command=self.toggle_log_pause,
-                                       style='Hospital.TButton')
-        self.pause_log_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(log_btn_frame, text="💾 保存日志", 
-                  command=self.save_log,
-                  style='Hospital.TButton').pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(log_btn_frame, text="🗑️ 清除日志", 
-                  command=self.clear_log,
-                  style='Hospital.TButton').pack(side=tk.LEFT)
-        
-        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=70,  # 增加宽度
-                                                font=("Consolas", 9),
-                                                bg='#ffffff',
-                                                fg='#495057',
-                                                selectbackground='#e8f5e8',
-                                                selectforeground='#2e7d32',
-                                                insertbackground='#2e7d32',
-                                                borderwidth=1,
-                                                relief='solid')
-        self.log_text.pack(fill=tk.BOTH, expand=True)
         
         # 底部状态栏 - 医院风格
         status_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
@@ -1639,22 +1601,23 @@ class PressureSensorUI:
     
             
     def save_log(self):
-        """保存日志"""
+        """保存AI分析日志"""
         try:
             from datetime import datetime
             
             # 直接保存到当前目录，不弹窗选择
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            device_info = self.device_manager.get_current_device_info()
-            device_name = device_info.get('name', 'Unknown') if device_info else 'Unknown'
             
-            filename = f"压力传感器日志_{device_name}_{timestamp}.txt"
+            filename = f"AI分析日志_{timestamp}.txt"
             
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write(self.log_text.get("1.0", tk.END))
-            self.log_message(f"[OK] 日志已保存: {filename}")
+                if hasattr(self, 'ai_log_text'):
+                    f.write(self.ai_log_text.get("1.0", tk.END))
+                else:
+                    f.write("AI分析日志为空\n")
+            self.log_ai_message(f"[OK] AI分析日志已保存: {filename}")
         except Exception as e:
-            self.log_message(f"[ERROR] 保存日志失败: {e}")
+            self.log_ai_message(f"[ERROR] 保存日志失败: {e}")
             
             
     def stop_connection(self):
@@ -1767,10 +1730,9 @@ class PressureSensorUI:
                                     import traceback
                                     traceback.print_exc()
                         
-                        # 显示丢弃的帧数（如果有）
+                        # 显示丢弃的帧数（如果有）- 已禁用日志
                         dropped_frames = len(frame_data_list) - 1
-                        if dropped_frames > 0:
-                            self.log_message(f"⚡ Dropped {dropped_frames} old frames for real-time display")
+                        # 移除丢帧日志信息，避免日志冗余
                     else:
                         # 详细的错误调试信息
                         error_msg = processed_data['error']
@@ -1823,26 +1785,9 @@ class PressureSensorUI:
             self.log_message(f"[ERROR] 更新统计显示出错: {e}")
             
     def log_processed_data(self, processed_data):
-        """记录处理后的数据日志"""
-        try:
-            frame_info = processed_data['original_frame']
-            stats = processed_data['statistics']
-            
-            timestamp = frame_info['timestamp']
-            frame_num = frame_info['frame_number']
-            array_size = processed_data['array_size']
-            jq_applied = processed_data['jq_transform_applied']
-            
-            jq_indicator = "✨" if jq_applied else "[DATA]"
-            
-            log_msg = (f"[{timestamp}] 帧#{frame_num:04d} {jq_indicator} ({array_size}) "
-                      f"最大:{stats['max_value']:3d} 最小:{stats['min_value']:3d} "
-                      f"平均:{stats['mean_value']:6.1f}")
-            
-            self.log_message(log_msg)
-            
-        except Exception as e:
-            self.log_message(f"[ERROR] 记录日志出错: {e}")
+        """记录处理后的数据日志（已禁用帧数据日志）"""
+        # 帧数据日志已被移除，只保留必要的错误信息
+        pass
             
     def calculate_data_rate(self):
         """计算数据速率"""
@@ -1866,52 +1811,19 @@ class PressureSensorUI:
 
             
     def toggle_log_pause(self):
-        """切换日志暂停/继续状态"""
-        self.log_paused = not self.log_paused
-        if self.log_paused:
-            self.pause_log_btn.config(text="▶️ 继续日志")
-            # 强制记录系统消息，不受暂停影响
-            self._force_log_message("[SYSTEM] 日志已暂停")
-        else:
-            self.pause_log_btn.config(text="⏸️ 暂停日志")
-            # 强制记录系统消息，不受暂停影响
-            self._force_log_message("[SYSTEM] 日志已继续")
+        """切换日志暂停/继续状态（保留兼容性）"""
+        # 已移除设备日志，此方法保留用于兼容性
+        pass
 
     def _force_log_message(self, message):
-        """强制记录日志消息（不受暂停影响）"""
-        def add_log():
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            log_entry = f"[{timestamp}] {message}"
-            self.log_text.insert(tk.END, log_entry + "\n")
-            self.log_text.see(tk.END)
-            
-            # 限制日志行数
-            lines = self.log_text.get("1.0", tk.END).count('\n')
-            if lines > 1000:
-                self.log_text.delete("1.0", "100.0")
-                
-        # 在主线程中执行UI更新
-        self.root.after(0, add_log)
+        """强制记录日志消息（重定向到AI日志）"""
+        # 将强制日志重定向到AI日志
+        self.log_ai_message(message)
 
     def log_message(self, message):
-        """添加硬件设备日志消息"""
-        # 如果日志被暂停，跳过记录（除了系统消息）
-        if hasattr(self, 'log_paused') and self.log_paused and not message.startswith("[SYSTEM]"):
-            return
-            
-        def add_log():
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            log_entry = f"[{timestamp}] {message}"
-            self.log_text.insert(tk.END, log_entry + "\n")
-            self.log_text.see(tk.END)
-            
-            # 限制日志行数
-            lines = self.log_text.get("1.0", tk.END).count('\n')
-            if lines > 1000:
-                self.log_text.delete("1.0", "100.0")
-                
-        # 在主线程中执行UI更新
-        self.root.after(0, add_log)
+        """添加日志消息（重定向到AI日志）"""
+        # 将设备日志重定向到AI日志
+        self.log_ai_message(message)
     
     def log_ai_message(self, message):
         """添加AI分析日志消息"""
@@ -1935,9 +1847,15 @@ class PressureSensorUI:
         self.root.after(0, add_ai_log)
         
     def clear_log(self):
-        """清除日志"""
-        self.log_text.delete("1.0", tk.END)
-        self.log_message("📝 日志已清除")
+        """清除日志（保留兼容性）"""
+        # 已移除设备日志，此方法保留用于兼容性
+        pass
+    
+    def clear_ai_log(self):
+        """清除AI分析日志"""
+        if hasattr(self, 'ai_log_text'):
+            self.ai_log_text.delete("1.0", tk.END)
+            self.log_ai_message("📝 AI分析日志已清除")
         
     def integrate_sarcneuro_analysis(self):
         """集成肌少症分析功能"""
@@ -2269,11 +2187,17 @@ class PressureSensorUI:
                                       font=('Microsoft YaHei UI', 14, 'bold'))
                 title_label.pack(pady=(0, 10))
                 
-                # 消息
-                self.message_label = ttk.Label(main_frame, text=message,
+                # 消息框架 - 固定2行高度
+                message_frame = ttk.Frame(main_frame)
+                message_frame.pack(pady=(0, 15), fill=tk.X)
+                message_frame.pack_propagate(False)  # 阻止子控件改变框架大小
+                message_frame.config(height=50)  # 固定高度约为2行文字
+                
+                self.message_label = ttk.Label(message_frame, text=message,
                                              font=('Microsoft YaHei UI', 10),
-                                             wraplength=350, justify=tk.CENTER)
-                self.message_label.pack(pady=(0, 15))
+                                             wraplength=350, justify=tk.CENTER,
+                                             anchor=tk.CENTER)
+                self.message_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
                 
                 # 进度条（支持两种模式）
                 self.progress = ttk.Progressbar(main_frame, mode='determinate',

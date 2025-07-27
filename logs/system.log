@@ -1,0 +1,16 @@
+[2025-07-27 22:39:21] [INFO] [SERVICE] start_service called, is_running=False
+[2025-07-27 22:39:21] [INFO] [SERVICE] 先检查服务健康状态...
+[2025-07-27 22:39:23] [INFO] [SERVICE] 正在启动 SarcNeuro Edge 服务 (端口 8000)...
+[2025-07-27 22:39:25] [INFO] [SERVICE] 服务目录: sarcneuro-edge
+[2025-07-27 22:39:25] [INFO] [SERVICE] 数据目录: sarcneuro-edge
+[2025-07-27 22:39:25] [INFO] [SERVICE] Python可执行文件: C:\Users\lichu\AppData\Local\Programs\Python\Python313\python.exe
+[2025-07-27 22:39:25] [INFO] [SERVICE] 当前工作目录: D:\sarcopenia_app
+[2025-07-27 22:39:25] [INFO] [SERVICE] 是否打包环境: False
+[2025-07-27 22:40:51] [INFO] [SERVICE] start_service called, is_running=False
+[2025-07-27 22:40:51] [INFO] [SERVICE] 先检查服务健康状态...
+[2025-07-27 22:40:53] [INFO] [SERVICE] 正在启动 SarcNeuro Edge 服务 (端口 8000)...
+[2025-07-27 22:40:55] [INFO] [SERVICE] 服务目录: sarcneuro-edge
+[2025-07-27 22:40:55] [INFO] [SERVICE] 数据目录: sarcneuro-edge
+[2025-07-27 22:40:55] [INFO] [SERVICE] Python可执行文件: C:\Users\lichu\AppData\Local\Programs\Python\Python313\python.exe
+[2025-07-27 22:40:55] [INFO] [SERVICE] 当前工作目录: D:\sarcopenia_app
+[2025-07-27 22:40:55] [INFO] [SERVICE] 是否打包环境: False

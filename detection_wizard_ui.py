@@ -12,7 +12,6 @@ import time
 import os
 from datetime import datetime
 from sarcopenia_database import db
-from window_manager import WindowManager, WindowLevel, setup_management_window
 
 class DetectionWizardDialog:
     """检测向导对话框 - 翻页式6步检测"""
@@ -128,15 +127,18 @@ class DetectionWizardDialog:
             }
         }
         
-        # 使用窗口管理器创建对话框（不限制大小，但最大80%）
-        self.dialog = WindowManager.create_managed_window(self.parent, WindowLevel.DIALOG, 
-                                                        f"肌少症检测向导 - {patient_info['name']}",
-                                                        (800, 600))
+        # 创建对话框窗口 - 优化显示避免闪烁
+        self.dialog = tk.Toplevel(self.parent)
+        self.dialog.title(f"🔬 肌少症检测向导 - {patient_info['name']}")
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
         
+        self.dialog.geometry("800x800")  # 增加窗口高度
+        self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
+        
+        # 居中显示
         self.dialog.transient(self.parent)
         
         # 设置图标
@@ -152,7 +154,8 @@ class DetectionWizardDialog:
         # 绑定关闭事件
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # 显示窗口（已经居中）
+        # 居中显示并显示窗口
+        self.center_window()
         self.dialog.deiconify()
         
         # 初始检查：如果当前步骤设备未配置，给出提示
@@ -160,6 +163,15 @@ class DetectionWizardDialog:
         
         # 等待对话框关闭
         self.dialog.wait_window()
+    
+    def center_window(self):
+        """居中显示窗口"""
+        self.dialog.update_idletasks()
+        screen_width = self.dialog.winfo_screenwidth()
+        screen_height = self.dialog.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 800) // 2
+        self.dialog.geometry(f"800x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
