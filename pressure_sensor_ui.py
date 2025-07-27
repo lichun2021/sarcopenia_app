@@ -702,7 +702,8 @@ class PressureSensorUI:
                          relief='flat',      # 平滑无立体效果
                          selectcolor='#4a90e2',  # 选中时的蓝色
                          activeborderwidth=1,  # 悬停时细边框
-                         disabledforeground='#888888')  # 禁用项灰色
+                         disabledforeground='#888888',  # 禁用项灰色
+                         postcommand=lambda: None)  # 减少自动展开行为
         self.root.config(menu=menubar)
         
         # 创建"文件"菜单 (医院风格配色)
@@ -1768,19 +1769,23 @@ class PressureSensorUI:
         except Exception as e:
             self.log_message(f"[ERROR] 更新数据时出错: {e}")
         
-        # 继续更新循环 (5ms = 200 FPS，极致响应速度)
-        self.root.after(5, self.update_data)
+        # 继续更新循环 (22ms ≈ 45 FPS，平衡性能和响应速度)
+        self.root.after(22, self.update_data)
     
     def update_statistics_display(self, statistics):
-        """更新统计信息显示"""
+        """更新统计信息显示（节流以提高性能）"""
         try:
-            for key, label in self.stats_labels.items():
-                if key in statistics:
-                    value = statistics[key]
-                    if isinstance(value, float):
-                        label.config(text=f"{value:.1f}")
-                    else:
-                        label.config(text=str(value))
+            # 节流：每100ms更新一次统计显示，减少UI操作频率
+            current_time = time.time()
+            if not hasattr(self, '_last_stats_update') or current_time - self._last_stats_update >= 0.1:
+                for key, label in self.stats_labels.items():
+                    if key in statistics:
+                        value = statistics[key]
+                        if isinstance(value, float):
+                            label.config(text=f"{value:.1f}")
+                        else:
+                            label.config(text=str(value))
+                self._last_stats_update = current_time
         except Exception as e:
             self.log_message(f"[ERROR] 更新统计显示出错: {e}")
             
