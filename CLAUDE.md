@@ -25,6 +25,21 @@ python test_performance.py
 python date.py
 ```
 
+### Packaging with PyInstaller
+```bash
+# Use the single build script
+./build.bat
+```
+
+**CRITICAL PACKAGING NOTES:**
+- ⚠️ **NEVER exclude modules that are actually used by the project**
+- The following modules are REQUIRED and must be in hiddenimports, NOT in excludes:
+  - `matplotlib` - Used by visualization.py for heatmap rendering
+  - `scipy` - Used by visualization.py (scipy.ndimage)
+  - `pandas` - Used by integration_ui.py, pressure_sensor_ui.py, and sarcneuro-edge
+- Only exclude modules that are truly unused: jupyter, notebook, IPython
+- Always check actual imports before excluding any module in SarcopeniaApp.spec
+
 ### Running the Application
 ```bash
 # Standard version (20 FPS)

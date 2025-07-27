@@ -38,10 +38,12 @@ class PressureSensorUI:
     """主UI控制器类"""
     
     def __init__(self, root):
+        print("[DEBUG] PressureSensorUI.__init__开始")
         self.root = root
         self.root.title("智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
         
         # 先隐藏窗口，避免初始化时的闪烁
+        print("[DEBUG] 隐藏窗口")
         self.root.withdraw()
         
         # 禁用窗口调整大小，减少初始化时的布局计算
@@ -79,8 +81,10 @@ class PressureSensorUI:
         self.device_configured = False
         
         # SarcNeuro Edge 服务
+        print("[DEBUG] 初始化SarcNeuro服务")
         self.sarcneuro_service = None
         self.init_sarcneuro_service()
+        print("[DEBUG] SarcNeuro服务初始化完成")
         
         # 患者和检测管理
         self.current_patient = None
@@ -128,13 +132,17 @@ class PressureSensorUI:
         
         # 重新启用调整大小并显示窗口
         self.root.resizable(True, True)
+        print("[DEBUG] 显示窗口")
         self.root.deiconify()
         
         # 显示启动状态
+        print("[DEBUG] 显示启动状态")
         self._show_startup_status("🔄 正在初始化核心服务...")
         
         # 第二阶段：启动核心服务（200ms后）
+        print("[DEBUG] 安排第二阶段启动")
         self.root.after(200, self._stage2_start_services)
+        print("[DEBUG] __init__完成")
     
     def _stage2_start_services(self):
         """第二阶段：启动核心服务"""
@@ -417,10 +425,9 @@ class PressureSensorUI:
                 
             self.log_message("[OK] 设备配置完成！")
         else:
-            # 用户取消配置，显示警告
+            # 用户取消配置，显示警告但不退出程序
             if not self.device_configured:
-                messagebox.showwarning("配置取消", "需要配置设备才能使用系统！")
-                self.root.after(2000, self.root.quit)  # 2秒后退出
+                messagebox.showinfo("提示", "未配置硬件设备\n\n您仍可以使用以下功能：\n• CSV数据分析\n• 报告生成\n• 患者档案管理")
     
     def update_device_list(self):
         """更新设备选择列表"""
@@ -2411,14 +2418,14 @@ class PressureSensorUI:
                             return result
                         
                         # 继续等待
-                        time.sleep(10)  # 等待10秒
+                        time.sleep(2)  # 等待2秒，更频繁轮询
                         attempt += 1
                     else:
                         raise Exception(f"状态查询失败: HTTP {response.status_code}")
                         
                 except Exception as e:
                     self.log_ai_message(f"[WARN] 状态查询错误: {e}")
-                    time.sleep(5)
+                    time.sleep(2)  # 错误时也缩短等待时间
                     attempt += 1
         
         finally:
@@ -2439,11 +2446,14 @@ class PressureSensorUI:
     
     def import_csv_for_analysis(self):
         """导入CSV文件进行AI分析并生成报告"""
+        print("[DEBUG] import_csv_for_analysis开始执行")
         if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            print("[DEBUG] SARCNEURO不可用，显示错误并返回")
             messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
             return
         
         # 选择CSV文件（支持多选）
+        print("[DEBUG] 打开文件选择对话框")
         file_paths = filedialog.askopenfilenames(
             title="选择压力传感器CSV数据文件（可多选）",
             filetypes=[
@@ -2453,34 +2463,51 @@ class PressureSensorUI:
             initialdir="."
         )
         
+        print(f"[DEBUG] 选择的文件: {file_paths}")
         if not file_paths:
+            print("[DEBUG] 用户取消选择，返回")
             return
         
         # 显示患者信息收集对话框（传入第一个文件用于解析）
+        print("[DEBUG] 显示患者信息对话框")
         patient_info = self.show_patient_info_dialog(file_paths[0])
+        print(f"[DEBUG] 患者信息收集结果: {patient_info is not None}")
         if not patient_info:
+            print("[DEBUG] 用户取消患者信息输入，返回")
             return  # 用户取消了输入
         
         # 如果选择了多个文件，显示文件列表确认
         if len(file_paths) > 1:
+            print(f"[DEBUG] 多文件模式，共{len(file_paths)}个文件")
             files_list = "\n".join([f"• {os.path.basename(f)}" for f in file_paths])
             confirm_msg = f"确认分析以下 {len(file_paths)} 个CSV文件？\n\n{files_list}\n\n患者：{patient_info['name']}\n测试项目：{', '.join(patient_info['test_names'])}"
             
-            if not messagebox.askyesno("确认多文件分析", confirm_msg):
+            confirm_result = messagebox.askyesno("确认多文件分析", confirm_msg)
+            print(f"[DEBUG] 多文件确认结果: {confirm_result}")
+            if not confirm_result:
+                print("[DEBUG] 用户取消多文件分析，返回")
                 return
         
         # 在后台线程中处理分析
         def analyze_csv():
             try:
+                print("[DEBUG] 进入analyze_csv函数")
                 # 更新状态
                 self.log_ai_message("[SCAN] 正在分析CSV文件...")
                 self.root.config(cursor="wait")
                 
+                print(f"[DEBUG] 检查服务状态: is_running={self.sarcneuro_service.is_running}")
                 # 启动服务（如果未启动）
                 if not self.sarcneuro_service.is_running:
+                    print("[DEBUG] 服务未运行，尝试启动...")
                     self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
-                    if not self.sarcneuro_service.start_service():
+                    start_result = self.sarcneuro_service.start_service()
+                    print(f"[DEBUG] 服务启动结果: {start_result}")
+                    if not start_result:
+                        print("[DEBUG] 服务启动失败，抛出异常")
                         raise Exception("无法启动 SarcNeuro Edge 服务")
+                else:
+                    print("[DEBUG] 服务已运行，跳过启动")
                 
                 # 读取所有CSV文件
                 import pandas as pd
@@ -2696,6 +2723,9 @@ class PressureSensorUI:
                 
             except Exception as e:
                 # 只有程序异常才到这里
+                print(f"[DEBUG] analyze_csv发生异常: {e}")
+                import traceback
+                print(f"[DEBUG] 异常堆栈: {traceback.format_exc()}")
                 error_msg = f"程序异常: {str(e)}"
                 self.log_ai_message(f"[ERROR] {error_msg}")
                 self.root.after(0, lambda: messagebox.showerror("程序错误", error_msg))
@@ -2704,7 +2734,9 @@ class PressureSensorUI:
                 self.root.after(0, lambda: self.root.config(cursor=""))
         
         # 启动分析线程
+        print("[DEBUG] 启动分析线程")
         threading.Thread(target=analyze_csv, daemon=True).start()
+        print("[DEBUG] 分析线程已启动，import_csv_for_analysis函数结束")
     
     def generate_pdf_report(self):
         """生成当前数据的报告"""
@@ -3190,6 +3222,7 @@ class PressureSensorUI:
 
     def on_closing(self):
         """窗口关闭事件"""
+        print("[DEBUG] on_closing被调用，程序即将退出")
         try:
             # 重置检测状态，避免影响下次启动
             self.detection_in_progress = False
@@ -3218,10 +3251,15 @@ class PressureSensorUI:
                 except:
                     pass
             
+            print("[DEBUG] 开始停止连接...")
             self.stop_connection()
+            print("[DEBUG] 调用root.quit()...")
             self.root.quit()
+            print("[DEBUG] 调用root.destroy()...")
             self.root.destroy()
-        except Exception:
+            print("[DEBUG] on_closing完成")
+        except Exception as e:
+            print(f"[DEBUG] on_closing发生异常: {e}")
             pass
     
     # ==================== 患者档案管理方法 ====================
@@ -4631,15 +4669,21 @@ class PressureSensorUI:
     
 
 def main():
+    print("[DEBUG] main函数开始执行")
     # 创建主窗口
+    print("[DEBUG] 创建Tkinter主窗口")
     root = tk.Tk()
+    print("[DEBUG] 创建PressureSensorUI实例")
     app = PressureSensorUI(root)
     
     # 设置关闭事件
+    print("[DEBUG] 设置关闭事件处理")
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     
     # 启动界面
+    print("[DEBUG] 开始mainloop")
     root.mainloop()
+    print("[DEBUG] mainloop结束，程序退出")
 
 if __name__ == "__main__":
     main() 

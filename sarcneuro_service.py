@@ -122,12 +122,17 @@ class SarcNeuroEdgeService:
     def start_service(self) -> bool:
         """启动 SarcNeuro Edge 服务"""
         try:
+            print(f"[DEBUG_SERVICE] start_service开始执行")
             # 强制打印调试信息
             force_log(f"start_service called, is_running={self.is_running}")
             
             # 先进行健康检查，看服务是否已经在运行
+            print(f"[DEBUG_SERVICE] 检查健康状态...")
             force_log(f"先检查服务健康状态...")
-            if self._check_service_health():
+            health_result = self._check_service_health()
+            print(f"[DEBUG_SERVICE] 健康检查结果: {health_result}")
+            if health_result:
+                print(f"[DEBUG_SERVICE] 服务已健康，返回True")
                 force_log(f"服务已在运行且健康，直接使用现有服务")
                 self.is_running = True
                 self._start_monitor()
@@ -135,13 +140,18 @@ class SarcNeuroEdgeService:
             
             # 如果内部标记为运行中但健康检查失败，重置状态
             if self.is_running:
+                print(f"[DEBUG_SERVICE] 服务标记为运行但不健康，重置状态")
                 force_log("服务标记为运行但健康检查失败，重置状态")
                 self.is_running = False
                 
+            print(f"[DEBUG_SERVICE] 开始启动服务，端口{self.port}")
             force_log(f"正在启动 SarcNeuro Edge 服务 (端口 {self.port})...")
             
             # 检查端口是否被占用（但服务不健康）
-            if self._is_port_in_use():
+            port_in_use = self._is_port_in_use()
+            print(f"[DEBUG_SERVICE] 端口占用检查: {port_in_use}")
+            if port_in_use:
+                print(f"[DEBUG_SERVICE] 端口被占用，返回False，这可能导致程序退出")
                 logger.warning(f"端口 {self.port} 已被占用但服务不健康")
                 return False
             
@@ -302,17 +312,22 @@ class SarcNeuroEdgeService:
             return False
             
         except Exception as e:
+            print(f"[DEBUG_SERVICE] start_service发生异常: {e}")
             force_log(f"启动服务时发生异常: {e}")
             import traceback
-            force_log(f"异常堆栈: {traceback.format_exc()}")
+            error_trace = traceback.format_exc()
+            print(f"[DEBUG_SERVICE] 异常堆栈: {error_trace}")
+            force_log(f"异常堆栈: {error_trace}")
             return False
     
     def stop_service(self):
         """停止 SarcNeuro Edge 服务"""
         try:
+            print("[DEBUG_SERVICE] stop_service被调用")
             logger.info("正在停止 SarcNeuro Edge 服务...")
             
             # 停止监控线程
+            print("[DEBUG_SERVICE] 停止监控线程")
             self._stop_monitor = True
             if self._monitor_thread and self._monitor_thread.is_alive():
                 self._monitor_thread.join(timeout=5)
