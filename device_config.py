@@ -13,6 +13,7 @@ import sqlite3
 import os
 from datetime import datetime
 from serial_interface import SerialInterface
+from window_manager import WindowManager, WindowLevel, setup_management_window
 
 class DeviceConfigDialog:
     """设备配置引导对话框"""
@@ -50,18 +51,16 @@ class DeviceConfigDialog:
         self.init_database()
         
     def show_dialog(self):
-        """显示配置对话框 - 优化显示避免闪烁"""
-        self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("🔧 设备配置引导")
+        """显示配置对话框"""
+        # 使用窗口管理器创建管理界面
+        self.dialog = WindowManager.create_managed_window(self.parent, WindowLevel.DIALOG, 
+                                                        "设备配置引导",
+                                                        (800, 600))
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
         
-        self.dialog.geometry("800x600")
-        self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
-        
-        # 居中显示
         self.dialog.transient(self.parent)
         
         self.setup_dialog_ui()
@@ -79,20 +78,12 @@ class DeviceConfigDialog:
         # 绑定关闭事件
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_dialog_close)
         
-        # 居中显示并显示窗口
-        self.center_dialog()
+        # 显示窗口（已经居中）
         self.dialog.deiconify()
         
         # 等待用户操作
         self.dialog.wait_window()
         return self.result
-    
-    def center_dialog(self):
-        """居中显示对话框"""
-        self.dialog.update_idletasks()
-        x = self.parent.winfo_rootx() + 50
-        y = self.parent.winfo_rooty() + 50
-        self.dialog.geometry(f"+{x}+{y}")
     
     def start_ui_update_loop(self):
         """启动UI更新循环"""

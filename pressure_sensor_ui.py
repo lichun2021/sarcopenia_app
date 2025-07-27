@@ -22,6 +22,7 @@ from device_config import DeviceConfigDialog, DeviceManager
 from patient_manager_ui import PatientManagerDialog
 from sarcopenia_database import db
 from detection_wizard_ui import DetectionWizardDialog
+from window_manager import WindowManager, WindowLevel, setup_fullscreen
 
 # 导入 SarcNeuro Edge 相关模块
 try:
@@ -40,20 +41,13 @@ class PressureSensorUI:
     def __init__(self, root):
         print("[DEBUG] PressureSensorUI.__init__开始")
         self.root = root
-        self.root.title("智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
         
         # 先隐藏窗口，避免初始化时的闪烁
         print("[DEBUG] 隐藏窗口")
         self.root.withdraw()
         
-        # 禁用窗口调整大小，减少初始化时的布局计算
-        self.root.resizable(False, False)
-        
-        # 预设置窗口位置（避免geometry计算延迟）
-        self.root.geometry("1600x1100+200+50")
-        
-        # 延迟精确居中到UI完成后
-        self._needs_centering = True
+        # 设置窗口标题
+        self.root.title("智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
         
         # 设置背景和基本样式
         self.root.configure(bg='#ffffff')  # 纯白背景，医院风格
@@ -117,32 +111,23 @@ class PressureSensorUI:
         self.root.after(100, self._stage1_show_window)
     
     def _stage1_show_window(self):
-        """第一阶段：显示窗口并居中"""
-        # 精确居中显示
-        if self._needs_centering:
-            self.root.update_idletasks()
-            window_width = 1600
-            window_height = 1100
-            screen_width = self.root.winfo_screenwidth()
-            screen_height = self.root.winfo_screenheight()
-            x = (screen_width - window_width) // 2
-            y = (screen_height - window_height) // 2
-            self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
-            self._needs_centering = False
+        """第一阶段：显示窗口"""
+        print("[DEBUG] 显示窗口并设置全屏")
         
-        # 重新启用调整大小并显示窗口
-        self.root.resizable(True, True)
-        print("[DEBUG] 显示窗口")
+        # 先显示窗口
         self.root.deiconify()
+        
+        # 设置全屏模式（在窗口显示后进行）
+        setup_fullscreen(self.root, "智能肌少症检测系统 - 压力传感器可视化 (模块化版本)")
         
         # 显示启动状态
         print("[DEBUG] 显示启动状态")
         self._show_startup_status("🔄 正在初始化核心服务...")
         
-        # 第二阶段：启动核心服务（200ms后）
+        # 第二阶段：启动核心服务（300ms后，给窗口更多时间完成最大化）
         print("[DEBUG] 安排第二阶段启动")
-        self.root.after(200, self._stage2_start_services)
-        print("[DEBUG] __init__完成")
+        self.root.after(300, self._stage2_start_services)
+        print("[DEBUG] _stage1_show_window完成")
     
     def _stage2_start_services(self):
         """第二阶段：启动核心服务"""
@@ -528,6 +513,14 @@ class PressureSensorUI:
                     # 自动根据设备类型配置数组大小
                     self.auto_config_array_size(device_info['array_size'])
                     
+                    # 强制更新热力图显示区域
+                    if self.visualizer and hasattr(self.visualizer, 'canvas'):
+                        # 更新画布
+                        self.visualizer.canvas.draw_idle()
+                        # 如果有父容器，也更新它
+                        if hasattr(self, 'plot_frame'):
+                            self.plot_frame.update_idletasks()
+                    
                     # 根据设备类型设置模式
                     device_type = device_info.get('device_type', 'single')
                     com_ports = device_info.get('com_ports', 1)
@@ -823,17 +816,10 @@ class PressureSensorUI:
 
     def show_detection_process_dialog(self):
         """显示检测流程对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("检测流程说明")
-        dialog.geometry("750x600")
-        dialog.resizable(True, True)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "检测流程说明", (750, 600))
         dialog.grab_set()
-        
-        # 居中显示
         dialog.transient(self.root)
-        x = self.root.winfo_x() + (self.root.winfo_width() - 750) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 600) // 2
-        dialog.geometry(f"750x600+{x}+{y}")
         
         # 创建滚动文本框架
         main_frame = ttk.Frame(dialog, padding=20)
@@ -958,17 +944,11 @@ class PressureSensorUI:
     
     def show_help_dialog(self):
         """显示操作帮助对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("操作帮助")
-        dialog.geometry("700x650")
-        dialog.resizable(True, True)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "操作帮助", (700, 650))
         dialog.grab_set()
         
-        # 居中显示
         dialog.transient(self.root)
-        x = self.root.winfo_x() + (self.root.winfo_width() - 700) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 650) // 2
-        dialog.geometry(f"700x650+{x}+{y}")
         
         # 创建滚动文本框架
         main_frame = ttk.Frame(dialog, padding=20)
@@ -1126,20 +1106,13 @@ class PressureSensorUI:
 
     def show_about_dialog(self):
         """显示美观的关于对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("关于 - 智能肌少症检测系统")
-        dialog.geometry("720x650")  # 扩大尺寸以显示完整内容
-        dialog.resizable(True, True)  # 允许调整大小
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "关于 - 智能肌少症检测系统", (720, 650))
         dialog.grab_set()
-        
-        # 设置对话框图标和样式
-        dialog.configure(bg='#f8f9fa')
-        
-        # 居中显示
         dialog.transient(self.root)
-        x = self.root.winfo_x() + (self.root.winfo_width() - 720) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 650) // 2
-        dialog.geometry(f"720x650+{x}+{y}")
+        
+        # 设置对话框样式
+        dialog.configure(bg='#f8f9fa')
         
         # 创建滚动框架
         canvas = tk.Canvas(dialog, bg='#f8f9fa', highlightthickness=0)
@@ -1438,7 +1411,7 @@ class PressureSensorUI:
         # 右侧：数据日志和统计 - 医院白色
         right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 0))
-        right_frame.config(width=450)
+        right_frame.config(width=550)  # 增加右侧面板宽度
         
         # 统计信息面板 - 医院风格
         stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
@@ -1487,7 +1460,7 @@ class PressureSensorUI:
         ttk.Label(ai_btn_frame, text="AI分析状态", 
                  style='Hospital.TLabel').pack(side=tk.LEFT)
         
-        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=55, 
+        self.ai_log_text = scrolledtext.ScrolledText(ai_log_frame, width=70,  # 增加宽度
                                                    font=("Consolas", 9),
                                                    bg='#f8f9ff',  # 淡蓝色背景
                                                    fg='#2c3e50',
@@ -1514,7 +1487,7 @@ class PressureSensorUI:
                   command=self.clear_log,
                   style='Hospital.TButton').pack(side=tk.LEFT)
         
-        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=55, 
+        self.log_text = scrolledtext.ScrolledText(hw_log_frame, width=70,  # 增加宽度
                                                 font=("Consolas", 9),
                                                 bg='#ffffff',
                                                 fg='#495057',
@@ -1577,9 +1550,28 @@ class PressureSensorUI:
             # 更新可视化器
             if self.visualizer:
                 self.visualizer.set_array_size(rows, cols)
+                
+                # 强制重新布局热力图
+                if hasattr(self.visualizer, 'canvas'):
+                    # 获取新的图形对象
+                    fig = self.visualizer.get_figure()
+                    
+                    # 更新画布大小
+                    self.visualizer.canvas.figure = fig
+                    
+                    # 强制重绘
+                    self.visualizer.canvas.draw()
+                    
+                    # 更新Tkinter容器
+                    if hasattr(self.visualizer.canvas, 'get_tk_widget'):
+                        tk_widget = self.visualizer.canvas.get_tk_widget()
+                        tk_widget.update_idletasks()
             
             # 更新标题
             self.plot_frame.config(text=f"压力传感器热力图 ({rows}x{cols})")
+            
+            # 更新整个绘图框架的布局
+            self.plot_frame.update_idletasks()
             
             self.log_message(f"[OK] 已自动配置阵列大小: {rows}x{cols}")
             
@@ -1932,14 +1924,12 @@ class PressureSensorUI:
         import os
         import re
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("AI肌少症分析 - 患者信息录入")
-        dialog.geometry("500x650")
-        dialog.resizable(False, False)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "AI肌少症分析 - 患者信息录入", (500, 650))
         dialog.grab_set()
         dialog.transient(self.root)
         
-        # 设置窗口图标（与主程序保持一致）
+        # 设置窗口图标
         try:
             dialog.iconbitmap("icon.ico")
         except:
@@ -1947,12 +1937,6 @@ class PressureSensorUI:
         
         # 设置医院风格背景色
         dialog.config(bg='#f8f9fa')
-        
-        # 居中显示
-        dialog.geometry("+%d+%d" % (
-            self.root.winfo_rootx() + 50, 
-            self.root.winfo_rooty() + 50
-        ))
         
         result = {}
         
@@ -2198,20 +2182,12 @@ class PressureSensorUI:
         """创建加载中对话框"""
         class LoadingDialog:
             def __init__(self, parent, title, message):
-                self.dialog = tk.Toplevel(parent)
-                self.dialog.title(title)
-                self.dialog.geometry("400x200")
-                self.dialog.resizable(False, False)
+                self.dialog = WindowManager.create_managed_window(parent, WindowLevel.DIALOG,
+                                                               title, (400, 200))
                 self.dialog.transient(parent)
                 
                 # 禁用关闭按钮
                 self.dialog.protocol("WM_DELETE_WINDOW", lambda: None)
-                
-                # 居中
-                self.dialog.update_idletasks()
-                x = (self.dialog.winfo_screenwidth() - 400) // 2
-                y = (self.dialog.winfo_screenheight() - 200) // 2
-                self.dialog.geometry(f"400x200+{x}+{y}")
                 
                 # 主框架
                 main_frame = ttk.Frame(self.dialog, padding="20")
@@ -3339,9 +3315,8 @@ class PressureSensorUI:
     
     def create_session_manager_dialog(self, sessions):
         """创建检测会话管理对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("检测会话管理 - 今日会话")
-        dialog.resizable(True, True)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.MANAGEMENT,
+                                                   "检测会话管理 - 今日会话")
         dialog.grab_set()
         dialog.transient(self.root)
         
@@ -3349,20 +3324,7 @@ class PressureSensorUI:
         try:
             dialog.iconbitmap("icon.ico")
         except Exception:
-            # 如果图标文件不存在，使用默认图标
             pass
-        
-        # 居中显示
-        dialog.update_idletasks()
-        screen_width = dialog.winfo_screenwidth()
-        screen_height = dialog.winfo_screenheight()
-        
-        # 设置合适的窗口大小
-        window_width = 1000
-        window_height = 650
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
-        dialog.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
         # 主框架
         main_frame = ttk.Frame(dialog, padding="20")
@@ -3804,8 +3766,46 @@ class PressureSensorUI:
                         self.generate_report_for_session(session_info['id'])
                     return
                 else:
-                    # 未完成的会话，自动恢复（已在上面处理过了，这里不应该到达）
-                    print(f"[DEBUG] 意外情况：今日会话未完成但未被上面的逻辑捕获")
+                    # 未完成的会话，检查是否实际已完成
+                    session_steps = db.get_session_steps(session_info['id'])
+                    completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                    total_steps = session_info.get('total_steps', 6)
+                    
+                    if completed_steps >= total_steps:
+                        # 实际已完成，更新会话状态
+                        print(f"[DEBUG] 会话实际已完成（{completed_steps}/{total_steps}步），更新状态")
+                        db.update_test_session_progress(session_info['id'], total_steps, 'completed')
+                        
+                        # 询问是否生成报告
+                        response = messagebox.askyesno(
+                            "检测已完成",
+                            f"患者 {self.current_patient['name']} 的检测已完成。\n\n"
+                            f"会话名称：{session_info['session_name']}\n"
+                            f"完成步骤：{completed_steps}/{total_steps}\n\n"
+                            "是否生成AI分析报告？",
+                            icon='question'
+                        )
+                        
+                        if response:
+                            # 生成报告
+                            self.generate_report_for_session(session_info['id'])
+                    else:
+                        # 确实未完成，询问是否恢复
+                        response = messagebox.askyesno(
+                            "恢复未完成检测",
+                            f"患者 {self.current_patient['name']} 有未完成的检测。\n\n"
+                            f"会话名称：{session_info['session_name']}\n"
+                            f"进度：{completed_steps}/{total_steps} 步\n\n"
+                            "是否恢复检测？",
+                            icon='question'
+                        )
+                        
+                        if response:
+                            # 恢复检测
+                            self.current_session = session_info
+                            self.detection_in_progress = True
+                            self.start_detection_btn.config(text="🔄 检测中...", state="disabled")
+                            self.show_detection_wizard()
                     return
             
             # 如果当日没有检测记录，开始新的检测
@@ -3944,20 +3944,10 @@ class PressureSensorUI:
     def select_session_to_resume(self, sessions):
         """选择要恢复的检测会话"""
         # 创建会话选择对话框
-        dialog = tk.Toplevel(self.root)
-        dialog.title("选择检测会话")
-        dialog.geometry("700x450")
-        dialog.resizable(True, True)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "选择检测会话", (700, 450))
         dialog.grab_set()
         dialog.transient(self.root)
-        
-        # 居中显示
-        dialog.update_idletasks()
-        screen_width = dialog.winfo_screenwidth()
-        screen_height = dialog.winfo_screenheight()
-        x = (screen_width - 700) // 2
-        y = (screen_height - 450) // 2
-        dialog.geometry(f"700x450+{x}+{y}")
         
         result = None
         
@@ -4526,20 +4516,10 @@ class PressureSensorUI:
     def select_session_for_report(self, sessions):
         """让用户选择要生成报告的检测会话"""
         # 创建选择对话框
-        dialog = tk.Toplevel(self.root)
-        dialog.title("选择检测会话")
-        dialog.geometry("600x400")
-        dialog.resizable(True, True)
+        dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
+                                                   "选择检测会话", (600, 400))
         dialog.grab_set()
         dialog.transient(self.root)
-        
-        # 居中显示
-        dialog.update_idletasks()
-        screen_width = dialog.winfo_screenwidth()
-        screen_height = dialog.winfo_screenheight()
-        x = (screen_width - 600) // 2
-        y = (screen_height - 400) // 2
-        dialog.geometry(f"600x400+{x}+{y}")
         
         selected_session_id = None
         

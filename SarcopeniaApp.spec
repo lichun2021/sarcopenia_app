@@ -27,7 +27,7 @@ a = Analysis(
         'pydantic', 'asyncio', 'jinja2',
         
         # Project modules
-        'serial_interface', 'data_processor', 'visualization', 'device_config', 
+        'serial_interface', 'data_processor', 'visualization', 'device_config', 'window_manager',
         'patient_manager_ui', 'sarcopenia_database', 'detection_wizard_ui',
         'sarcneuro_service', 'logger_utils', 'date', 'port_manager', 'server_status',
         'data_converter', 'patient_info_dialog', 'detection_step_ui',

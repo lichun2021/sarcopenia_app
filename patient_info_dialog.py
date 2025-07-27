@@ -8,6 +8,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
+from window_manager import WindowManager, WindowLevel, setup_dialog
 
 class PatientInfoDialog:
     """患者信息输入对话框"""
@@ -15,18 +16,14 @@ class PatientInfoDialog:
     def __init__(self, parent):
         self.result = None
         
-        # 创建对话框窗口 - 优化显示避免闪烁
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("📋 患者信息录入")
+        # 使用窗口管理器创建对话框（小窗口）
+        self.dialog = WindowManager.create_managed_window(parent, WindowLevel.DIALOG, 
+                                                        "患者信息录入", (450, 400))
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
         
-        self.dialog.geometry("450x400")
-        self.dialog.resizable(False, False)
         self.dialog.grab_set()  # 模态对话框
-        
-        # 居中显示
         self.dialog.transient(parent)
         
         # 设置图标
@@ -38,19 +35,11 @@ class PatientInfoDialog:
         # 创建界面
         self.create_ui()
         
-        # 居中显示并显示窗口
-        self.center_window()
+        # 显示窗口（已经居中）
         self.dialog.deiconify()
         
         # 等待对话框关闭
         self.dialog.wait_window()
-    
-    def center_window(self):
-        """居中显示窗口"""
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (450 // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (400 // 2)
-        self.dialog.geometry(f"450x400+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""

@@ -12,6 +12,7 @@ import time
 import os
 from datetime import datetime
 from sarcopenia_database import db
+from window_manager import WindowManager, WindowLevel, setup_dialog
 
 class DetectionStepDialog:
     """检测步骤对话框"""
@@ -26,16 +27,12 @@ class DetectionStepDialog:
         self.start_time = None
         self.data_file_path = None
         
-        # 创建对话框窗口
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title(f"🔬 第{step_info['number']}步：{step_info['name']}")
-        self.dialog.geometry("600x500")
-        self.dialog.resizable(False, False)
+        # 使用窗口管理器创建对话框（小窗口）
+        self.dialog = WindowManager.create_managed_window(parent, WindowLevel.DIALOG,
+                                                        f"第{step_info['number']}步：{step_info['name']}", 
+                                                        (600, 500))
         self.dialog.grab_set()  # 模态对话框
-        
-        # 居中显示
         self.dialog.transient(parent)
-        self.center_window()
         
         # 设置图标
         try:
@@ -49,14 +46,6 @@ class DetectionStepDialog:
         # 等待对话框关闭
         self.dialog.wait_window()
     
-    def center_window(self):
-        """居中显示窗口"""
-        self.dialog.update_idletasks()
-        screen_width = self.dialog.winfo_screenwidth()
-        screen_height = self.dialog.winfo_screenheight()
-        x = (screen_width - 600) // 2
-        y = (screen_height - 500) // 2
-        self.dialog.geometry(f"600x500+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""

@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 from sarcopenia_database import db
+from window_manager import WindowManager, WindowLevel, setup_management_window
 
 class PatientManagerDialog:
     """患者档案管理对话框"""
@@ -18,18 +19,13 @@ class PatientManagerDialog:
         self.select_mode = select_mode  # 是否为选择模式
         self.selected_patient = None
         
-        # 创建对话框窗口 - 优化显示避免闪烁
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title(title)  # 移除了表情符号
+        # 创建对话框窗口 - 使用窗口管理器
+        self.dialog = WindowManager.create_managed_window(parent, WindowLevel.MANAGEMENT, title)
         
         # 先隐藏窗口，避免初始化时的闪烁
         self.dialog.withdraw()
         
-        self.dialog.geometry("1200x800")
-        self.dialog.resizable(True, True)
         self.dialog.grab_set()  # 模态对话框
-        
-        # 居中显示
         self.dialog.transient(parent)
         
         # 设置图标
@@ -47,21 +43,11 @@ class PatientManagerDialog:
         # 启动刷新监听
         self.start_refresh_listener()
         
-        # 居中显示并显示窗口
-        self.center_window()
+        # 显示窗口（已经居中）
         self.dialog.deiconify()
         
         # 等待对话框关闭
         self.dialog.wait_window()
-    
-    def center_window(self):
-        """居中显示窗口"""
-        self.dialog.update_idletasks()
-        screen_width = self.dialog.winfo_screenwidth()
-        screen_height = self.dialog.winfo_screenheight()
-        x = (screen_width - 1200) // 2
-        y = (screen_height - 800) // 2
-        self.dialog.geometry(f"1200x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
@@ -613,17 +599,11 @@ class PatientEditDialog:
         self.result = None
         self.patient_data = patient_data or {}
         
-        # 创建对话框窗口 - 确保内容完整显示
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title(f"📋 {title}")
-        self.dialog.geometry("700x800")  # 进一步增加窗口高度
-        self.dialog.resizable(True, True)
-        self.dialog.minsize(650, 750)  # 增加最小尺寸
+        # 使用窗口管理器创建对话框（小窗口）
+        self.dialog = WindowManager.create_managed_window(parent, WindowLevel.DIALOG, 
+                                                        title, (700, 800))
         self.dialog.grab_set()  # 模态对话框
-        
-        # 居中显示
         self.dialog.transient(parent)
-        self.center_window()
         
         # 设置图标
         try:
@@ -637,12 +617,6 @@ class PatientEditDialog:
         # 等待对话框关闭
         self.dialog.wait_window()
     
-    def center_window(self):
-        """居中显示窗口"""
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (700 // 2)  # 更新居中计算
-        y = (self.dialog.winfo_screenheight() // 2) - (800 // 2)
-        self.dialog.geometry(f"700x800+{x}+{y}")
     
     def create_ui(self):
         """创建用户界面"""
