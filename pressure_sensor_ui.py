@@ -100,10 +100,21 @@ class PressureSensorUI:
         
         # 界面设置
         self.setup_ui()
-        self.setup_visualizer()
+        # 延迟初始化可视化器，减少启动时间
+        self.visualizer = None
+        self._visualizer_initialized = False
         
         # 分阶段完成初始化以提升响应速度
         self._complete_initialization()
+        
+        # 在主循环空闲时初始化可视化器
+        self.root.after_idle(self._lazy_init_visualizer)
+    
+    def _lazy_init_visualizer(self):
+        """延迟初始化可视化器"""
+        if not self._visualizer_initialized:
+            self.setup_visualizer()
+            self._visualizer_initialized = True
     
     def _complete_initialization(self):
         """分阶段完成初始化，提升启动响应速度"""
@@ -1295,12 +1306,8 @@ class PressureSensorUI:
                 pass
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
         
-    def setup_ui(self):
-        """设置用户界面"""
-        # 创建菜单栏
-        self.create_menubar()
-        
-        # 配置ttk样式为医院风格
+    def _setup_styles(self):
+        """配置TTK样式（只执行一次）"""
         style = ttk.Style()
         style.theme_use('clam')  # 使用清洁的clam主题
         
@@ -1339,6 +1346,16 @@ class PressureSensorUI:
         style.map('Success.TButton',
                  background=[('active', '#218838'),
                            ('pressed', '#1e7e34')])
+    
+    def setup_ui(self):
+        """设置用户界面"""
+        # 创建菜单栏
+        self.create_menubar()
+        
+        # 配置ttk样式为医院风格（使用全局缓存）
+        if not hasattr(self.__class__, '_styles_configured'):
+            self._setup_styles()
+            self.__class__._styles_configured = True
         
         # 主框架 - 医院白色
         main_frame = ttk.Frame(self.root, style='Hospital.TFrame')
@@ -1707,29 +1724,29 @@ class PressureSensorUI:
                         matrix_2d = processed_data['matrix_2d']
                         statistics = processed_data['statistics']
                         
-                        self.visualizer.update_data(matrix_2d, statistics)
+                        # 确保可视化器已初始化
+                        if self.visualizer is not None:
+                            self.visualizer.update_data(matrix_2d, statistics)
+                        elif not self._visualizer_initialized:
+                            # 触发延迟初始化
+                            self._lazy_init_visualizer()
                         
                         # 更新统计显示和日志
                         self.update_statistics_display(statistics)
                         self.log_processed_data(processed_data)
                         
-                        # 通知检测向导有新数据（如果向导正在运行且在记录数据）
-                        has_wizard = hasattr(self, '_active_detection_wizard') and self._active_detection_wizard
-                        is_recording = has_wizard and getattr(self._active_detection_wizard, '_recording_data', False)
-                        
-                        # 每隔一段时间打印一次调试信息（避免日志过多）
-                        if not hasattr(self, '_debug_counter'):
-                            self._debug_counter = 0
-                        self._debug_counter += 1
-                        
-                        
-                        if has_wizard:
-                            if is_recording:
-                                try:
-                                    self._active_detection_wizard.write_csv_data_row(processed_data)
-                                except Exception as e:
-                                    import traceback
-                                    traceback.print_exc()
+                        # 通知检测向导有新数据（如果向导正在运行且在记录数据）- 优化检查
+                        if hasattr(self, '_active_detection_wizard') and self._active_detection_wizard and getattr(self._active_detection_wizard, '_recording_data', False):
+                            # 只有在真正需要时才调用
+                            try:
+                                self._active_detection_wizard.write_csv_data_row(processed_data)
+                            except Exception as e:
+                                # 减少错误日志频率
+                                if not hasattr(self, '_wizard_error_count'):
+                                    self._wizard_error_count = 0
+                                self._wizard_error_count += 1
+                                if self._wizard_error_count % 100 == 0:  # 每100次错误才记录一次
+                                    self.log_ai_message(f"[WARNING] 向导数据写入错误: {e}")
                         
                         # 显示丢弃的帧数（如果有）- 已禁用日志
                         dropped_frames = len(frame_data_list) - 1
@@ -1807,9 +1824,14 @@ class PressureSensorUI:
                 self.last_frame_count = current_frame_count
                 self.last_time = current_time
                 
-                # 更新状态栏
-                self.frame_count_label.config(text=f"📦 接收帧数: {current_frame_count}")
-                self.data_rate_label.config(text=f"📈 数据速率: {self.data_rate} 帧/秒")
+                # 更新状态栏（减少字符串格式化）
+                if not hasattr(self, '_last_displayed_count') or current_frame_count != self._last_displayed_count:
+                    self.frame_count_label.config(text=f"📦 接收帧数: {current_frame_count}")
+                    self._last_displayed_count = current_frame_count
+                
+                if not hasattr(self, '_last_displayed_rate') or self.data_rate != self._last_displayed_rate:
+                    self.data_rate_label.config(text=f"📈 数据速率: {self.data_rate} 帧/秒")
+                    self._last_displayed_rate = self.data_rate
         except:
             pass
                 
@@ -1831,25 +1853,46 @@ class PressureSensorUI:
         self.log_ai_message(message)
     
     def log_ai_message(self, message):
-        """添加AI分析日志消息"""
-        def add_ai_log():
+        """添加AI分析日志消息（优化性能）"""
+        # 限制日志频率，避免过多的UI更新
+        if not hasattr(self, '_last_log_time'):
+            self._last_log_time = 0
+            self._log_queue = []
+        
+        current_time = time.time()
+        
+        # 将消息加入队列
+        self._log_queue.append(message)
+        
+        # 每100ms批量处理一次日志
+        if current_time - self._last_log_time >= 0.1:
+            self._last_log_time = current_time
+            # 批量处理队列中的日志
+            self.root.after(0, self._flush_log_queue)
+    
+    def _flush_log_queue(self):
+        """批量刷新日志队列"""
+        if not hasattr(self, '_log_queue') or not self._log_queue:
+            return
+        
+        if hasattr(self, 'ai_log_text'):
             timestamp = datetime.now().strftime("%H:%M:%S")
-            log_entry = f"[{timestamp}] {message}"
             
-            if hasattr(self, 'ai_log_text'):
-                self.ai_log_text.insert(tk.END, log_entry + "\n")
-                self.ai_log_text.see(tk.END)
-                
-                # 限制日志行数
-                lines = self.ai_log_text.get("1.0", tk.END).count('\n')
-                if lines > 500:
-                    self.ai_log_text.delete("1.0", "50.0")
-            else:
-                # 如果AI日志不存在，fallback到普通日志
-                self.log_message(f"[AI] {message}")
-                
-        # 在主线程中执行UI更新
-        self.root.after(0, add_ai_log)
+            # 批量插入所有待处理的日志
+            batch_content = ""
+            for msg in self._log_queue:
+                batch_content += f"[{timestamp}] {msg}\n"
+            
+            self.ai_log_text.insert(tk.END, batch_content)
+            self.ai_log_text.see(tk.END)
+            
+            # 限制日志行数
+            lines = self.ai_log_text.get("1.0", tk.END).count('\n')
+            if lines > 500:
+                self.ai_log_text.delete("1.0", "50.0")
+        
+        # 清空队列
+        self._log_queue.clear()
         
     def clear_log(self):
         """清除日志（保留兼容性）"""
