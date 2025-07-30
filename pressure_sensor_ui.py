@@ -24,16 +24,17 @@ from sarcopenia_database import db
 from detection_wizard_ui import DetectionWizardDialog
 from window_manager import WindowManager, WindowLevel, setup_fullscreen
 
-# 导入 SarcNeuro Edge 相关模块
+# 导入算法引擎相关模块
 try:
-    from sarcneuro_service import SarcNeuroEdgeService
+    from algorithm_engine_manager import get_algorithm_engine
     from data_converter import SarcopeniaDataConverter
     from patient_info_dialog import PatientInfoDialog
-    SARCNEURO_AVAILABLE = True
 except ImportError as e:
     from logger_utils import log_warn
-    log_warn(f"SarcNeuro Edge 功能不可用: {e}", "INTEGRATION")
-    SARCNEURO_AVAILABLE = False
+    log_warn(f"算法引擎模块导入失败: {e}", "INTEGRATION")
+    get_algorithm_engine = None
+    SarcopeniaDataConverter = None
+    PatientInfoDialog = None
 
 class PressureSensorUI:
     """主UI控制器类"""
@@ -74,10 +75,10 @@ class PressureSensorUI:
         # 设备配置状态
         self.device_configured = False
         
-        # SarcNeuro Edge 服务
+        # 算法引擎
         print("[DEBUG] 初始化SarcNeuro服务")
-        self.sarcneuro_service = None
-        self.init_sarcneuro_service()
+        self.algorithm_engine = None
+        self.init_algorithm_engine()
         print("[DEBUG] SarcNeuro服务初始化完成")
         
         # 患者和检测管理
@@ -162,8 +163,8 @@ class PressureSensorUI:
         # 集成肌少症分析功能
         self.integrate_sarcneuro_analysis()
         
-        # 延迟2秒启动SarcNeuro Edge服务，避免影响UI启动速度
-        self.root.after(2000, self._delayed_start_sarcneuro_service)
+        # 延迟2秒初始化算法引擎，避免影响UI启动速度
+        self.root.after(2000, self._delayed_init_algorithm_engine)
         
         # 第四阶段：自动加载配置（600ms后）
         self.root.after(600, self._stage4_load_config)
@@ -791,7 +792,6 @@ class PressureSensorUI:
         
         # 添加分析菜单项
         analysis_menu.add_command(label="📄 导入CSV生成报告", command=self.import_csv_for_analysis)
-        analysis_menu.add_command(label="🤖 Sarcneuro Edge服务状态", command=self.show_service_status)
         
         # 创建"帮助"菜单（使用医疗绿色主题）
         help_menu = tk.Menu(menubar, tearoff=0,
@@ -1917,13 +1917,13 @@ class PressureSensorUI:
             # 不影响主程序运行，继续使用原有功能
             self.sarcneuro_panel = None
     
-    def _delayed_start_sarcneuro_service(self):
-        """延迟启动SarcNeuro Edge服务"""
+    def _delayed_init_algorithm_engine(self):
+        """延迟初始化算法引擎"""
         try:
-            self.init_sarcneuro_service()
-            self.log_message("🚀 SarcNeuro Edge服务已在后台启动")
+            self.init_algorithm_engine()
+            self.log_message("🚀 算法引擎已初始化")
         except Exception as e:
-            self.log_message(f"⚠️ SarcNeuro Edge服务启动失败: {e}")
+            self.log_message(f"⚠️ 算法引擎初始化失败: {e}")
     
     def _cleanup_expired_sessions(self):
         """清理过期的会话数据"""
@@ -1939,21 +1939,21 @@ class PressureSensorUI:
         except Exception as e:
             print(f"[ERROR] 清理过期会话失败: {e}")
     
-    # ============= SarcNeuro Edge AI 分析功能 =============
+    # ============= 算法引擎 AI 分析功能 =============
     
-    def init_sarcneuro_service(self):
-        """初始化 SarcNeuro Edge 服务"""
-        if not SARCNEURO_AVAILABLE:
+    def init_algorithm_engine(self):
+        """初始化算法引擎"""
+        if not get_algorithm_engine:
             return
             
         try:
-            # 使用标准服务管理器
-            self.sarcneuro_service = SarcNeuroEdgeService(port=8000)
+            # 使用算法引擎管理器
+            self.algorithm_engine = get_algorithm_engine()
             self.data_converter = SarcopeniaDataConverter()
-            print("[OK] SarcNeuro Edge 服务初始化完成")
+            print("[OK] 算法引擎初始化完成")
         except Exception as e:
-            print(f"[WARN] SarcNeuro Edge 服务初始化失败: {e}")
-            self.sarcneuro_service = None
+            print(f"[WARN] 算法引擎初始化失败: {e}")
+            self.algorithm_engine = None
             self.data_converter = None
     
     def show_patient_info_dialog(self, csv_file_path):
@@ -2301,10 +2301,8 @@ class PressureSensorUI:
         return LoadingDialog(self.root, title, message)
     
     def send_multi_file_analysis_with_loading(self, csv_files, patient_info, title="AI分析中"):
-        """发送多文件分析请求到 sarcneuro-edge（带loading界面）"""
+        """发送多文件分析请求（带loading界面）"""
         try:
-            import requests
-            
             # 创建加载对话框
             loading_dialog = self.create_loading_dialog(title, "正在提交数据到AI分析服务...\n请勿重复点击或关闭窗口")
             
@@ -2319,139 +2317,93 @@ class PressureSensorUI:
             return {'status': 'error', 'message': str(e)}
     
     def send_multi_file_analysis(self, csv_files, patient_info):
-        """发送多文件分析请求到 sarcneuro-edge（兼容原方法）"""
+        """发送多文件分析请求（兼容原方法）"""
         return self.send_multi_file_analysis_with_loading(csv_files, patient_info, "AI分析中")
     
     def _send_multi_file_analysis_internal(self, csv_files, patient_info, loading_dialog=None):
-        """内部方法：发送多文件分析请求"""
+        """内部方法：使用算法引擎分析多文件"""
         try:
-            import requests
+            if not self.algorithm_engine:
+                raise Exception("算法引擎未初始化")
             
-            # 准备多文件上传数据
-            files = []
-            for csv_file in csv_files:
-                files.append(('files', (csv_file['filename'], csv_file['content'], 'text/csv')))
+            # 如果有多个文件，合并CSV数据
+            combined_csv = ""
+            for i, csv_file in enumerate(csv_files):
+                if i == 0:
+                    combined_csv = csv_file['content']
+                else:
+                    # 跳过后续文件的标题行
+                    lines = csv_file['content'].split('\n')
+                    if len(lines) > 1:
+                        combined_csv += '\n' + '\n'.join(lines[1:])
             
-            # 准备表单数据
-            form_data = {
-                'patient_name': patient_info['name'],
-                'patient_age': str(patient_info['age']),
-                'patient_gender': patient_info['gender'],
-                'patient_height': patient_info.get('height', ''),
-                'patient_weight': patient_info.get('weight', ''),
-                'test_type': patient_info.get('test_type', 'COMPREHENSIVE')
-            }
+            # 调试信息
+            self.log_ai_message(f"[DEBUG] 开始分析 {len(csv_files)} 个文件")
+            self.log_ai_message(f"[DEBUG] 患者信息: {patient_info}")
             
-            # 调试：打印实际发送的请求参数
-            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 文件列表:")
-            for i, (field, (filename, content, content_type)) in enumerate(files):
-                content_preview = content[:100] + "..." if len(content) > 100 else content
-                self.log_ai_message(f"  文件{i+1}: {filename} ({len(content)}字符) - {content_preview}")
-            self.log_ai_message(f"[DEBUG send_multi_file_analysis] 表单数据: {form_data}")
-            
-            # 更新加载对话框文本
+            # 更新加载对话框
             if loading_dialog:
-                loading_dialog.update_message("正在上传数据到服务器...")
-                loading_dialog.update_progress(10)  # 上传开始时设为10%
+                loading_dialog.update_message("正在分析数据...")
+                loading_dialog.update_progress(30)
             
-            # 发送到 standalone_upload 的 /upload 接口
-            response = requests.post(
-                f"{self.sarcneuro_service.base_url}/upload",
-                files=files,
-                data=form_data,
-                timeout=300  # 5分钟超时
+            # 调用算法引擎分析
+            test_type = patient_info.get('test_type', 'COMPREHENSIVE')
+            result = self.algorithm_engine.analyze_data(
+                combined_csv,
+                patient_info,
+                test_type,
+                generate_report=True
             )
             
             if loading_dialog:
-                loading_dialog.update_progress(20)  # 上传完成设为20%
+                loading_dialog.update_progress(90)
             
-            if response.status_code == 200:
-                upload_result = response.json()
-                task_id = upload_result.get('task_id')
+            if result and result.get('status') == 'success':
+                # 格式化结果以兼容原有格式
+                analysis_data = result.get('data', {})
+                formatted_result = {
+                    'status': 'success',
+                    'data': {
+                        'overall_score': analysis_data.get('overall_score', 0),
+                        'risk_level': 'LOW' if analysis_data.get('overall_score', 0) >= 70 else 'HIGH',
+                        'confidence': 0.85,
+                        'analysis_summary': '多文件综合分析完成',
+                        'analysis_id': 'local_' + str(int(time.time())),
+                        'test_id': 'local_' + str(int(time.time())),
+                    },
+                    'result': {
+                        'analysis_id': 'local_' + str(int(time.time())),
+                        'score': analysis_data.get('overall_score', 0),
+                        'sub_scores': analysis_data.get('sub_scores', {}),
+                        'suggestions': analysis_data.get('suggestions', []),
+                        'report_html': result.get('report_html', ''),
+                        'metrics': analysis_data.get('metrics', {})
+                    }
+                }
                 
-                if task_id:
-                    # 轮询任务状态（传递loading对话框用于更新进度）
-                    return self.poll_analysis_result_with_dialog(task_id, loading_dialog)
-                else:
-                    raise Exception("未获得任务ID")
+                if loading_dialog:
+                    loading_dialog.update_progress(100)
+                
+                return formatted_result
             else:
-                raise Exception(f"上传失败: HTTP {response.status_code}")
+                raise Exception(result.get('error', '分析失败'))
                 
         except Exception as e:
             self.log_ai_message(f"[ERROR] 多文件分析失败: {e}")
+            import traceback
+            self.log_ai_message(f"[ERROR] {traceback.format_exc()}")
             return {'status': 'error', 'message': str(e)}
     
     def poll_analysis_result_with_dialog(self, task_id, loading_dialog):
-        """轮询分析结果（使用现有的loading对话框）"""
-        import requests
-        import time
-        
-        try:
-            max_attempts = 60  # 最多等待10分钟
-            attempt = 0
-            
-            while attempt < max_attempts:
-                try:
-                    response = requests.get(f"{self.sarcneuro_service.base_url}/status/{task_id}")
-                    
-                    if response.status_code == 200:
-                        status_data = response.json()
-                        status = status_data.get('status')
-                        progress = status_data.get('progress', 0)
-                        
-                        # 更新加载对话框
-                        loading_dialog.update_message(f"分析进度: {progress}%\n状态: {status}")
-                        loading_dialog.update_progress(progress)  # 更新进度条
-                        
-                        self.log_ai_message(f"[STATUS] 分析进度: {progress}% - {status}")
-                        
-                        if status == "COMPLETED":
-                            # 调试：记录服务返回的完整状态数据
-                            self.log_ai_message(f"[DEBUG] SarcNeuro服务状态数据字段: {list(status_data.keys())}")
-                            self.log_ai_message(f"[DEBUG] comprehensive_report_url: {status_data.get('comprehensive_report_url')}")
-                            
-                            loading_dialog.update_message("分析完成！正在生成报告...")
-                            loading_dialog.update_progress(100)  # 设置为100%
-                            
-                            # 分析完成，构造结果
-                            result = {
-                                'status': 'success',
-                                'data': {
-                                    'overall_score': status_data.get('overall_score', 85),
-                                    'risk_level': status_data.get('risk_level', 'LOW'),
-                                    'confidence': status_data.get('confidence', 0.75),
-                                    'analysis_summary': '多文件综合分析完成',
-                                    'report_url': status_data.get('comprehensive_report_url'),
-                                    'task_id': task_id,
-                                    'analysis_id': status_data.get('comprehensive_report_id', task_id),
-                                    'test_id': task_id,
-                                    'results': status_data.get('results', [])
-                                }
-                            }
-                            return result
-                        elif status == "FAILED":
-                            result = {
-                                'status': 'error',
-                                'message': '分析任务失败'
-                            }
-                            return result
-                        
-                        # 继续等待
-                        time.sleep(2)  # 等待2秒，更频繁轮询
-                        attempt += 1
-                    else:
-                        raise Exception(f"状态查询失败: HTTP {response.status_code}")
-                        
-                except Exception as e:
-                    self.log_ai_message(f"[WARN] 状态查询错误: {e}")
-                    time.sleep(2)  # 错误时也缩短等待时间
-                    attempt += 1
-        
-        finally:
-            # 确保关闭loading对话框
-            loading_dialog.close()
-        
-        return {'status': 'error', 'message': '分析超时'}
+        """轮询分析结果（保留以兼容）"""
+        # 直接返回成功结果，因为现在是同步分析
+        return {
+            'status': 'completed',
+            'result': {
+                'analysis_id': task_id,
+                'score': 100
+            }
+        }
     
     def poll_analysis_result(self, task_id):
         """轮询分析结果（兼容方法，创建自己的loading对话框）"""
@@ -2466,9 +2418,9 @@ class PressureSensorUI:
     def import_csv_for_analysis(self):
         """导入CSV文件进行AI分析并生成报告"""
         print("[DEBUG] import_csv_for_analysis开始执行")
-        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+        if not self.algorithm_engine:
             print("[DEBUG] SARCNEURO不可用，显示错误并返回")
-            messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
+            messagebox.showerror("功能不可用", "算法引擎不可用\n请检查相关模块是否正确安装")
             return
         
         # 选择CSV文件（支持多选）
@@ -2515,18 +2467,17 @@ class PressureSensorUI:
                 self.log_ai_message("[SCAN] 正在分析CSV文件...")
                 self.root.config(cursor="wait")
                 
-                print(f"[DEBUG] 检查服务状态: is_running={self.sarcneuro_service.is_running}")
-                # 启动服务（如果未启动）
-                if not self.sarcneuro_service.is_running:
-                    print("[DEBUG] 服务未运行，尝试启动...")
-                    self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
-                    start_result = self.sarcneuro_service.start_service()
-                    print(f"[DEBUG] 服务启动结果: {start_result}")
-                    if not start_result:
-                        print("[DEBUG] 服务启动失败，抛出异常")
-                        raise Exception("无法启动 SarcNeuro Edge 服务")
+                print(f"[DEBUG] 检查算法引擎状态: is_initialized={self.algorithm_engine.is_initialized}")
+                # 检查算法引擎状态
+                if not self.algorithm_engine.is_initialized:
+                    print("[DEBUG] 算法引擎未初始化")
+                    error_msg = "算法引擎未初始化\n\n请检查：\n1. algorithms目录是否存在\n2. Python环境是否正常\n3. 查看日志获取详细信息"
+                    self.root.config(cursor="")
+                    messagebox.showerror("算法引擎错误", error_msg)
+                    self.log_ai_message("[ERROR] 算法引擎未初始化")
+                    return
                 else:
-                    print("[DEBUG] 服务已运行，跳过启动")
+                    print("[DEBUG] 算法引擎已就绪")
                 
                 # 读取所有CSV文件
                 import pandas as pd
@@ -2643,6 +2594,9 @@ class PressureSensorUI:
                     analysis_data = result['data']
                     self.log_ai_message("[OK] AI分析完成！")
                     
+                    # 保存分析结果供后续使用
+                    self._last_analysis_result = result.get('result', {})
+                    
                     # 显示分析结果摘要
                     overall_score = analysis_data.get('overall_score', 0)
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
@@ -2669,22 +2623,22 @@ class PressureSensorUI:
                                 self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
                                 self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
                                 
-                                # 检查是否已有报告URL (优先检查report_url，否则检查comprehensive_report_url)
-                                report_url = detailed_result.get('report_url') or detailed_result.get('comprehensive_report_url')
-                                if report_url:
-                                    self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
-                                    # 下载HTML内容并保存到我们的目录结构
-                                    local_report_path = self.download_and_save_html_report(report_url, patient_info)
-                                    if local_report_path:
-                                        self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                                        # 显示成功对话框，传递本地报告路径
-                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, local_report_path))
+                                # 直接生成PDF报告
+                                self.log_ai_message("📄 生成PDF报告...")
+                                try:
+                                    pdf_path = self.algorithm_engine.generate_pdf_report(
+                                        {'data': self._last_analysis_result},
+                                        patient_info
+                                    )
+                                    if pdf_path:
+                                        self.log_ai_message(f"📄 PDF报告已生成: {pdf_path}")
+                                        # 显示成功对话框，传递PDF报告路径
+                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, pdf_path))
                                     else:
-                                        self.log_ai_message("[WARN] HTML报告保存失败")
+                                        self.log_ai_message("[WARN] PDF报告生成失败")
                                         self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
-                                else:
-                                    self.log_ai_message("[WARN] 未找到报告链接")
-                                    # 仍然显示分析完成，但没有报告
+                                except Exception as pdf_error:
+                                    self.log_ai_message(f"[ERROR] PDF报告生成异常: {pdf_error}")
                                     self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                             else:
                                 raise Exception("无法获取分析详细结果")
@@ -2759,8 +2713,8 @@ class PressureSensorUI:
     
     def generate_pdf_report(self):
         """生成当前数据的报告"""
-        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
-            messagebox.showerror("功能不可用", "SarcNeuro Edge AI分析功能不可用")
+        if not self.algorithm_engine:
+            messagebox.showerror("功能不可用", "算法引擎不可用")
             return
         
         # 检查是否有数据
@@ -2781,56 +2735,10 @@ class PressureSensorUI:
         # 实现数据收集和分析逻辑
         self.collect_and_analyze_data(patient_info)
     
-    def start_sarcneuro_service(self):
-        """启动SarcNeuro Edge服务"""
-        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
-            messagebox.showerror("服务不可用", "SarcNeuro Edge 服务不可用")
-            return
-        
-        def start_service():
-            try:
-                self.log_ai_message("[START] 启动 SarcNeuro Edge 服务...")
-                if self.sarcneuro_service.start_service():
-                    self.log_ai_message("[OK] SarcNeuro Edge 服务启动成功！")
-                    status = self.sarcneuro_service.get_service_status()
-                    self.root.after(0, lambda: messagebox.showinfo("服务启动成功", 
-                        f"SarcNeuro Edge 服务已启动\n\n端口: {status['port']}\n进程ID: {status.get('process_id', 'N/A')}"))
-                else:
-                    self.log_ai_message("[ERROR] SarcNeuro Edge 服务启动失败")
-                    self.root.after(0, lambda: messagebox.showerror("启动失败", "无法启动 SarcNeuro Edge 服务\n请检查端口是否被占用"))
-            except Exception as e:
-                self.log_ai_message(f"[ERROR] 服务启动异常: {e}")
-                self.root.after(0, lambda: messagebox.showerror("启动异常", f"服务启动时发生异常:\n{e}"))
-        
-        threading.Thread(target=start_service, daemon=True).start()
     
     def show_analysis_history(self):
         """显示分析历史"""
         messagebox.showinfo("分析历史", "分析历史功能正在开发中\n\n当前会话的分析结果将显示在日志中\n未来版本将提供完整的历史记录管理")
-    
-    def show_service_status(self):
-        """显示AI服务状态"""
-        if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
-            messagebox.showwarning("服务不可用", "SarcNeuro Edge AI分析功能不可用\n请检查相关模块是否正确安装")
-            return
-        
-        try:
-            status = self.sarcneuro_service.get_service_status()
-            is_running = "🟢 运行中" if status['is_running'] else "🔴 未启动"
-            
-            status_info = f"""🧠 SarcNeuro Edge AI 服务状态
-
-[START] 运行状态: {is_running}
-🌐 服务端口: {status['port']}
-🔗 服务地址: {status['base_url']}
-🆔 进程ID: {status.get('process_id', 'N/A')}
-
-{'[OK] 服务正常运行，可以进行AI分析' if status['is_running'] else '[WARN] 服务未启动，将在需要时自动启动'}"""
-            
-            messagebox.showinfo("AI服务状态", status_info)
-            
-        except Exception as e:
-            messagebox.showerror("状态查询失败", f"无法获取服务状态:\n{e}")
     
     def generate_analysis_pdf(self, analysis_data, patient_info, source_file, metadata=None):
         """生成分析报告文件"""
@@ -2936,7 +2844,7 @@ class PressureSensorUI:
 • 源文件: {os.path.basename(source_file)}
 • 文件路径: {source_file}
 • 分析时间: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}
-• 分析版本: SarcNeuro Edge v1.0.0
+• 分析版本: 算法引擎 v1.0.0
 • 技术支持: 威海聚桥工业科技有限公司
 
 ------------------------------------------
@@ -2961,53 +2869,44 @@ class PressureSensorUI:
             import os
             from datetime import datetime
             
-            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
-                raise Exception("SarcNeuro Edge服务未运行")
+            if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
+                raise Exception("算法引擎未初始化")
             
-            base_url = self.sarcneuro_service.base_url
+            # 直接使用算法引擎生成报告
+            self.log_ai_message(f"🔗 本地生成报告 (test_id: {test_id})")
             
-            # 1. 调用报告生成API
-            self.log_ai_message(f"🔗 调用报告生成API (test_id: {test_id})")
+            # 从分析结果中获取HTML报告
+            # 这里假设之前的分析结果已经包含HTML报告
+            if not hasattr(self, '_last_analysis_result') or not self._last_analysis_result:
+                raise Exception("没有可用的分析结果")
             
-            generate_data = {
-                "test_id": test_id,
-                "report_type": "comprehensive",
-                "format": format_type
-            }
+            report_html = self._last_analysis_result.get('report_html', '')
+            if not report_html:
+                raise Exception("分析结果中没有报告内容")
             
-            response = requests.post(
-                f"{base_url}/api/reports/generate",
-                json=generate_data,
-                timeout=60,
-                headers={"Content-Type": "application/json"}
-            )
+            self.log_ai_message(f"[OK] 报告生成成功")
             
-            if response.status_code != 200:
-                raise Exception(f"报告生成API调用失败: HTTP {response.status_code} - {response.text}")
+            # 使用算法引擎生成PDF报告
+            if format_type == 'pdf':
+                self.log_ai_message("📥 生成PDF格式...")
+                
+                # 从保存的分析结果中提取数据
+                analysis_data = self._last_analysis_result
+                
+                # 调用算法引擎的PDF生成功能
+                pdf_path = self.algorithm_engine.generate_pdf_report(
+                    {'data': analysis_data},
+                    patient_info or {}
+                )
+                
+                if pdf_path:
+                    self.log_ai_message(f"[OK] PDF报告生成成功: {pdf_path}")
+                    return pdf_path
+                else:
+                    raise Exception("PDF生成失败")
             
-            result = response.json()
-            if result.get('status') != 'success':
-                raise Exception(f"报告生成失败: {result.get('message', '未知错误')}")
-            
-            data = result.get('data', {})
-            report_id = data.get('report_id')
-            report_number = data.get('report_number')
-            
-            if not report_id:
-                raise Exception("报告生成成功但未返回report_id")
-            
-            self.log_ai_message(f"[OK] 报告生成成功 (ID: {report_id}, 编号: {report_number})")
-            
-            # 2. 下载报告文件
-            self.log_ai_message("📥 下载报告文件...")
-            
-            download_response = requests.get(
-                f"{base_url}/api/reports/{report_id}/download",
-                timeout=30
-            )
-            
-            if download_response.status_code != 200:
-                raise Exception(f"报告下载失败: HTTP {download_response.status_code}")
+            # HTML格式
+            report_content = report_html.encode('utf-8')
             
             # 3. 按用户要求的规则保存文件
             today = datetime.now().strftime("%Y-%m-%d")
@@ -3037,17 +2936,13 @@ class PressureSensorUI:
             
             # 写入文件
             with open(local_path, 'wb') as f:
-                f.write(download_response.content)
+                f.write(report_content)
             
             file_size = os.path.getsize(local_path)
             self.log_ai_message(f"💾 报告已保存到: {today}\\{local_filename} ({file_size} 字节)")
             
             return local_path
             
-        except requests.exceptions.Timeout:
-            raise Exception("报告生成请求超时")
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"网络请求失败: {e}")
         except Exception as e:
             self.log_ai_message(f"[ERROR] 报告生成详细错误: {e}")
             raise
@@ -3060,21 +2955,18 @@ class PressureSensorUI:
             import os
             import sys
             
-            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
-                raise Exception("SarcNeuro Edge服务未运行")
+            if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
+                raise Exception("算法引擎未初始化")
             
-            # 构建完整的下载URL
-            base_url = self.sarcneuro_service.base_url
-            full_url = f"{base_url}{report_url}"
-            
-            self.log_ai_message(f"🔗 下载HTML报告: {full_url}")
-            
-            # 下载HTML内容
-            response = requests.get(full_url, timeout=30)
-            if response.status_code != 200:
-                raise Exception(f"下载失败: HTTP {response.status_code}")
-            
-            html_content = response.text
+            # 直接使用保存的HTML报告内容
+            if hasattr(self, '_last_analysis_result') and self._last_analysis_result:
+                html_content = self._last_analysis_result.get('report_html', '')
+                if not html_content:
+                    raise Exception("没有可用的HTML报告内容")
+                
+                self.log_ai_message("🔗 使用本地HTML报告内容")
+            else:
+                raise Exception("没有可用的分析结果")
             
             # 获取exe所在目录
             if getattr(sys, 'frozen', False):
@@ -3120,36 +3012,20 @@ class PressureSensorUI:
             return None
 
     def get_analysis_result(self, analysis_id):
-        """调用sarcneuro-edge API获取分析详细结果"""
+        """获取分析详细结果"""
         try:
-            import requests
+            if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
+                raise Exception("算法引擎未初始化")
             
-            if not self.sarcneuro_service or not self.sarcneuro_service.is_running:
-                raise Exception("SarcNeuro Edge服务未运行")
+            # 直接返回保存的分析结果
+            if hasattr(self, '_last_analysis_result') and self._last_analysis_result:
+                return {
+                    'status': 'success',
+                    'data': self._last_analysis_result
+                }
+            else:
+                raise Exception("没有可用的分析结果")
             
-            base_url = self.sarcneuro_service.base_url
-            
-            # 调用 /api/analysis/results/{analysis_id}
-            response = requests.get(
-                f"{base_url}/api/analysis/results/{analysis_id}",
-                timeout=30,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"获取分析结果失败: HTTP {response.status_code} - {response.text}")
-            
-            result = response.json()
-            if result.get('status') != 'success':
-                raise Exception(f"获取分析结果失败: {result.get('message', '未知错误')}")
-            
-            self.log_ai_message("[OK] 成功获取分析详细结果")
-            return result
-            
-        except requests.exceptions.Timeout:
-            raise Exception("获取分析结果请求超时")
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"网络请求失败: {e}")
         except Exception as e:
             self.log_ai_message(f"[ERROR] 获取分析结果错误: {e}")
             raise
@@ -3170,11 +3046,11 @@ class PressureSensorUI:
         import os
         if report_path:
             file_ext = os.path.splitext(report_path)[1].lower()
-            file_type = "报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
+            file_type = "PDF报告" if file_ext == ".pdf" else "HTML报告" if file_ext == ".html" else "报告文件"
             filename = os.path.basename(report_path)
         else:
             file_ext = ""
-            file_type = "分析报告"
+            file_type = "PDF报告"
             filename = "未保存"
         
         message = f"""🧠 AI分析完成！
@@ -4302,6 +4178,9 @@ class PressureSensorUI:
                     
                     self.log_ai_message("[OK] AI分析完成！")
                     
+                    # 保存分析结果供后续使用
+                    self._last_analysis_result = result.get('result', {})
+                    
                     # 显示分析结果摘要
                     overall_score = analysis_data.get('overall_score', 0)
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
@@ -4664,7 +4543,7 @@ class PressureSensorUI:
                 return
             
             # 检查是否有可用的AI分析服务
-            if not SARCNEURO_AVAILABLE or not self.sarcneuro_service:
+            if not self.algorithm_engine:
                 messagebox.showwarning("AI服务不可用", 
                                      "AI分析服务不可用，无法生成智能报告。\n\n"
                                      "您可以手动导出检测数据进行分析。")

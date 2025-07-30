@@ -16026,3 +16026,16 @@
 2025-07-27 22:41:26,742 [DEBUG] Starting new HTTP connection (1): 127.0.0.1:8000
 2025-07-27 22:41:26,744 [DEBUG] http://127.0.0.1:8000 "POST /system/shutdown HTTP/1.1" 404 22
 2025-07-27 22:41:26,758 [INFO] 服务进程已终止
+2025-07-30 15:17:36,145 [ERROR] 算法引擎初始化失败: 算法目录不存在: algorithms
+2025-07-30 15:17:36,146 [ERROR] Traceback (most recent call last):
+  File "D:\sarcopenia_app\algorithm_engine_manager.py", line 85, in _initialize_modules
+    raise FileNotFoundError(f"算法目录不存在: {self.algorithms_dir}")
+FileNotFoundError: 算法目录不存在: algorithms
+
+2025-07-30 16:24:30,439 [INFO] 开始分析数据 - 患者: CES
+2025-07-30 16:24:30,442 [INFO] 分析完成，耗时: 0.00秒
+2025-07-30 16:24:30,457 [WARNING] pdfkit未安装，尝试使用weasyprint
+2025-07-30 16:24:30,458 [WARNING] weasyprint未安装，尝试使用reportlab
+2025-07-30 16:24:30,612 [WARNING] 没有可用的PDF生成库，生成文本格式报告
+2025-07-30 16:24:30,613 [INFO] 文本报告生成成功: D:\sarcopenia_app\2025-07-30\肌少症分析报告_CES_20250730_162430.pdf
+2025-07-30 16:24:30,613 [INFO] PDF报告生成成功: D:\sarcopenia_app\2025-07-30\肌少症分析报告_CES_20250730_162430.pdf
