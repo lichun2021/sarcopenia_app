@@ -9,7 +9,7 @@ import time
 import traceback
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
 import threading
 from queue import Queue, Empty
@@ -84,9 +84,9 @@ def load_config():
     """加载配置文件"""
     config = configparser.ConfigParser()
     
-    # 默认配置
+    # 默认配置 - 优先使用gemsage目录
     defaults = {
-        'algorithms_dir': 'algorithms',
+        'algorithms_dir': 'gemsage',
         'enable_async': 'false',
         'timeout': '300',
         'cache_results': 'false',
@@ -126,6 +126,7 @@ class AlgorithmEngineManager:
         self.algorithms_dir = Path(algorithms_dir or app_config['algorithms_dir'])
         self.is_initialized = False
         self.analyzer = None
+        self.ai_engine = None  # gemsage AI评估引擎
         self.report_generator = None
         self.async_client = None
         self.cache = {} if app_config['cache_results'] else None
@@ -142,28 +143,56 @@ class AlgorithmEngineManager:
             if algorithms_path not in sys.path:
                 sys.path.insert(0, algorithms_path)
             
-            # 检查算法目录是否存在
-            if not self.algorithms_dir.exists():
-                logger.warning(f"算法目录不存在: {self.algorithms_dir}")
-                # 创建模拟的分析器和报告生成器
-                self.analyzer = MockPressureAnalysisCore()
-                self.report_generator = MockReportGenerator()
-                self.is_initialized = True
-                logger.info("使用模拟算法引擎初始化成功")
-                return
+            # 优先尝试导入gemsage，即使算法目录不存在
             
-            # 导入核心算法模块
-            logger.info(f"从 {algorithms_path} 导入算法模块")
+            # 优先尝试导入gemsage模块
+            logger.info(f"尝试导入gemsage分析引擎")
             try:
-                from core_calculator import PressureAnalysisCore
+                # 添加gemsage目录到路径
+                gemsage_path = os.path.join(os.path.dirname(__file__), 'gemsage')
+                if gemsage_path not in sys.path:
+                    sys.path.insert(0, gemsage_path)
+                
+                from gemsage.core_calculator import PressureAnalysisCore
                 self.analyzer = PressureAnalysisCore()
+                logger.info("成功导入gemsage.core_calculator.PressureAnalysisCore")
                 
                 # 导入报告生成器
-                from full_medical_report_generator import FullMedicalReportGenerator
-                self.report_generator = FullMedicalReportGenerator()
+                try:
+                    from gemsage.ai_assessment_engine import AIAssessmentEngine
+                    self.ai_engine = AIAssessmentEngine()
+                    logger.info("成功导入gemsage.ai_assessment_engine.AIAssessmentEngine")
+                except ImportError as e:
+                    logger.warning(f"无法导入AI评估引擎: {e}")
+                    self.ai_engine = None
+                
+                # 尝试导入报告生成器
+                try:
+                    from full_medical_report_generator import FullMedicalReportGenerator
+                    self.report_generator = FullMedicalReportGenerator()
+                except ImportError:
+                    self.report_generator = MockReportGenerator()
+                    
             except ImportError as e:
-                logger.warning(f"无法导入真实算法模块: {e}")
-                # 使用模拟模块
+                logger.warning(f"无法导入gemsage模块: {e}")
+                # 回退到传统算法目录
+                logger.info(f"从 {algorithms_path} 导入算法模块")
+                try:
+                    from core_calculator import PressureAnalysisCore
+                    self.analyzer = PressureAnalysisCore()
+                    
+                    # 导入报告生成器
+                    from full_medical_report_generator import FullMedicalReportGenerator
+                    self.report_generator = FullMedicalReportGenerator()
+                except ImportError as e2:
+                    logger.warning(f"无法导入传统算法模块: {e2}")
+                    # 使用模拟模块
+                    self.analyzer = MockPressureAnalysisCore()
+                    self.report_generator = MockReportGenerator()
+            
+            # 如果analyzer仍为None，使用mock
+            if self.analyzer is None:
+                logger.warning("所有算法引擎导入失败，使用模拟引擎")
                 self.analyzer = MockPressureAnalysisCore()
                 self.report_generator = MockReportGenerator()
             
@@ -227,10 +256,27 @@ class AlgorithmEngineManager:
                 result = self._analyze_sync(csv_data, patient_info, test_type)
             
             if result and generate_report:
-                # 生成报告HTML
-                report_html = self._generate_report(result, patient_info)
-                if report_html:
-                    result['report_html'] = report_html
+                # 暂时跳过PDF生成，直接保存AI评估结果
+                if 'ai_assessment' in result:
+                    # 保存AI评估结果到文件
+                    import json
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    patient_name = patient_info.get('name', 'Unknown').replace(' ', '_')
+                    ai_result_path = f"ai_assessment_{patient_name}_{timestamp}.json"
+                    
+                    with open(ai_result_path, 'w', encoding='utf-8') as f:
+                        json.dump(result['ai_assessment'], f, ensure_ascii=False, indent=2, default=str)
+                    
+                    logger.info(f"AI评估结果已保存到: {ai_result_path}")
+                
+                # 生成报告HTML (跳过PDF转换)
+                try:
+                    report_html = self._generate_report(result, patient_info)
+                    if report_html:
+                        result['report_html'] = report_html
+                except Exception as pdf_error:
+                    logger.warning(f"跳过PDF生成: {pdf_error}")
+                    pass
             
             # 添加元数据
             if result:
@@ -265,7 +311,122 @@ class AlgorithmEngineManager:
             
             # 执行分析
             if test_type.upper() == "COMPREHENSIVE":
+                logger.info("执行综合分析...")
+                logger.info(f"CSV文件路径: {temp_csv_path}")
                 raw_result = self.analyzer.comprehensive_analysis(str(temp_csv_path))
+                logger.info(f"comprehensive_analysis返回结果: {raw_result}")
+                
+                # 如果有gemsage AI引擎，进行AI评估
+                if self.ai_engine:
+                    logger.info("调用gemsage AI评估引擎...")
+                    try:
+                        # 使用AI引擎进行综合评估
+                        from gemsage.ai_assessment_engine import ComprehensiveMetrics
+                        
+                        # 构建综合指标数据结构 - 直接传递原始数据，不做任何适配
+                        logger.info(f"构建ComprehensiveMetrics，数据结构:")
+                        gait_data = raw_result.get('gait_analysis', {})
+                        balance_data = raw_result.get('balance_analysis', {})
+                        logger.info(f"  gait_analysis: {gait_data}")
+                        logger.info(f"  balance_analysis: {balance_data}")
+                        logger.info(f"  patient_info: {patient_info}")
+                        
+                        # 将numpy类型转换为标准Python类型
+                        def convert_numpy_types(data):
+                            if isinstance(data, dict):
+                                return {k: convert_numpy_types(v) for k, v in data.items()}
+                            elif isinstance(data, list):
+                                return [convert_numpy_types(item) for item in data]
+                            elif hasattr(data, 'item'):  # numpy类型
+                                return data.item()
+                            else:
+                                return data
+                        
+                        # 转换数据类型
+                        converted_gait_data = convert_numpy_types(gait_data)
+                        converted_balance_data = convert_numpy_types(balance_data)
+                        
+                        # 转换patient_info中的数字字段
+                        converted_patient_info = patient_info.copy()
+                        for key in ['age', 'weight', 'height']:
+                            if key in converted_patient_info:
+                                try:
+                                    converted_patient_info[key] = float(converted_patient_info[key])
+                                except (ValueError, TypeError):
+                                    # 如果转换失败，使用默认值
+                                    defaults = {'age': 65, 'weight': 70, 'height': 170}
+                                    converted_patient_info[key] = defaults.get(key, 0)
+                        
+                        comprehensive_metrics = ComprehensiveMetrics(
+                            gait_metrics=converted_gait_data,
+                            temporal_metrics={},
+                            joint_metrics={},
+                            power_metrics={},
+                            posture_metrics=converted_balance_data,
+                            grf_metrics={},
+                            patient_info=converted_patient_info
+                        )
+                        
+                        logger.info("开始调用AI评估引擎...")
+                        logger.info(f"传递给AI引擎的数据类型检查:")
+                        logger.info(f"  gait_metrics类型: {type(converted_gait_data)}")
+                        logger.info(f"  posture_metrics类型: {type(converted_balance_data)}")
+                        logger.info(f"  converted_patient_info: {converted_patient_info}")
+                        
+                        # 调用正确的方法名
+                        ai_assessment = self.ai_engine.calculate_comprehensive_assessment(comprehensive_metrics)
+                        
+                        # 生成诊断建议
+                        logger.info("生成AI诊断建议...")
+                        diagnostic_suggestions = self.ai_engine.generate_diagnostic_suggestions(ai_assessment, comprehensive_metrics)
+                        
+                        # 生成详细评估报告
+                        logger.info("生成AI详细评估报告...")
+                        detailed_report = self.ai_engine.generate_detailed_report(ai_assessment, comprehensive_metrics)
+                        
+                        # 将AI评估结果合并到原始结果中
+                        raw_result['ai_assessment'] = ai_assessment
+                        raw_result['ai_diagnostic_suggestions'] = diagnostic_suggestions
+                        raw_result['ai_detailed_report'] = detailed_report
+                        
+                        logger.info("🎉 gemsage AI评估完成!")
+                        logger.info(f"AI评估结果类型: {type(ai_assessment)}")
+                        logger.info(f"AI评估结果: {ai_assessment}")
+                        logger.info(f"生成了 {len(diagnostic_suggestions)} 条诊断建议")
+                        logger.info(f"详细报告包含 {len(detailed_report.评估明细)} 条评估明细")
+                        
+                        # 保存完整的AI评估结果到JSON文件
+                        import json
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        patient_name = converted_patient_info.get('name', 'Unknown').replace(' ', '_')
+                        
+                        # 保存JSON结果
+                        ai_result_path = f"ai_assessment_{patient_name}_{timestamp}.json"
+                        try:
+                            full_ai_result = {
+                                'assessment': ai_assessment,
+                                'diagnostic_suggestions': diagnostic_suggestions,
+                                'detailed_report': detailed_report,
+                                'patient_info': converted_patient_info,
+                                'generation_time': datetime.now().isoformat()
+                            }
+                            with open(ai_result_path, 'w', encoding='utf-8') as f:
+                                json.dump(full_ai_result, f, ensure_ascii=False, indent=2, default=str)
+                            logger.info(f"✅ 完整AI评估结果已保存到: {ai_result_path}")
+                        except Exception as save_error:
+                            logger.error(f"保存AI评估结果失败: {save_error}")
+                        
+                        # 生成AI评估文本摘要，用于集成到现有医疗报告中
+                        ai_summary = self._generate_ai_summary(ai_assessment, diagnostic_suggestions, detailed_report)
+                        raw_result['ai_summary'] = ai_summary
+                        logger.info("✅ AI评估摘要已生成，将集成到医疗报告中")
+                        
+                    except Exception as ai_error:
+                        import traceback
+                        logger.error(f"gemsage AI评估失败: {ai_error}")
+                        logger.error(f"详细错误信息: {traceback.format_exc()}")
+                        # AI评估失败不影响基础分析结果
+                        
             else:
                 # 其他分析类型
                 pressure_data = self.analyzer.parse_csv_data(csv_data)
@@ -331,6 +492,7 @@ class AlgorithmEngineManager:
         
         return temp_csv_path
     
+    
     def _format_result(
         self,
         raw_result: Dict[str, Any],
@@ -383,25 +545,83 @@ class AlgorithmEngineManager:
         analysis_result: Dict[str, Any],
         patient_info: Dict[str, Any]
     ) -> Optional[str]:
-        """生成分析报告HTML"""
+        """生成分析报告HTML - 集成AI评估结果"""
         try:
             if not self.report_generator:
                 logger.warning("报告生成器未初始化")
                 return None
             
-            # 准备报告数据
+            # 提取分析数据
+            data = analysis_result.get('data', {})
+            metrics = data.get('metrics', {})
+            
+            # 准备基础报告数据 - 提供所有必需字段
             report_data = {
-                'patient_info': patient_info,
-                'analysis_result': analysis_result.get('data', {}),
-                'test_time': datetime.now()
+                # 患者信息
+                'patient_name': patient_info.get('name', '未知'),
+                'patient_gender': patient_info.get('gender', '未知'),
+                'patient_age': str(patient_info.get('age', '未知')),
+                'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'report_number': f"AI-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                'medical_record_number': patient_info.get('id', f"MR{datetime.now().strftime('%Y%m%d')}"),
+                'department': '智能肌少症检测系统',
+                'age_group': self._get_age_group(patient_info.get('age', 65)),
+                'age_range': self._get_age_range(patient_info.get('age', 65)),
+                
+                # 步态分析数据 - 基于实际分析结果或默认值
+                'walking_speed': self._get_gait_value(metrics, 'walking_speed', '数据不足'),
+                'left_step_length': self._get_gait_value(metrics, 'left_step_length', '数据不足'),
+                'right_step_length': self._get_gait_value(metrics, 'right_step_length', '数据不足'),
+                'left_stride_length': self._get_gait_value(metrics, 'left_stride_length', '数据不足'),
+                'right_stride_length': self._get_gait_value(metrics, 'right_stride_length', '数据不足'),
+                'left_cadence': self._get_gait_value(metrics, 'left_cadence', '数据不足'),
+                'right_cadence': self._get_gait_value(metrics, 'right_cadence', '数据不足'),
+                'left_stride_speed': self._get_gait_value(metrics, 'left_stride_speed', '数据不足'),
+                'right_stride_speed': self._get_gait_value(metrics, 'right_stride_speed', '数据不足'),
+                'left_swing_speed': self._get_gait_value(metrics, 'left_swing_speed', '数据不足'),
+                'right_swing_speed': self._get_gait_value(metrics, 'right_swing_speed', '数据不足'),
+                'left_stance_phase': self._get_gait_value(metrics, 'left_stance_phase', '数据不足'),
+                'right_stance_phase': self._get_gait_value(metrics, 'right_stance_phase', '数据不足'),
+                'left_swing_phase': self._get_gait_value(metrics, 'left_swing_phase', '数据不足'),
+                'right_swing_phase': self._get_gait_value(metrics, 'right_swing_phase', '数据不足'),
+                'left_double_support': self._get_gait_value(metrics, 'left_double_support', '数据不足'),
+                'right_double_support': self._get_gait_value(metrics, 'right_double_support', '数据不足'),
+                'left_step_height': self._get_gait_value(metrics, 'left_step_height', '数据不足'),
+                'right_step_height': self._get_gait_value(metrics, 'right_step_height', '数据不足'),
+                'step_width': self._get_gait_value(metrics, 'step_width', '数据不足'),
+                'turn_time': self._get_gait_value(metrics, 'turn_time', '数据不足'),
+                
+                # 平衡分析数据 - 确保提供数值类型的数据
+                'balance_analysis': self._prepare_balance_analysis(metrics.get('balance_analysis', {})),
+                
+                # 足底压力数据 - 基于可用数据或默认值
+                'left_max_pressure': self._get_pressure_value(metrics, 'left_max_pressure', '数据不足'),
+                'left_avg_pressure': self._get_pressure_value(metrics, 'left_avg_pressure', '数据不足'),
+                'left_contact_area': self._get_pressure_value(metrics, 'left_contact_area', '数据不足'),
+                'right_max_pressure': self._get_pressure_value(metrics, 'right_max_pressure', '数据不足'),
+                'right_avg_pressure': self._get_pressure_value(metrics, 'right_avg_pressure', '数据不足'),
+                'right_contact_area': self._get_pressure_value(metrics, 'right_contact_area', '数据不足'),
+                
+                # 评估结论
+                'speed_assessment': self._get_speed_assessment(metrics),
+                'overall_assessment': f"综合评分: {data.get('overall_score', 'N/A')}分"
             }
             
-            # 生成报告选项
+            # 如果有AI评估摘要，添加到报告的总体评估中
+            if 'ai_summary' in analysis_result:
+                ai_summary = analysis_result['ai_summary']
+                logger.info("📊 集成AI评估摘要到医疗报告...")
+                
+                # 将AI摘要追加到总体评估中
+                current_assessment = report_data.get('overall_assessment', '')
+                report_data['overall_assessment'] = f"{current_assessment}\n\n{ai_summary}"
+            
+            # 生成报告选项 - 显示所有模块
             options = {
-                'show_cop_trajectory': True,
-                'show_gait_parameters': True,
-                'show_balance_metrics': True,
-                'show_suggestions': True
+                'show_history_charts': True,
+                'show_cop_analysis': True,
+                'show_recommendations': True,
+                'show_foot_pressure': True
             }
             
             # 生成HTML报告
@@ -410,10 +630,53 @@ class AlgorithmEngineManager:
                 options
             )
             
+            logger.info("✅ 医疗报告生成完成，已集成AI评估结果")
+            
+            # 保存HTML报告到日期目录并自动打开
+            try:
+                import os
+                import platform
+                import subprocess
+                
+                # 创建按日期组织的目录结构（与现有逻辑一致）
+                today = datetime.now().strftime("%Y-%m-%d")
+                report_dir = os.path.join(os.getcwd(), "tmp", today, "reports")
+                os.makedirs(report_dir, exist_ok=True)
+                
+                # 生成文件名（与现有逻辑一致）
+                patient_name = patient_info.get('name', '未知患者')
+                test_type = '综合分析'
+                timestamp = datetime.now().strftime("%H%M%S")
+                filename = f"{patient_name}-{test_type}-AI智能报告-{timestamp}.html"
+                
+                # 保存到本地
+                html_report_path = os.path.join(report_dir, filename)
+                with open(html_report_path, 'w', encoding='utf-8') as f:
+                    f.write(html_report)
+                
+                logger.info(f"📄 HTML医疗报告已保存到: {html_report_path}")
+                
+                # 自动打开报告文件（与现有逻辑一致）
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(html_report_path)  # Windows
+                    elif platform.system() == "Darwin":
+                        subprocess.run(['open', html_report_path])  # macOS
+                    else:
+                        subprocess.run(['xdg-open', html_report_path])  # Linux
+                    logger.info("🌐 HTML报告已自动在浏览器中打开")
+                except Exception as open_error:
+                    logger.info(f"请手动打开报告文件: {html_report_path}")
+                
+            except Exception as save_error:
+                logger.error(f"保存HTML报告失败: {save_error}")
+            
             return html_report
             
         except Exception as e:
             logger.error(f"生成报告失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     def generate_pdf_report(
@@ -473,6 +736,164 @@ class AlgorithmEngineManager:
             suggestions.append("进行全面检查")
         
         return suggestions
+    
+    def _generate_ai_summary(self, ai_assessment, diagnostic_suggestions: List, detailed_report) -> str:
+        """生成AI评估文本摘要，用于集成到现有医疗报告中"""
+        try:
+            risk_map = {'low': '低风险', 'moderate': '中等风险', 'high': '高风险', 'severe': '严重风险'}
+            risk_text = risk_map.get(ai_assessment.risk_level.value, '未知') if ai_assessment.risk_level else '未知'
+            
+            # 生成6维度评分摘要
+            dimensions = {
+                '步态时间': ai_assessment.步态时间,
+                '步态时域': ai_assessment.步态时域,
+                '关节角域': ai_assessment.关节角域,
+                '关节力能': ai_assessment.关节力能,
+                '姿态': ai_assessment.姿态,
+                '地返力': ai_assessment.地返力
+            }
+            
+            dimension_text = ", ".join([f"{k}:{v:.1f}分" for k, v in dimensions.items()])
+            
+            # 生成主要建议摘要
+            high_priority_suggestions = [s for s in diagnostic_suggestions if s.priority.value == 'high']
+            suggestion_text = ""
+            if high_priority_suggestions:
+                suggestion_text = f"主要建议: {high_priority_suggestions[0].suggestion}"
+            
+            # 组装完整摘要
+            summary = f"""
+AI智能评估结果:
+• 综合评分: {ai_assessment.overall_score:.1f}/100 分
+• 风险等级: {risk_text}
+• AI置信度: {ai_assessment.confidence:.1f}%
+• 六维度评分: {dimension_text}
+• 评估明细: {len(detailed_report.评估明细)} 项发现
+• 诊断建议: {len(diagnostic_suggestions)} 条建议
+{suggestion_text}
+
+功能评估: 活动能力{detailed_report.functional_capacity.get('mobility_score', 0)}分, 稳定性{detailed_report.functional_capacity.get('stability_score', 0)}分
+疾病风险: 肌少症风险{detailed_report.disease_risk.get('sarcopenia_risk', 0)}%, 跌倒风险{detailed_report.disease_risk.get('fall_risk', 0)}%
+"""
+            return summary.strip()
+            
+        except Exception as e:
+            logger.error(f"生成AI摘要失败: {e}")
+            return f"AI评估完成，综合评分: {getattr(ai_assessment, 'overall_score', 'N/A')}分"
+    
+    def _get_age_group(self, age: int) -> str:
+        """根据年龄获取年龄组"""
+        try:
+            age = int(age)
+            if age < 18:
+                return "儿童组 (<18岁)"
+            elif age <= 30:
+                return "青年组 (18-30岁)"
+            elif age <= 50:
+                return "中年组 (31-50岁)"
+            elif age <= 70:
+                return "中老年组 (51-70岁)"
+            else:
+                return "老年组 (>70岁)"
+        except:
+            return "未知年龄组"
+    
+    def _get_age_range(self, age: int) -> str:
+        """根据年龄获取年龄范围"""
+        try:
+            age = int(age)
+            if age < 18:
+                return "<18岁"
+            elif age <= 30:
+                return "18-30岁"
+            elif age <= 50:
+                return "31-50岁"
+            elif age <= 70:
+                return "51-70岁"
+            else:
+                return ">70岁"
+        except:
+            return "未知"
+    
+    def _get_gait_value(self, metrics: Dict, key: str, default: str) -> str:
+        """获取步态分析值，如果不存在则返回标注的默认值"""
+        # 检查是否有步态分析错误
+        gait_analysis = metrics.get('gait_analysis', {})
+        balance_analysis = metrics.get('balance_analysis', {})
+        
+        # 如果有具体的数值，返回该数值
+        if key in gait_analysis and not isinstance(gait_analysis[key], str):
+            return str(gait_analysis[key])
+        
+        if key in balance_analysis and not isinstance(balance_analysis[key], str):
+            return str(balance_analysis[key])
+        
+        # 如果分析失败，返回标注的默认值
+        if 'error' in gait_analysis or 'error' in balance_analysis:
+            return default
+        
+        # 其他情况返回默认值
+        return default
+    
+    def _get_speed_assessment(self, metrics: Dict) -> str:
+        """获取步速评估"""
+        gait_analysis = metrics.get('gait_analysis', {})
+        
+        # 如果有步态分析错误
+        if 'error' in gait_analysis:
+            return "数据不足，无法进行步速评估"
+        
+        # 如果有实际数据
+        if 'average_velocity' in gait_analysis:
+            velocity = gait_analysis['average_velocity']
+            if velocity > 1.2:
+                return "步速正常"
+            elif velocity > 0.8:
+                return "步速略慢"
+            else:
+                return "步速明显偏慢"
+        
+        return "基于AI智能分析"
+    
+    def _prepare_balance_analysis(self, balance_data: Dict) -> Dict:
+        """准备平衡分析数据，确保模板需要的字段都是数值类型"""
+        # 如果有错误信息，提供默认的数值数据
+        if 'error' in balance_data:
+            return {
+                'copArea': 0.0,                     # COP轨迹面积 (cm²)
+                'copPathLength': 0.0,               # 轨迹总长度 (cm)
+                'copComplexity': 0.0,               # 轨迹复杂度 (/10)
+                'anteroPosteriorRange': 0.0,        # 前后摆动范围 (cm)
+                'medioLateralRange': 0.0,           # 左右摆动范围 (cm)
+                'stabilityIndex': 0.0,              # 稳定性指数 (%)
+                'data_available': False             # 标记数据不可用
+            }
+        
+        # 确保所有字段都有数值，没有的话提供默认值
+        return {
+            'copArea': float(balance_data.get('copArea', 0.0)),
+            'copPathLength': float(balance_data.get('copPathLength', 0.0)),
+            'copComplexity': float(balance_data.get('copComplexity', 0.0)),
+            'anteroPosteriorRange': float(balance_data.get('anteroPosteriorRange', 0.0)),
+            'medioLateralRange': float(balance_data.get('medioLateralRange', 0.0)),
+            'stabilityIndex': float(balance_data.get('stabilityIndex', 0.0)),
+            'data_available': True
+        }
+    
+    def _get_pressure_value(self, metrics: Dict, key: str, default: str) -> str:
+        """获取足底压力值"""
+        # 检查是否有具体数据
+        if key in metrics:
+            return str(metrics[key])
+        
+        # 检查是否有分析错误
+        gait_analysis = metrics.get('gait_analysis', {})
+        balance_analysis = metrics.get('balance_analysis', {})
+        
+        if 'error' in gait_analysis or 'error' in balance_analysis:
+            return default
+        
+        return default
     
     def _generate_cache_key(
         self,
@@ -655,6 +1076,7 @@ class AlgorithmEngineManager:
             logger.error(f"HTML到PDF转换失败: {e}")
             raise Exception(f"PDF转换失败: {e}")
     
+
     def clear_cache(self):
         """清空缓存"""
         if self.cache is not None:
@@ -676,8 +1098,8 @@ def get_algorithm_engine(algorithms_dir: str = None) -> AlgorithmEngineManager:
     """获取全局算法引擎实例"""
     global _engine_instance
     
-    if _engine_instance is None:
-        _engine_instance = AlgorithmEngineManager(algorithms_dir)
+    # 强制重新创建引擎实例以应用最新配置
+    _engine_instance = AlgorithmEngineManager(algorithms_dir)
     
     return _engine_instance
 

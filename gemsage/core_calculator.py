@@ -207,19 +207,78 @@ class PressureAnalysisCore:
         }
     
     def parse_csv_data(self, csv_content: str) -> List[List[float]]:
-        """解析CSV数据为压力矩阵"""
+        """解析CSV数据为压力矩阵 - 支持多种格式"""
         lines = csv_content.strip().split('\n')
-        data_matrix = []
+        if not lines:
+            return []
+            
+        # 使用pandas CSV读取器正确处理引号包围的字段
+        from io import StringIO
+        import pandas as pd
         
-        for line in lines[1:]:  # 跳过表头
-            if line.strip():
-                values = line.split(',')
-                if len(values) >= 32:  # 确保有足够的数据列
-                    row_data = [float(val) if val.strip() else 0.0 
-                               for val in values[:32]]
-                    data_matrix.append(row_data)
-        
-        return data_matrix
+        try:
+            df = pd.read_csv(StringIO(csv_content))
+            header_columns = [col.lower() for col in df.columns]
+            
+            # 检测CSV格式
+            has_data_column = any('data' in col for col in header_columns)
+            has_press_column = any('press' in col for col in header_columns)
+            
+            print(f"🔍 检测到CSV格式: 列数={len(header_columns)}, 包含data列={has_data_column}, 包含press列={has_press_column}")
+            print(f"📋 列名: {list(df.columns)}")
+            
+            data_matrix = []
+            
+            for idx, row in df.iterrows():
+                try:
+                    if has_data_column:
+                        # 肌少症标准格式: 获取data列
+                        data_col_name = next(col for col in df.columns if 'data' in col.lower())
+                        data_str = str(row[data_col_name]).strip()
+                        
+                        print(f"🔍 第{idx+1}行data字段: {data_str[:50]}..." if len(data_str) > 50 else f"🔍 第{idx+1}行data字段: {data_str}")
+                        
+                        # 解析JSON数组格式的传感器数据
+                        if data_str.startswith('[') and data_str.endswith(']'):
+                            # 移除方括号并分割
+                            data_str = data_str[1:-1]
+                            sensor_values = [float(val.strip()) for val in data_str.split(',')]
+                            
+                            print(f"📊 第{idx+1}行解析出{len(sensor_values)}个传感器值")
+                            
+                            # 转换为32x32矩阵
+                            if len(sensor_values) == 1024:  # 32x32 = 1024
+                                matrix_2d = []
+                                for i in range(32):
+                                    row_data = sensor_values[i*32:(i+1)*32]
+                                    matrix_2d.append(row_data)
+                                data_matrix.extend(matrix_2d)
+                                print(f"✅ 第{idx+1}行成功转换为32x32矩阵")
+                                break  # 对于步态数据，我们只需要第一帧数据来测试
+                            else:
+                                print(f"⚠️  第{idx+1}行传感器数据点数不正确: {len(sensor_values)} (期望1024)")
+                                
+                        else:
+                            print(f"⚠️  第{idx+1}行data字段格式不识别: {data_str}")
+                            
+                    elif has_press_column:
+                        # 简单时间-压力格式
+                        press_col_name = next(col for col in df.columns if 'press' in col.lower())
+                        pressure_value = float(row[press_col_name]) if pd.notna(row[press_col_name]) else 0.0
+                        
+                        # 创建简化的1x1"矩阵"用于时间序列分析
+                        data_matrix.append([pressure_value])
+                        
+                except (ValueError, IndexError, KeyError) as e:
+                    print(f"⚠️  第{idx+1}行解析失败: {e}")
+                    continue
+            
+            print(f"✅ CSV解析完成: 解析出{len(data_matrix)}行数据")
+            return data_matrix
+            
+        except Exception as e:
+            print(f"❌ CSV解析失败: {e}")
+            return []
     
     def calculate_cop_position(self, pressure_matrix: List[List[float]]) -> Optional[Dict]:
         """计算压力中心位置 - 使用硬件自适应参数"""

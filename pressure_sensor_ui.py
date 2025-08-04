@@ -2478,19 +2478,35 @@ class PressureSensorUI:
                 print("[DEBUG] 进入analyze_csv函数")
                 # 更新状态
                 self.log_ai_message("[SCAN] 正在分析CSV文件...")
+                self.log_ai_message("🔧 [版本2025-08-04-14:05] 强制重新初始化算法引擎以加载gemsage...")
                 self.root.config(cursor="wait")
+                
+                # 强制重新初始化算法引擎以应用gemsage配置
+                print("[DEBUG] 重新初始化算法引擎以加载gemsage...")
+                self.log_ai_message("[DEBUG] 重新初始化算法引擎以加载gemsage...")
+                self.init_algorithm_engine()
                 
                 print(f"[DEBUG] 检查算法引擎状态: is_initialized={self.algorithm_engine.is_initialized}")
                 # 检查算法引擎状态
                 if not self.algorithm_engine.is_initialized:
                     print("[DEBUG] 算法引擎未初始化")
-                    error_msg = "算法引擎未初始化\n\n请检查：\n1. algorithms目录是否存在\n2. Python环境是否正常\n3. 查看日志获取详细信息"
+                    error_msg = "算法引擎未初始化\n\n请检查：\n1. gemsage目录是否存在\n2. Python环境是否正常\n3. 查看日志获取详细信息"
                     self.root.config(cursor="")
                     messagebox.showerror("算法引擎错误", error_msg)
                     self.log_ai_message("[ERROR] 算法引擎未初始化")
                     return
                 else:
                     print("[DEBUG] 算法引擎已就绪")
+                    # 显示算法引擎类型信息
+                    if hasattr(self.algorithm_engine, 'analyzer') and self.algorithm_engine.analyzer:
+                        analyzer_type = type(self.algorithm_engine.analyzer).__name__
+                        print(f"[DEBUG] 使用分析器: {analyzer_type}")
+                        self.log_ai_message(f"[ENGINE] 使用分析器: {analyzer_type}")
+                        
+                    if hasattr(self.algorithm_engine, 'ai_engine') and self.algorithm_engine.ai_engine:
+                        ai_engine_type = type(self.algorithm_engine.ai_engine).__name__
+                        print(f"[DEBUG] 使用AI引擎: {ai_engine_type}")
+                        self.log_ai_message(f"[ENGINE] 使用AI引擎: {ai_engine_type}")
                 
                 # 读取所有CSV文件
                 import pandas as pd

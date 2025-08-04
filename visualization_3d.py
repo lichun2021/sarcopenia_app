@@ -45,9 +45,9 @@ class Heatmap3DRenderer:
         self.is_running = False
         self.stop_event = threading.Event()
         
-        # 3D视角参数 - 固定俯视角度
-        self.elevation = 90  # 完全俯视
-        self.azimuth = 0     # 正面方位角
+        # 3D视角参数 - 优化的观察角度
+        self.elevation = 75  # 稍微倾斜的俯视角度，更清晰
+        self.azimuth = 45    # 45度方位角，显示立体感
         
         # 渲染状态
         self.last_render_time = 0
@@ -62,10 +62,11 @@ class Heatmap3DRenderer:
         self.setup_colormap()
         
     def setup_colormap(self):
-        """设置3D热力图颜色映射"""
+        """设置3D热力图颜色映射 - 零压力区域使用浅灰色"""
+        # 3D专用颜色映射，零压力区域使用非常浅的蓝色与色系协调
         colors_list = [
-            '#FFFFFF',  # 纯白（0压力）
-            '#80C0FF',  # 明亮浅蓝
+            '#E8F4FF',  # 极淡蓝色（0压力，与蓝色系协调且有区分度）
+            '#80C0FF',  # 明亮浅蓝（低压力明显）
             '#1A8CFF',  # 明亮蓝
             '#0066CC',  # 深蓝
             '#003366',  # 深蓝紫
@@ -74,8 +75,9 @@ class Heatmap3DRenderer:
             '#2E0000'   # 极深（最高压力）
         ]
         
+        # 3D热力图专用颜色映射 - 提升精细度
         self.custom_cmap = colors.LinearSegmentedColormap.from_list(
-            'pressure_3d', colors_list, N=128
+            'pressure_3d_detailed', colors_list, N=256  # 增加到256级以提升精细度
         )
         self.norm = colors.Normalize(vmin=0, vmax=255)
         self.pressure_scale = 60.0 / 255.0  # mmHg per unit
@@ -227,8 +229,8 @@ class Heatmap3DRenderer:
         
         try:
             print(f"[3D渲染] 创建Figure对象...")
-            # 创建紧凑的3D图形
-            fig = Figure(figsize=(10, 10), dpi=72, facecolor='white')
+            # 创建适中尺寸的3D图形，确保不被裁切
+            fig = Figure(figsize=(10, 10), dpi=80, facecolor='white')
             print(f"[3D渲染] Figure创建成功，添加3D子图...")
             ax = fig.add_subplot(111, projection='3d')
             print(f"[3D渲染] 3D子图创建成功")
@@ -241,7 +243,7 @@ class Heatmap3DRenderer:
         
         try:
             print(f"[3D渲染] 创建网格坐标...")
-            # 创建网格坐标
+            # 创建基本网格坐标
             x = np.linspace(0, self.array_cols-1, self.array_cols)
             y = np.linspace(0, self.array_rows-1, self.array_rows)
             X, Y = np.meshgrid(x, y)
@@ -252,15 +254,14 @@ class Heatmap3DRenderer:
             print(f"[3D渲染] Z轴数据准备完成: {Z.shape}, 范围[{np.min(Z):.2f}, {np.max(Z):.2f}]")
             
             print(f"[3D渲染] 开始创建3D表面图...")
-            # 创建高性能3D表面图
+            # 创建3D表面图，使用高精度颜色映射
             surf = ax.plot_surface(
                 X, Y, Z,
-                cmap=self.custom_cmap,
-                norm=self.norm,
+                facecolors=self.custom_cmap(self.norm(matrix_2d)),  # 使用原始数据做颜色映射
                 alpha=0.9,
                 linewidth=0,
-                antialiased=False,
-                shade=False,  # 关闭阴影提升性能
+                antialiased=True,  # 开启抗锯齿提升细节
+                shade=False,  # 关闭阴影保持颜色纯净
                 rasterized=True
             )
             print(f"[3D渲染] 3D表面图创建成功")
@@ -290,32 +291,43 @@ class Heatmap3DRenderer:
             ax.set_yticks([])
             ax.set_zticks([])
             
-            # 隐藏坐标轴线和网格
+            # 完全隐藏所有坐标轴线和网格
             ax.xaxis.set_visible(False)
             ax.yaxis.set_visible(False)
             ax.zaxis.set_visible(False)
             
-            # 隐藏3D坐标轴的线框
+            # 隐藏3D坐标轴的线框和边线
             ax.xaxis.pane.fill = False
             ax.yaxis.pane.fill = False
             ax.zaxis.pane.fill = False
             ax.xaxis.pane.set_edgecolor('none')
             ax.yaxis.pane.set_edgecolor('none')
             ax.zaxis.pane.set_edgecolor('none')
+            ax.xaxis.pane.set_linewidth(0)
+            ax.yaxis.pane.set_linewidth(0)
+            ax.zaxis.pane.set_linewidth(0)
             
             # 设置背景为白色
             ax.xaxis.pane.set_facecolor('white')
             ax.yaxis.pane.set_facecolor('white')
             ax.zaxis.pane.set_facecolor('white')
             
+            # 隐藏3D立方体的边框线
+            ax.xaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+            ax.yaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+            ax.zaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+            
             # 设置坐标轴范围 - 真正居中
             ax.set_xlim(0, self.array_cols-1)
             ax.set_ylim(0, self.array_rows-1)
             ax.set_zlim(0, np.max(Z) * 1.2 if np.max(Z) > 0 else 50)
             
+            # 设置3D轴的纵横比以防止变形和裁切
+            ax.set_box_aspect([1,1,0.3])  # x:y:z = 1:1:0.3，进一步压缩z轴避免底部裁切
+            
             print(f"[3D渲染] 设置布局...")
-            # 紧凑布局 - 完全填充显示区域
-            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            # 设置适中的边距，确保不被裁切且尽可能填满
+            fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
             
             print(f"[3D渲染] 3D帧渲染完全成功")
             return fig, {
@@ -348,11 +360,11 @@ class Heatmap3DRenderer:
             self.render_stats['fps'] = 1.0 / self.render_stats['avg_render_time']
         
     def set_view_angle(self, elevation: float, azimuth: float):
-        """设置3D视角（固定俯视角度）"""
-        # 始终使用俯视角度，忽略传入参数
-        self.elevation = 90  # 完全俯视
-        self.azimuth = 0     # 正面方位角
-        print(f"[3D热力图] 固定俯视角度: 仰角=90°, 方位角=0°")
+        """设置3D视角（优化的观察角度）"""
+        # 使用优化的视角，忽略传入参数
+        self.elevation = 75  # 稍微倾斜的俯视角度
+        self.azimuth = 45    # 45度方位角
+        print(f"[3D热力图] 固定观察角度: 仰角=75°, 方位角=45°")
     
     def get_stats(self) -> Dict:
         """获取渲染统计信息"""
@@ -378,9 +390,13 @@ class IndependentCanvasContainer:
         # 简化的更新控制 - 只防止重复更新
         self.is_updating = False
         
-        # 创建独立的canvas容器
+        # Canvas尺寸检测
+        self.last_canvas_size = (0, 0)
+        self.size_check_count = 0
+        
+        # 创建独立的canvas容器 - 完全填满，不要边距
         self.canvas_container = ttk.Frame(parent_frame)
-        self.canvas_container.pack(fill='both', expand=True)
+        self.canvas_container.pack(fill='both', expand=True, padx=0, pady=0)
         
         print("[独立Canvas] 简化容器已创建")
     
@@ -410,8 +426,12 @@ class IndependentCanvasContainer:
             self.is_updating = False
     
     def _simple_update(self, new_fig):
-        """简单直接的更新方式 - 减少闪烁"""
+        """简单直接的更新方式 - 最小化闪烁"""
         print(f"[独立Canvas] 执行简单更新")
+        
+        # 先暂停绘制避免中间状态闪烁
+        if self.canvas:
+            self.canvas.get_tk_widget().update_idletasks()
         
         # 如果是第一次创建canvas
         if self.canvas is None:
@@ -419,14 +439,26 @@ class IndependentCanvasContainer:
             self.canvas = FigureCanvasTkAgg(new_fig, master=self.canvas_container)
             canvas_widget = self.canvas.get_tk_widget()
             canvas_widget.pack(fill='both', expand=True)
+            
+            # 确保Canvas完全填满容器，没有任何边框
+            canvas_widget.configure(highlightthickness=0, bd=0, relief='flat')
         else:
-            # 重用canvas，只更新figure - 减少闪烁
-            print(f"[独立Canvas] 重用canvas，更新figure")
+            # 快速替换canvas，减少闪烁时间
+            print(f"[独立Canvas] 快速替换canvas")
+            old_widget = self.canvas.get_tk_widget()
+            
+            # 关闭旧figure
             if self.fig:
                 plt.close(self.fig)
             
-            # 更新canvas的figure
-            self.canvas.figure = new_fig
+            # 创建新canvas
+            self.canvas = FigureCanvasTkAgg(new_fig, master=self.canvas_container)
+            new_widget = self.canvas.get_tk_widget()
+            new_widget.pack(fill='both', expand=True)
+            new_widget.configure(highlightthickness=0, bd=0, relief='flat')
+            
+            # 销毁旧widget
+            old_widget.destroy()
         
         # 直接绘制
         print(f"[独立Canvas] 执行绘制")
@@ -434,6 +466,50 @@ class IndependentCanvasContainer:
         print(f"[独立Canvas] 绘制完成")
         
         self.fig = new_fig
+    
+    def check_canvas_size(self):
+        """检查Canvas尺寸变化"""
+        try:
+            if self.canvas and self.canvas.get_tk_widget():
+                widget = self.canvas.get_tk_widget()
+                current_width = widget.winfo_width()
+                current_height = widget.winfo_height()
+                current_size = (current_width, current_height)
+                
+                if current_size != self.last_canvas_size and current_width > 1 and current_height > 1:
+                    print(f"[Canvas尺寸] 检测到尺寸变化: {self.last_canvas_size} -> {current_size}")
+                    self.last_canvas_size = current_size
+                    self.adjust_figure_centering()
+                
+        except Exception as e:
+            print(f"[Canvas尺寸] 尺寸检测错误: {e}")
+        finally:
+            # 更频繁检查尺寸变化，特别是窗口最大化时
+            self.parent_frame.after(2000, self.check_canvas_size)
+    
+    def adjust_figure_centering(self):
+        """调整图形居中显示 - 简化版本，确保填满Canvas"""
+        try:
+            if not self.fig or not self.canvas:
+                return
+                
+            print(f"[Canvas居中] 应用简化的居中布局")
+            
+            # 使用最简单的方式让图形填满Canvas
+            if self.fig.axes:
+                ax = self.fig.axes[0]
+                
+                # 设置适中的边距，确保不被裁切且居中显示
+                self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+                
+                # 确保3D轴的纵横比合适
+                try:
+                    ax.set_box_aspect([1,1,0.3])  # 压缩z轴避免裁切
+                except:
+                    pass  # 某些matplotlib版本可能不支持
+                
+        except Exception as e:
+            print(f"[Canvas居中] 居中调整错误: {e}")
     
     def clear(self):
         """清理canvas"""
@@ -480,8 +556,8 @@ class EnhancedHeatmapVisualizer:
             array_cols
         )
         
-        # 初始化3D渲染器 - 降低目标FPS以适应12Hz设备数据
-        self.renderer_3d = Heatmap3DRenderer(array_rows, array_cols, target_fps=4)
+        # 初始化3D渲染器 - 进一步降低FPS减少闪烁
+        self.renderer_3d = Heatmap3DRenderer(array_rows, array_cols, target_fps=2)
         
         # 创建独立的3D Canvas容器
         self.canvas_3d_container = IndependentCanvasContainer(self.display_3d_frame)
@@ -578,9 +654,9 @@ class EnhancedHeatmapVisualizer:
         print("[可视化] 3D模式切换完成")
     
     def set_3d_view(self, elevation: float, azimuth: float):
-        """设置3D视角（保留接口兼容性，但固定俯视角度）"""
-        # 固定使用俯视角度
-        self.renderer_3d.set_view_angle(90, 0)
+        """设置3D视角（保留接口兼容性，但固定优化角度）"""
+        # 固定使用优化的观察角度
+        self.renderer_3d.set_view_angle(75, 45)
         
         if self.current_mode == "3D":
             stats = self.renderer_3d.get_stats()
@@ -635,8 +711,8 @@ class EnhancedHeatmapVisualizer:
             import traceback
             traceback.print_exc()
         finally:
-            # 匹配低帧率的检查频率
-            self.parent_frame.after(250, self.check_3d_results)  # 4 FPS检查频率，匹配渲染频率
+            # 匹配更低帧率的检查频率，减少闪烁
+            self.parent_frame.after(500, self.check_3d_results)  # 2 FPS检查频率，匹配渲染频率
     
     def set_array_size(self, rows, cols):
         """设置新的阵列大小"""
