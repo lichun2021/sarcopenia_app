@@ -313,8 +313,44 @@ class AlgorithmEngineManager:
             if test_type.upper() == "COMPREHENSIVE":
                 logger.info("执行综合分析...")
                 logger.info(f"CSV文件路径: {temp_csv_path}")
-                raw_result = self.analyzer.comprehensive_analysis(str(temp_csv_path))
-                logger.info(f"comprehensive_analysis返回结果: {raw_result}")
+                
+                # 使用 multi_file_workflow 的两个方法
+                # 导入 multi_file_workflow 模块
+                from gemsage.multi_file_workflow import analyze_multiple_files, generate_reports_from_analyses
+                
+                # 第一步：使用 analyze_multiple_files 分析文件（使用日期目录）
+                csv_files = [str(temp_csv_path)]
+                today = datetime.now().strftime("%Y-%m-%d")
+                temp_analysis_dir = os.path.join("tmp", today, "temp_analysis_results")
+                analysis_results, analysis_dir = analyze_multiple_files(csv_files, temp_analysis_dir)
+                
+                # 获取第一个（也是唯一的）分析结果
+                raw_result = analysis_results[0]
+                logger.info(f"multi_file_workflow分析返回结果: {raw_result}")
+                
+                # 将原始患者信息保存到分析结果中，以便 generate_reports_from_analyses 使用
+                if analysis_results:
+                    analysis_results[0]['original_patient_info'] = patient_info
+                    
+                    # 重新保存包含患者信息的分析结果
+                    import json
+                    summary_file = os.path.join(analysis_dir, "analysis_summary.json")
+                    if os.path.exists(summary_file):
+                        with open(summary_file, 'r', encoding='utf-8') as f:
+                            summary = json.load(f)
+                        summary['results'][0]['original_patient_info'] = patient_info
+                        with open(summary_file, 'w', encoding='utf-8') as f:
+                            json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
+                
+                # 第二步：使用 generate_reports_from_analyses 生成报告（默认combined模式）
+                logger.info("生成综合报告...")
+                report_success = generate_reports_from_analyses(analysis_dir, "combined")
+                if report_success:
+                    logger.info("✅ 报告生成成功")
+                else:
+                    logger.error("❌ 报告生成失败")
+                
+                logger.info(f"最终分析结果: {raw_result}")
                 
                 # 如果有gemsage AI引擎，进行AI评估
                 if self.ai_engine:
@@ -460,9 +496,11 @@ class AlgorithmEngineManager:
             return None
     
     def _save_temp_csv(self, csv_data: str) -> Path:
-        """保存临时CSV文件"""
-        import tempfile
-        temp_dir = Path(tempfile.gettempdir())
+        """保存临时CSV文件到tmp/日期目录"""
+        today = datetime.now().strftime("%Y-%m-%d")
+        temp_dir = Path("tmp") / today / "temp_csv"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         temp_csv_path = temp_dir / f"pressure_data_{timestamp}.csv"
         
@@ -534,11 +572,16 @@ class AlgorithmEngineManager:
             data = analysis_result.get('data', {})
             metrics = data.get('metrics', {})
             
+            # 转换性别为中文
+            gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+            original_gender = patient_info.get('gender', '未知')
+            chinese_gender = gender_map.get(original_gender, original_gender)
+            
             # 准备基础报告数据 - 提供所有必需字段
             report_data = {
                 # 患者信息
                 'patient_name': patient_info.get('name', '未知'),
-                'patient_gender': patient_info.get('gender', '未知'),
+                'patient_gender': chinese_gender,
                 'patient_age': str(patient_info.get('age', '未知')),
                 'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'report_number': f"AI-{datetime.now().strftime('%Y%m%d-%H%M%S')}",

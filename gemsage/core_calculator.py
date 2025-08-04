@@ -252,9 +252,8 @@ class PressureAnalysisCore:
                                 for i in range(32):
                                     row_data = sensor_values[i*32:(i+1)*32]
                                     matrix_2d.append(row_data)
-                                data_matrix.extend(matrix_2d)
+                                data_matrix.append(matrix_2d)  # 修改：使用append而不是extend
                                 print(f"✅ 第{idx+1}行成功转换为32x32矩阵")
-                                break  # 对于步态数据，我们只需要第一帧数据来测试
                             else:
                                 print(f"⚠️  第{idx+1}行传感器数据点数不正确: {len(sensor_values)} (期望1024)")
                                 
@@ -336,33 +335,74 @@ class PressureAnalysisCore:
         return events
     
     def calculate_step_metrics(self, gait_events: List[Dict]) -> Dict:
-        """计算步态指标"""
-        if len(gait_events) < 2:
-            return {'error': 'Insufficient data for step calculation'}
+        """计算步态指标 - 使用改进的压力峰值检测算法"""
+        if len(gait_events) < 10:
+            return {'error': 'Insufficient data for step calculation (need at least 10 frames)'}
         
-        # 检测步态周期
+        # 提取压力序列
+        pressures = [event['pressure'] for event in gait_events]
+        timestamps = [event['timestamp'] for event in gait_events]
+        cop_x = [event['cop_x'] for event in gait_events]
+        cop_y = [event['cop_y'] for event in gait_events]
+        
+        # 平滑压力数据（5点移动平均）
+        smoothed_pressures = []
+        window_size = 5
+        for i in range(len(pressures)):
+            start = max(0, i - window_size // 2)
+            end = min(len(pressures), i + window_size // 2 + 1)
+            smoothed_pressures.append(np.mean(pressures[start:end]))
+        
+        # 寻找压力峰值（局部最大值）
+        peaks = []
+        min_peak_distance = 10  # 最小峰值间隔（帧数）
+        pressure_threshold = np.mean(pressures) * 0.5  # 峰值阈值为平均压力的50%
+        
+        for i in range(1, len(smoothed_pressures) - 1):
+            # 检查是否为局部最大值
+            if (smoothed_pressures[i] > smoothed_pressures[i-1] and 
+                smoothed_pressures[i] > smoothed_pressures[i+1] and
+                smoothed_pressures[i] > pressure_threshold):
+                
+                # 检查与上一个峰值的距离
+                if not peaks or (i - peaks[-1]) >= min_peak_distance:
+                    peaks.append(i)
+        
+        # 基于峰值计算步态参数
         steps = []
-        for i in range(1, len(gait_events)):
-            prev_event = gait_events[i-1]
-            curr_event = gait_events[i]
+        for i in range(1, len(peaks)):
+            prev_peak = peaks[i-1]
+            curr_peak = peaks[i]
             
-            # 计算步长（前进方向的位移）
-            dx = abs(curr_event['cop_x'] - prev_event['cop_x'])
-            dy = abs(curr_event['cop_y'] - prev_event['cop_y'])
+            # 计算步长（使用峰值位置的COP）
+            dx = cop_x[curr_peak] - cop_x[prev_peak]
+            dy = cop_y[curr_peak] - cop_y[prev_peak]
+            step_length = np.sqrt(dx**2 + dy**2)
             
-            # 选择变化更大的轴作为前进方向
-            step_length = max(dx, dy)
-            time_interval = curr_event['timestamp'] - prev_event['timestamp']
+            # 计算步态时间
+            step_time = (timestamps[curr_peak] - timestamps[prev_peak]) * 0.033  # 假设30Hz采样率
             
-            if step_length > 0.05:  # 最小步长阈值5cm
+            if step_length > 0.1 and step_time > 0.3:  # 最小步长10cm，最小时间0.3秒
                 steps.append({
+                    'start_frame': prev_peak,
+                    'end_frame': curr_peak,
                     'length': step_length,
-                    'time': time_interval,
-                    'velocity': step_length / (time_interval + 0.001)
+                    'time': step_time,
+                    'velocity': step_length / step_time,
+                    'start_pressure': pressures[prev_peak],
+                    'end_pressure': pressures[curr_peak]
                 })
         
         if not steps:
-            return {'error': 'No valid steps detected'}
+            return {
+                'error': 'No valid gait cycles detected',
+                'debug_info': {
+                    'total_events': len(gait_events),
+                    'peaks_found': len(peaks),
+                    'pressure_range': f"{min(pressures):.1f}-{max(pressures):.1f}",
+                    'threshold': pressure_threshold
+                }
+            }
         
         # 计算统计指标
         step_lengths = [step['length'] for step in steps]
@@ -376,7 +416,10 @@ class PressureAnalysisCore:
             'average_step_time': np.mean(step_times),
             'average_velocity': np.mean(velocities),
             'cadence': 60 / np.mean(step_times) if step_times else 0,
-            'step_lengths': step_lengths,
+            'min_step_length': min(step_lengths),
+            'max_step_length': max(step_lengths),
+            'detected_peaks': len(peaks),
+            'analysis_method': 'pressure_peak_detection',
             'individual_steps': steps
         }
     
@@ -480,8 +523,8 @@ class PressureAnalysisCore:
             if not hardware_initialized:
                 print("⚠️  Python硬件自适应初始化异常，但系统将继续使用默认配置")
             
-            # 将2D数据转换为时间序列（简化处理）
-            pressure_sequence = [pressure_matrix]  # 实际应该是时间序列
+            # 使用所有数据作为时间序列
+            pressure_sequence = pressure_matrix  # pressure_matrix已经是时间序列了
             
             # 步态分析
             gait_events = self.detect_gait_events(pressure_sequence)

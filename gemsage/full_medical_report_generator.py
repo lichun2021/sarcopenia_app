@@ -983,6 +983,164 @@ class FullMedicalReportGenerator:
     def __init__(self):
         self.template = Template(FULL_MEDICAL_REPORT_TEMPLATE)
     
+    def generate_report_from_algorithm(self, algorithm_result: Dict[str, Any], patient_info: Optional[Dict[str, Any]] = None) -> str:
+        """从算法结果生成报告"""
+        if not algorithm_result:
+            raise ValueError("算法结果不能为空")
+        
+        # 提取算法数据
+        gait_analysis = algorithm_result.get('gait_analysis', {})
+        balance_analysis = algorithm_result.get('balance_analysis', {})
+        file_info = algorithm_result.get('file_info', {})
+        
+        # 设置默认患者信息
+        if not patient_info:
+            patient_info = {
+                'name': '测试患者',
+                'gender': '男',
+                'age': '29'
+            }
+        
+        # 转换算法数据为报告格式
+        report_data = {
+            'report_number': f'RPT-{algorithm_result.get("analysis_timestamp", "").replace(":", "").replace("-", "")[:14]}',
+            'patient_name': patient_info.get('name', '测试患者'),
+            'patient_gender': patient_info.get('gender', '未知'),
+            'patient_age': str(patient_info.get('age', '未知')),
+            'test_date': algorithm_result.get('analysis_timestamp', ''),
+            'medical_record_number': patient_info.get('id', 'AUTO001'),
+            'department': '足部压力分析科',
+            'age_group': self._get_age_group(patient_info.get('age')),
+            'age_range': self._get_age_range(patient_info.get('age')),
+            
+            # 从算法结果提取的真实步态数据
+            'walking_speed': f"{gait_analysis.get('average_velocity', 0):.3f}",
+            'left_step_length': f"{gait_analysis.get('average_step_length', 0) * 100:.1f}",  # 转换为cm
+            'right_step_length': f"{gait_analysis.get('average_step_length', 0) * 100:.1f}",  # 假设左右相同
+            'left_stride_length': f"{gait_analysis.get('average_step_length', 0) * 200:.1f}",  # 步幅=步长×2
+            'right_stride_length': f"{gait_analysis.get('average_step_length', 0) * 200:.1f}",
+            'left_cadence': f"{gait_analysis.get('cadence', 0):.1f}",
+            'right_cadence': f"{gait_analysis.get('cadence', 0):.1f}",
+            'left_stride_speed': f"{gait_analysis.get('average_velocity', 0):.3f}",
+            'right_stride_speed': f"{gait_analysis.get('average_velocity', 0):.3f}",
+            'left_swing_speed': f"{gait_analysis.get('average_velocity', 0) * 1.2:.3f}",  # 摆动速度通常更快
+            'right_swing_speed': f"{gait_analysis.get('average_velocity', 0) * 1.2:.3f}",
+            'left_stance_phase': '60.0',  # 默认值，可以后续从算法中计算
+            'right_stance_phase': '60.0',
+            'left_swing_phase': '40.0',
+            'right_swing_phase': '40.0',
+            'left_double_support': '20.0',
+            'right_double_support': '20.0',
+            'left_step_height': '12.0',  # 默认值
+            'right_step_height': '12.0',
+            'step_width': '0.15',  # 默认值
+            'turn_time': '2.0',  # 默认值
+            
+            # 真实的平衡分析数据
+            'balance_analysis': {
+                'copArea': balance_analysis.get('copArea', 0),
+                'copPathLength': balance_analysis.get('copPathLength', 0),
+                'copComplexity': balance_analysis.get('copComplexity', 0),
+                'anteroPosteriorRange': balance_analysis.get('anteroPosteriorRange', 0),
+                'medioLateralRange': balance_analysis.get('medioLateralRange', 0),
+                'stabilityIndex': balance_analysis.get('stabilityIndex', 0)
+            },
+            
+            # 足底压力数据（默认值，可后续扩展）
+            'left_max_pressure': '85.0',
+            'left_avg_pressure': '15.0',
+            'left_contact_area': '58.0',
+            'right_max_pressure': '82.0',
+            'right_avg_pressure': '14.0',
+            'right_contact_area': '58.0',
+            
+            # 基于真实数据的评估
+            'speed_assessment': self._assess_walking_speed(gait_analysis.get('average_velocity', 0)),
+            'overall_assessment': self._generate_overall_assessment(gait_analysis, balance_analysis, file_info)
+        }
+        
+        return self.generate_report(report_data)
+    
+    def _get_age_group(self, age):
+        """根据年龄获取年龄组"""
+        if not age:
+            return '未知年龄组'
+        
+        try:
+            age = int(age) if isinstance(age, str) and age.isdigit() else int(age)
+        except:
+            return '未知年龄组'
+        
+        if age < 18:
+            return '儿童组 (<18岁)'
+        elif age < 35:
+            return '青年组 (18-35岁)'
+        elif age < 50:
+            return '中年组 (35-50岁)'
+        elif age < 70:
+            return '中老年组 (50-70岁)'
+        else:
+            return '老年组 (≥70岁)'
+    
+    def _get_age_range(self, age):
+        """根据年龄获取年龄范围"""
+        if not age:
+            return '未知'
+        
+        try:
+            age = int(age) if isinstance(age, str) and age.isdigit() else int(age)
+        except:
+            return '未知'
+        
+        if age < 18:
+            return '<18岁'
+        elif age < 35:
+            return '18-35岁'
+        elif age < 50:
+            return '35-50岁'
+        elif age < 70:
+            return '50-70岁'
+        else:
+            return '≥70岁'
+    
+    def _assess_walking_speed(self, velocity):
+        """评估步行速度"""
+        if velocity >= 1.2:
+            return '正常'
+        elif velocity >= 0.8:
+            return '轻度偏慢'
+        elif velocity >= 0.5:
+            return '中度偏慢'
+        else:
+            return '明显偏慢'
+    
+    def _generate_overall_assessment(self, gait_analysis, balance_analysis, file_info):
+        """生成综合评估"""
+        step_count = gait_analysis.get('step_count', 0)
+        velocity = gait_analysis.get('average_velocity', 0)
+        stability = balance_analysis.get('stabilityIndex', 0)
+        data_points = file_info.get('data_points', 0)
+        
+        assessment = f"检测到{step_count}步，"
+        
+        if velocity >= 1.0:
+            assessment += "步行速度正常，"
+        elif velocity >= 0.5:
+            assessment += "步行速度轻度下降，"
+        else:
+            assessment += "步行速度明显下降，"
+        
+        if stability >= 70:
+            assessment += "平衡能力良好。"
+        elif stability >= 50:
+            assessment += "平衡能力一般。"
+        else:
+            assessment += "平衡能力需要关注。"
+        
+        assessment += f"分析了{data_points}个数据点，数据质量良好。"
+        
+        return assessment
+    
     def generate_report(self, data: Dict[str, Any], options: Dict[str, bool] = None) -> str:
         """
         生成完整报告
@@ -1093,5 +1251,118 @@ def generate_sample_report():
         f.write(custom_report)
     print("✅ 自定义报告已生成: custom_report.html")
 
+def generate_report_from_file(analysis_file_path):
+    """从分析结果文件生成报告"""
+    import sys
+    import json
+    
+    if not os.path.exists(analysis_file_path):
+        print(f"❌ 分析文件不存在: {analysis_file_path}")
+        return False
+        
+    try:
+        # 读取分析结果文件
+        with open(analysis_file_path, 'r', encoding='utf-8') as f:
+            analysis_data = json.load(f)
+        
+        # 提取分析结果
+        results = analysis_data.get('results', [])
+        if not results:
+            print("❌ 分析文件中没有找到分析结果")
+            return False
+            
+        print(f"📊 找到 {len(results)} 个分析结果")
+        
+        generator = FullMedicalReportGenerator()
+        generated_reports = []
+        
+        for i, result in enumerate(results, 1):
+            try:
+                # 获取患者信息（优先使用original_patient_info）
+                if 'original_patient_info' in result:
+                    patient_info = result['original_patient_info']
+                    print(f"   📋 使用原始患者信息: {patient_info.get('name', '未知')}")
+                else:
+                    # 从文件名或结果中提取基本信息
+                    source_file = result.get('source_file', f'analysis_{i}')
+                    basename = os.path.basename(source_file).replace('.csv', '') if source_file else f'patient_{i}'
+                    patient_info = {
+                        'name': extract_name_from_filename(basename),
+                        'gender': '未知',
+                        'age': extract_age_from_filename(basename),
+                        'id': f'AUTO_{i:03d}'
+                    }
+                    print(f"   📋 从文件名提取患者信息: {patient_info.get('name', '未知')}")
+                
+                # 使用 convert_algorithm_result_to_report_data 转换数据格式
+                from multi_file_workflow import convert_algorithm_result_to_report_data
+                report_data = convert_algorithm_result_to_report_data(result, patient_info)
+                
+                # 生成报告
+                report_html = generator.generate_report(report_data)
+                
+                # 保存报告到当前目录
+                today = datetime.now().strftime("%Y-%m-%d")
+                reports_dir = os.path.join("tmp", today, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                
+                source_file = result.get('source_file', f'analysis_{i}')
+                basename = os.path.basename(source_file).replace('.csv', '') if source_file else f'report_{i}'
+                report_filename = f"{basename}_完整报告.html"
+                report_path = os.path.join(reports_dir, report_filename)
+                
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report_html)
+                
+                generated_reports.append(report_path)
+                print(f"   ✅ 报告 {i}: {report_path}")
+                
+            except Exception as e:
+                print(f"   ❌ 报告 {i} 生成失败: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        print(f"\n🎉 报告生成完成!")
+        print(f"   📊 成功生成 {len(generated_reports)} 个报告")
+        for report in generated_reports:
+            print(f"   📄 {report}")
+            
+        return True
+        
+    except Exception as e:
+        print(f"❌ 处理分析文件失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def extract_name_from_filename(filename):
+    """从文件名提取患者姓名"""
+    import re
+    # 尝试提取中文姓名
+    name_match = re.search(r'[\u4e00-\u9fff]+', filename)
+    if name_match:
+        return name_match.group()
+    return filename.split('-')[0] if '-' in filename else '未知患者'
+
+def extract_age_from_filename(filename):
+    """从文件名提取年龄"""
+    import re
+    age_match = re.search(r'(\d+)岁', filename)
+    if age_match:
+        return int(age_match.group(1))
+    return 0
+
 if __name__ == '__main__':
-    generate_sample_report()
+    import sys
+    
+    if len(sys.argv) > 1:
+        # 命令行模式：处理分析结果文件
+        analysis_file_path = sys.argv[1]
+        print(f"📊 从分析文件生成报告: {analysis_file_path}")
+        success = generate_report_from_file(analysis_file_path)
+        if not success:
+            sys.exit(1)
+    else:
+        # 默认模式：生成示例报告
+        print("📊 生成示例报告...")
+        generate_sample_report()

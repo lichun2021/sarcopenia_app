@@ -1,0 +1,269 @@
+{
+  "timestamp": "2025-08-04T19:15:30.194790",
+  "total_files": 1,
+  "successful_analyses": 1,
+  "results": [
+    {
+      "file_info": {
+        "path": "tmp\\2025-08-04\\temp_csv\\pressure_data_20250804_191529.csv",
+        "data_points": 418
+      },
+      "gait_analysis": {
+        "step_count": 23,
+        "average_step_length": 0.3568846226543862,
+        "step_length_variability": 0.13926296608780403,
+        "average_step_time": 0.5351739130434785,
+        "average_velocity": 0.7399870560964763,
+        "cadence": 112.1130879844016,
+        "min_step_length": 0.14240281587845072,
+        "max_step_length": 0.7734213881986496,
+        "detected_peaks": 24,
+        "analysis_method": "pressure_peak_detection",
+        "individual_steps": [
+          {
+            "start_frame": 5,
+            "end_frame": 23,
+            "length": 0.38641656702935445,
+            "time": 0.5940000000000001,
+            "velocity": 0.6505329411268592,
+            "start_pressure": 3471.0,
+            "end_pressure": 4846.0
+          },
+          {
+            "start_frame": 23,
+            "end_frame": 39,
+            "length": 0.42968692130811625,
+            "time": 0.528,
+            "velocity": 0.8138009873259777,
+            "start_pressure": 4846.0,
+            "end_pressure": 4763.0
+          },
+          {
+            "start_frame": 39,
+            "end_frame": 51,
+            "length": 0.25640561838154574,
+            "time": 0.396,
+            "velocity": 0.6474889353069336,
+            "start_pressure": 4763.0,
+            "end_pressure": 4139.0
+          },
+          {
+            "start_frame": 51,
+            "end_frame": 67,
+            "length": 0.32887890818266263,
+            "time": 0.528,
+            "velocity": 0.6228767200429216,
+            "start_pressure": 4139.0,
+            "end_pressure": 5038.0
+          },
+          {
+            "start_frame": 67,
+            "end_frame": 77,
+            "length": 0.3866903205480361,
+            "time": 0.33,
+            "velocity": 1.1717888501455638,
+            "start_pressure": 5038.0,
+            "end_pressure": 5655.0
+          },
+          {
+            "start_frame": 77,
+            "end_frame": 92,
+            "length": 0.3107731261500412,
+            "time": 0.495,
+            "velocity": 0.6278244972728105,
+            "start_pressure": 5655.0,
+            "end_pressure": 5357.0
+          },
+          {
+            "start_frame": 92,
+            "end_frame": 103,
+            "length": 0.2710488068751533,
+            "time": 0.363,
+            "velocity": 0.7466909280307255,
+            "start_pressure": 5357.0,
+            "end_pressure": 4468.0
+          },
+          {
+            "start_frame": 103,
+            "end_frame": 130,
+            "length": 0.14240281587845072,
+            "time": 0.891,
+            "velocity": 0.15982358684450138,
+            "start_pressure": 4468.0,
+            "end_pressure": 5038.0
+          },
+          {
+            "start_frame": 130,
+            "end_frame": 140,
+            "length": 0.2153850517782153,
+            "time": 0.33,
+            "velocity": 0.6526819750855009,
+            "start_pressure": 5038.0,
+            "end_pressure": 4655.0
+          },
+          {
+            "start_frame": 140,
+            "end_frame": 154,
+            "length": 0.33909842197291074,
+            "time": 0.462,
+            "velocity": 0.7339792683396336,
+            "start_pressure": 4655.0,
+            "end_pressure": 3374.0
+          },
+          {
+            "start_frame": 154,
+            "end_frame": 175,
+            "length": 0.7734213881986496,
+            "time": 0.6930000000000001,
+            "velocity": 1.1160481792188304,
+            "start_pressure": 3374.0,
+            "end_pressure": 4298.0
+          },
+          {
+            "start_frame": 175,
+            "end_frame": 185,
+            "length": 0.58305183657649,
+            "time": 0.33,
+            "velocity": 1.7668237472014847,
+            "start_pressure": 4298.0,
+            "end_pressure": 6027.0
+          },
+          {
+            "start_frame": 185,
+            "end_frame": 196,
+            "length": 0.28132723011532973,
+            "time": 0.363,
+            "velocity": 0.7750061435684015,
+            "start_pressure": 6027.0,
+            "end_pressure": 5042.0
+          },
+          {
+            "start_frame": 196,
+            "end_frame": 226,
+            "length": 0.21946274479118896,
+            "time": 0.99,
+            "velocity": 0.22167954019312017,
+            "start_pressure": 5042.0,
+            "end_pressure": 5879.0
+          },
+          {
+            "start_frame": 226,
+            "end_frame": 244,
+            "length": 0.35921168733002423,
+            "time": 0.5940000000000001,
+            "velocity": 0.6047334803535761,
+            "start_pressure": 5879.0,
+            "end_pressure": 4935.0
+          },
+          {
+            "start_frame": 244,
+            "end_frame": 254,
+            "length": 0.2101052838944629,
+            "time": 0.33,
+            "velocity": 0.6366826784680694,
+            "start_pressure": 4935.0,
+            "end_pressure": 5999.0
+          },
+          {
+            "start_frame": 254,
+            "end_frame": 273,
+            "length": 0.27960535986162505,
+            "time": 0.627,
+            "velocity": 0.4459415627777114,
+            "start_pressure": 5999.0,
+            "end_pressure": 4094.0
+          },
+          {
+            "start_frame": 273,
+            "end_frame": 289,
+            "length": 0.39282286189739607,
+            "time": 0.528,
+            "velocity": 0.7439826929874925,
+            "start_pressure": 4094.0,
+            "end_pressure": 4535.0
+          },
+          {
+            "start_frame": 289,
+            "end_frame": 310,
+            "length": 0.24686305649158521,
+            "time": 0.8580000000000001,
+            "velocity": 0.2877191800601226,
+            "start_pressure": 4535.0,
+            "end_pressure": 4421.0
+          },
+          {
+            "start_frame": 310,
+            "end_frame": 329,
+            "length": 0.5079491793621533,
+            "time": 0.627,
+            "velocity": 0.8101262828742477,
+            "start_pressure": 4421.0,
+            "end_pressure": 5072.0
+          },
+          {
+            "start_frame": 329,
+            "end_frame": 348,
+            "length": 0.38811882718056895,
+            "time": 0.627,
+            "velocity": 0.6190092937489138,
+            "start_pressure": 5072.0,
+            "end_pressure": 4229.0
+          },
+          {
+            "start_frame": 348,
+            "end_frame": 361,
+            "length": 0.5524196967338705,
+            "time": 0.42900000000000005,
+            "velocity": 1.2876916007782526,
+            "start_pressure": 4229.0,
+            "end_pressure": 3897.0
+          },
+          {
+            "start_frame": 361,
+            "end_frame": 373,
+            "length": 0.3472006105130534,
+            "time": 0.396,
+            "velocity": 0.8767692184673065,
+            "start_pressure": 3897.0,
+            "end_pressure": 4795.0
+          }
+        ]
+      },
+      "balance_analysis": {
+        "copDisplacement": 69.56779077273694,
+        "copVelocity": 5.8657210288576875,
+        "swayArea": 9543.688883707939,
+        "stabilityIndex": 45.0,
+        "copArea": 13286.347621589139,
+        "copPathLength": 2328.6912484565023,
+        "copComplexity": 3.9,
+        "anteroPosteriorRange": 84.72307983179309,
+        "medioLateralRange": 112.6456793432878,
+        "average_velocity": 0.05865721028857688,
+        "max_displacement": 0.6956779077273694,
+        "trajectory_length": 23.286912484565022,
+        "stability_score": 45.0
+      },
+      "analysis_timestamp": "2025-08-04T19:15:30.189098",
+      "source_file": "tmp\\2025-08-04\\temp_csv\\pressure_data_20250804_191529.csv",
+      "file_index": 1,
+      "original_patient_info": {
+        "name": "曾超",
+        "age": 36,
+        "gender": "MALE",
+        "height": "166",
+        "weight": "66",
+        "test_date": "2025-08-04",
+        "test_type": "COMPREHENSIVE",
+        "test_types": [
+          "COMPREHENSIVE"
+        ],
+        "test_names": [
+          "综合评估"
+        ],
+        "notes": "步道4圈",
+        "created_time": "2025-08-04T19:15:27.905178"
+      }
+    }
+  ]
+}
