@@ -18,6 +18,7 @@ from datetime import datetime
 from serial_interface import SerialInterface
 from data_processor import DataProcessor
 from visualization import HeatmapVisualizer
+from visualization_3d import EnhancedHeatmapVisualizer
 from device_config import DeviceConfigDialog, DeviceManager
 from patient_manager_ui import PatientManagerDialog
 from sarcopenia_database import db
@@ -1509,11 +1510,23 @@ class PressureSensorUI:
     def setup_visualizer(self):
         """设置可视化模块"""
         array_info = self.data_processor.get_array_info()
-        self.visualizer = HeatmapVisualizer(
-            self.plot_frame, 
-            array_rows=array_info['rows'], 
-            array_cols=array_info['cols']
-        )
+        
+        # 使用增强的可视化器，支持2D/3D切换
+        try:
+            self.visualizer = EnhancedHeatmapVisualizer(
+                self.plot_frame, 
+                array_rows=array_info['rows'], 
+                array_cols=array_info['cols']
+            )
+            print(f"[UI] 已初始化增强可视化器 (支持2D/3D切换): {array_info['rows']}x{array_info['cols']}")
+        except Exception as e:
+            print(f"[UI] 增强可视化器初始化失败，回退到2D模式: {e}")
+            # 回退到原有的2D可视化器
+            self.visualizer = HeatmapVisualizer(
+                self.plot_frame, 
+                array_rows=array_info['rows'], 
+                array_cols=array_info['cols']
+            )
         
         # 延迟触发布局更新，确保窗口最大化完成后热力图获取正确尺寸
         def trigger_resize():
@@ -3145,6 +3158,14 @@ class PressureSensorUI:
                     self.sarcneuro_service.stop_service()
                 except:
                     pass
+            
+            # 清理可视化器资源
+            if hasattr(self, 'visualizer') and hasattr(self.visualizer, 'cleanup'):
+                try:
+                    print("[DEBUG] 清理可视化器资源...")
+                    self.visualizer.cleanup()
+                except Exception as ve:
+                    print(f"[DEBUG] 可视化器清理失败: {ve}")
             
             print("[DEBUG] 开始停止连接...")
             self.stop_connection()
