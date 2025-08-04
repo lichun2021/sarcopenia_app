@@ -395,27 +395,6 @@ class AlgorithmEngineManager:
                         logger.info(f"生成了 {len(diagnostic_suggestions)} 条诊断建议")
                         logger.info(f"详细报告包含 {len(detailed_report.评估明细)} 条评估明细")
                         
-                        # 保存完整的AI评估结果到JSON文件
-                        import json
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        patient_name = converted_patient_info.get('name', 'Unknown').replace(' ', '_')
-                        
-                        # 保存JSON结果
-                        ai_result_path = f"ai_assessment_{patient_name}_{timestamp}.json"
-                        try:
-                            full_ai_result = {
-                                'assessment': ai_assessment,
-                                'diagnostic_suggestions': diagnostic_suggestions,
-                                'detailed_report': detailed_report,
-                                'patient_info': converted_patient_info,
-                                'generation_time': datetime.now().isoformat()
-                            }
-                            with open(ai_result_path, 'w', encoding='utf-8') as f:
-                                json.dump(full_ai_result, f, ensure_ascii=False, indent=2, default=str)
-                            logger.info(f"✅ 完整AI评估结果已保存到: {ai_result_path}")
-                        except Exception as save_error:
-                            logger.error(f"保存AI评估结果失败: {save_error}")
-                        
                         # 生成AI评估文本摘要，用于集成到现有医疗报告中
                         ai_summary = self._generate_ai_summary(ai_assessment, diagnostic_suggestions, detailed_report)
                         raw_result['ai_summary'] = ai_summary
@@ -632,11 +611,9 @@ class AlgorithmEngineManager:
             
             logger.info("✅ 医疗报告生成完成，已集成AI评估结果")
             
-            # 保存HTML报告到日期目录并自动打开
+            # 保存HTML报告到日期目录
             try:
                 import os
-                import platform
-                import subprocess
                 
                 # 创建按日期组织的目录结构（与现有逻辑一致）
                 today = datetime.now().strftime("%Y-%m-%d")
@@ -656,22 +633,12 @@ class AlgorithmEngineManager:
                 
                 logger.info(f"📄 HTML医疗报告已保存到: {html_report_path}")
                 
-                # 自动打开报告文件（与现有逻辑一致）
-                try:
-                    if platform.system() == "Windows":
-                        os.startfile(html_report_path)  # Windows
-                    elif platform.system() == "Darwin":
-                        subprocess.run(['open', html_report_path])  # macOS
-                    else:
-                        subprocess.run(['xdg-open', html_report_path])  # Linux
-                    logger.info("🌐 HTML报告已自动在浏览器中打开")
-                except Exception as open_error:
-                    logger.info(f"请手动打开报告文件: {html_report_path}")
+                # 返回包含报告路径的HTML内容
+                return html_report, html_report_path
                 
             except Exception as save_error:
                 logger.error(f"保存HTML报告失败: {save_error}")
-            
-            return html_report
+                return html_report, None
             
         except Exception as e:
             logger.error(f"生成报告失败: {e}")

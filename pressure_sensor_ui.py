@@ -2652,22 +2652,27 @@ class PressureSensorUI:
                                 self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
                                 self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
                                 
-                                # 直接生成PDF报告
-                                self.log_ai_message("📄 生成PDF报告...")
+                                # 直接生成HTML报告
+                                self.log_ai_message("📄 生成HTML报告...")
                                 try:
-                                    pdf_path = self.algorithm_engine.generate_pdf_report(
+                                    report_result = self.algorithm_engine._generate_report(
                                         {'data': self._last_analysis_result},
                                         patient_info
                                     )
-                                    if pdf_path:
-                                        self.log_ai_message(f"📄 PDF报告已生成: {pdf_path}")
-                                        # 显示成功对话框，传递PDF报告路径
-                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, pdf_path))
+                                    if report_result and len(report_result) == 2:
+                                        html_content, html_path = report_result
+                                        if html_path:
+                                            self.log_ai_message(f"📄 HTML报告已生成: {html_path}")
+                                            # 显示成功对话框，传递HTML报告路径
+                                            self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, html_path))
+                                        else:
+                                            self.log_ai_message("[WARN] HTML报告保存失败")
+                                            self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                                     else:
-                                        self.log_ai_message("[WARN] PDF报告生成失败")
+                                        self.log_ai_message("[WARN] HTML报告生成失败")
                                         self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
-                                except Exception as pdf_error:
-                                    self.log_ai_message(f"[ERROR] PDF报告生成异常: {pdf_error}")
+                                except Exception as report_error:
+                                    self.log_ai_message(f"[ERROR] HTML报告生成异常: {report_error}")
                                     self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                             else:
                                 raise Exception("无法获取分析详细结果")
