@@ -633,8 +633,18 @@ class AlgorithmEngineManager:
                 
                 logger.info(f"📄 HTML医疗报告已保存到: {html_report_path}")
                 
-                # 返回包含报告路径的HTML内容
-                return html_report, html_report_path
+                # 尝试将HTML转换为PDF
+                try:
+                    pdf_path = self.convert_html_to_pdf(html_report, html_report_path.replace('.html', '.pdf'))
+                    if pdf_path and os.path.exists(pdf_path):
+                        logger.info(f"📄 PDF报告已生成: {pdf_path}")
+                        return html_report, pdf_path
+                    else:
+                        logger.warning("PDF转换失败，返回HTML报告")
+                        return html_report, html_report_path
+                except Exception as pdf_error:
+                    logger.warning(f"PDF转换异常: {pdf_error}，返回HTML报告")
+                    return html_report, html_report_path
                 
             except Exception as save_error:
                 logger.error(f"保存HTML报告失败: {save_error}")
@@ -901,6 +911,7 @@ AI智能评估结果:
             # 尝试使用wkhtmltopdf
             try:
                 import pdfkit
+                import platform
                 
                 # 配置选项
                 options = {
@@ -914,13 +925,33 @@ AI智能评估结果:
                     'enable-local-file-access': None
                 }
                 
+                # Windows上的wkhtmltopdf配置
+                config = None
+                if platform.system() == 'Windows':
+                    # 尝试常见的Windows安装路径
+                    possible_paths = [
+                        r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
+                        r'C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe',
+                        r'C:\wkhtmltopdf\bin\wkhtmltopdf.exe',
+                        r'D:\wkhtmltopdf\bin\wkhtmltopdf.exe'
+                    ]
+                    
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            config = pdfkit.configuration(wkhtmltopdf=path)
+                            logger.info(f"找到wkhtmltopdf: {path}")
+                            break
+                    
+                    if not config:
+                        logger.warning("未找到wkhtmltopdf可执行文件，尝试使用系统PATH")
+                
                 if output_path is None:
                     # 创建临时文件
                     temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
                     os.close(temp_fd)
                 
                 # 转换HTML到PDF
-                pdfkit.from_string(html_content, output_path, options=options)
+                pdfkit.from_string(html_content, output_path, options=options, configuration=config)
                 logger.info(f"PDF生成成功: {output_path}")
                 return output_path
                 
