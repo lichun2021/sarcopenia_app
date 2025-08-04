@@ -908,55 +908,77 @@ AI智能评估结果:
     def convert_html_to_pdf(self, html_content: str, output_path: str = None) -> str:
         """将HTML内容转换为PDF文件"""
         try:
-            # 尝试使用wkhtmltopdf
+            # 为了解决中文问题，我们需要注册字体
+            from xhtml2pdf import pisa
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+            
+            # 注册中文字体
             try:
-                import pdfkit
-                import platform
-                
-                # 配置选项
-                options = {
-                    'page-size': 'A4',
-                    'margin-top': '0.75in',
-                    'margin-right': '0.75in',
-                    'margin-bottom': '0.75in',
-                    'margin-left': '0.75in',
-                    'encoding': "UTF-8",
-                    'no-outline': None,
-                    'enable-local-file-access': None
-                }
-                
-                # Windows上的wkhtmltopdf配置
-                config = None
-                if platform.system() == 'Windows':
-                    # 尝试常见的Windows安装路径
-                    possible_paths = [
-                        r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
-                        r'C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe',
-                        r'C:\wkhtmltopdf\bin\wkhtmltopdf.exe',
-                        r'D:\wkhtmltopdf\bin\wkhtmltopdf.exe'
-                    ]
-                    
-                    for path in possible_paths:
-                        if os.path.exists(path):
-                            config = pdfkit.configuration(wkhtmltopdf=path)
-                            logger.info(f"找到wkhtmltopdf: {path}")
-                            break
-                    
-                    if not config:
-                        logger.warning("未找到wkhtmltopdf可执行文件，尝试使用系统PATH")
-                
-                if output_path is None:
-                    # 创建临时文件
-                    temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
-                    os.close(temp_fd)
-                
-                # 转换HTML到PDF
-                pdfkit.from_string(html_content, output_path, options=options, configuration=config)
+                pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+                logger.info("注册中文字体成功")
+            except Exception as e:
+                logger.warning(f"注册中文字体失败: {e}")
+            
+            if output_path is None:
+                temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
+                os.close(temp_fd)
+            
+            # 为HTML添加最小的字体声明（只在内存中修改）
+            # 在HTML的<head>中插入字体CSS
+            import re
+            
+            # 查找</head>标签的位置
+            head_end = html_content.find('</head>')
+            if head_end > 0:
+                # 插入字体样式
+                font_style = """
+                <style>
+                    body { font-family: STSong-Light, sans-serif; }
+                    * { font-family: STSong-Light, sans-serif; }
+                </style>
+                """
+                # 在</head>之前插入样式
+                modified_html = html_content[:head_end] + font_style + html_content[head_end:]
+            else:
+                # 如果没有head标签，尝试在<html>后面添加
+                html_start = html_content.find('<html')
+                if html_start >= 0:
+                    html_tag_end = html_content.find('>', html_start)
+                    if html_tag_end > 0:
+                        font_style = """
+                        <head>
+                        <style>
+                            body { font-family: STSong-Light, sans-serif; }
+                            * { font-family: STSong-Light, sans-serif; }
+                        </style>
+                        </head>
+                        """
+                        modified_html = html_content[:html_tag_end+1] + font_style + html_content[html_tag_end+1:]
+                    else:
+                        modified_html = html_content
+                else:
+                    modified_html = html_content
+            
+            # 创建PDF
+            with open(output_path, "wb") as result_file:
+                pisa_status = pisa.CreatePDF(
+                    modified_html,
+                    dest=result_file,
+                    encoding='utf-8'
+                )
+            
+            if not pisa_status.err:
                 logger.info(f"PDF生成成功: {output_path}")
                 return output_path
-                
-            except ImportError:
-                logger.warning("pdfkit未安装，尝试使用weasyprint")
+            else:
+                logger.warning(f"PDF生成失败: {pisa_status.err}")
+                # 如果PDF生成失败，返回HTML
+                html_path = output_path.replace('.pdf', '.html')
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)  # 保存原始HTML，不是修改后的
+                logger.info(f"PDF生成失败，已保存HTML: {html_path}")
+                return html_path
                 
                 # 尝试使用weasyprint
                 try:

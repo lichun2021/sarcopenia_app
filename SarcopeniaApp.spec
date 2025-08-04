@@ -26,6 +26,15 @@ a = Analysis(
         'fastapi', 'fastapi.middleware.cors', 'fastapi.responses', 'fastapi.staticfiles',
         'pydantic', 'asyncio', 'jinja2',
         
+        # PDF generation
+        'reportlab', 'reportlab.pdfgen', 'reportlab.pdfgen.canvas',
+        'reportlab.lib', 'reportlab.lib.pagesizes', 'reportlab.lib.colors',
+        'reportlab.lib.styles', 'reportlab.lib.units', 'reportlab.lib.enums',
+        'reportlab.platypus', 'reportlab.platypus.tables', 'reportlab.platypus.paragraph',
+        'reportlab.pdfbase', 'reportlab.pdfbase.pdfmetrics', 'reportlab.pdfbase.ttfonts',
+        'reportlab.pdfbase.cidfonts', 'reportlab.pdfbase._cidfontdata',
+        'html5lib', 'bs4', 'beautifulsoup4',
+        
         # Project modules
         'serial_interface', 'data_processor', 'visualization', 'device_config', 'window_manager',
         'patient_manager_ui', 'sarcopenia_database', 'detection_wizard_ui',
