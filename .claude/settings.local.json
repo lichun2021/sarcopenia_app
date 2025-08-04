@@ -10,7 +10,8 @@
       "Bash(find:*)",
       "Bash(sqlite3:*)",
       "Bash(python:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
