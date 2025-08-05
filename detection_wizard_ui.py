@@ -36,9 +36,9 @@ class DetectionWizardDialog:
             # 获取已完成的步骤信息
             session_steps = db.get_session_steps(session_info['id'])
             
-            print(f"[DEBUG] 会话步骤数据: {len(session_steps)} 个步骤")
-            for step in session_steps:
-                print(f"[DEBUG] 步骤{step['step_number']}: {step['step_name']} - 状态: {step['status']}")
+            # 减少调试输出，仅在有步骤数据时简要显示
+            if session_steps:
+                print(f"[INFO] 会话恢复：发现 {len(session_steps)} 个已记录步骤")
             
             # 找到最后一个已完成步骤的下一步
             last_completed_step = 0
@@ -55,7 +55,8 @@ class DetectionWizardDialog:
             else:
                 self.current_step = 1
             
-            print(f"[DEBUG] 恢复会话：最后完成步骤={last_completed_step}, 当前步骤={self.current_step}")
+            if last_completed_step > 0:
+                print(f"[INFO] 恢复会话：从第{self.current_step}步继续")
             
             # 恢复已完成步骤的结果
             self.step_results = {}
@@ -68,7 +69,7 @@ class DetectionWizardDialog:
                         'end_time': step.get('end_time', '')
                     }
         else:
-            print(f"[DEBUG] 新建会话，从第1步开始")
+            # 减少新建会话的调试输出
             self.current_step = 1
             self.step_results = {}
         self.is_running = False
@@ -409,6 +410,43 @@ class DetectionWizardDialog:
             print(f"[ERROR] 检查设备配置失败: {e}")
             return False, "未知"
     
+    def switch_main_ui_device(self, device_type):
+        """切换主界面的设备选择到指定类型"""
+        try:
+            if not hasattr(self.main_ui, 'device_manager') or not self.main_ui.device_manager:
+                return
+            
+            device_manager = self.main_ui.device_manager
+            
+            # 设备类型映射到配置键
+            device_type_mapping = {
+                '坐垫': 'cushion',
+                '脚垫': 'footpad', 
+                '步道': 'walkway_dual'
+            }
+            
+            required_device_key = device_type_mapping.get(device_type)
+            if not required_device_key or required_device_key not in device_manager.devices:
+                return
+            
+            # 获取设备信息并设置到主界面的下拉框
+            device_config = device_manager.devices[required_device_key]
+            device_display = f"{device_config['icon']} {device_config['name']}"
+            
+            # 设置主界面设备选择
+            if hasattr(self.main_ui, 'device_var'):
+                current_device = self.main_ui.device_var.get()
+                # 仅在设备实际不同时才切换
+                if current_device != device_display:
+                    self.main_ui.device_var.set(device_display)
+                    # 手动触发设备切换事件
+                    if hasattr(self.main_ui, 'on_device_changed'):
+                        self.main_ui.on_device_changed(None)
+                    print(f"[INFO] 检测向导切换设备: {current_device} → {device_display}")
+            
+        except Exception as e:
+            print(f"[ERROR] 切换主界面设备失败: {e}")
+    
     def start_current_step(self):
         """开始当前步骤"""
         try:
@@ -425,6 +463,9 @@ class DetectionWizardDialog:
                 self.on_device_error_close()
                 self.dialog.destroy()
                 return
+            
+            # 自动切换主界面设备到当前步骤所需的设备
+            self.switch_main_ui_device(device_type)
             
             self.is_running = True
             self.start_time = datetime.now()

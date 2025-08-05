@@ -148,7 +148,8 @@ class Heatmap3DRenderer:
         while not self.stop_event.is_set():
             try:
                 loop_count += 1
-                if loop_count % 100 == 0:
+                # 减少频繁打印，仅在每1000次迭代时打印一次
+                if loop_count % 1000 == 0:
                     print(f"[3D热力图] 渲染循环运行中，第{loop_count}次迭代")
                 
                 # 等待数据，带超时
@@ -190,7 +191,7 @@ class Heatmap3DRenderer:
                         old_result = self.result_queue.get_nowait()
                         if old_result[0]:  # 关闭旧图形
                             plt.close(old_result[0])
-                        print(f"[3D热力图] 移除旧结果")
+                        # 减少频繁的旧结果移除输出
                     
                     self.result_queue.put_nowait((fig, {
                         'render_time': render_time,

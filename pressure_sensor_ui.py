@@ -3989,7 +3989,7 @@ class PressureSensorUI:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return
             
-            print(f"[DEBUG] 准备创建检测向导")
+            # 减少调试输出
             
             # 初始化活动检测向导引用
             self._active_detection_wizard = None
@@ -3998,7 +3998,7 @@ class PressureSensorUI:
             # 注意：传递self而不是self.root，这样检测向导可以访问主界面对象
             wizard = DetectionWizardDialog(self, self.current_patient, self.current_session)
             
-            print(f"[DEBUG] 检测向导对话框已关闭")
+            # 减少调试输出
             
             # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
             self.detection_in_progress = False
@@ -4006,7 +4006,6 @@ class PressureSensorUI:
             
             # 清除活动检测向导引用
             self._active_detection_wizard = None
-            print(f"[DEBUG] 活动检测向导已清除")
             
             # 检查检测状态
             self.check_detection_completion()
