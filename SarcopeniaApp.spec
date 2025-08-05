@@ -43,6 +43,7 @@ a = Analysis(
         'reportlab.graphics', 'reportlab.graphics.barcode', 'reportlab.graphics.barcode.code128',
         'reportlab.graphics.barcode.code93', 'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.common',
         'reportlab.graphics.barcode.eanbc', 'reportlab.graphics.barcode.qr', 'reportlab.graphics.barcode.usps',
+        'reportlab.graphics.barcode.usps4s', 'reportlab.graphics.barcode.lto',
         'html5lib', 'bs4', 'beautifulsoup4',
         
         # Project modules
