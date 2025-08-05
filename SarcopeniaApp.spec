@@ -6,9 +6,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('sarcneuro-edge', 'sarcneuro-edge'), 
+        ('gemsage', 'gemsage'), 
         ('config.ini', '.'),
-        ('gemsage/*.html', 'gemsage'),
         ('GEMSAGE_MODIFICATIONS.md', '.')
     ],
     hiddenimports=[
@@ -32,16 +31,22 @@ a = Analysis(
         'pydantic', 'asyncio', 'jinja2',
         
         # PDF generation
+        'xhtml2pdf', 'xhtml2pdf.pisa', 'xhtml2pdf.default', 'xhtml2pdf.context',
+        'weasyprint', 'weasyprint.css', 'weasyprint.css.targets', 'weasyprint.html',
         'reportlab', 'reportlab.pdfgen', 'reportlab.pdfgen.canvas',
         'reportlab.lib', 'reportlab.lib.pagesizes', 'reportlab.lib.colors',
         'reportlab.lib.styles', 'reportlab.lib.units', 'reportlab.lib.enums',
         'reportlab.platypus', 'reportlab.platypus.tables', 'reportlab.platypus.paragraph',
+        'reportlab.platypus.doctemplate', 'reportlab.platypus.flowables',
         'reportlab.pdfbase', 'reportlab.pdfbase.pdfmetrics', 'reportlab.pdfbase.ttfonts',
         'reportlab.pdfbase.cidfonts', 'reportlab.pdfbase._cidfontdata',
+        'reportlab.graphics', 'reportlab.graphics.barcode', 'reportlab.graphics.barcode.code128',
+        'reportlab.graphics.barcode.code93', 'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.common',
+        'reportlab.graphics.barcode.eanbc', 'reportlab.graphics.barcode.qr', 'reportlab.graphics.barcode.usps',
         'html5lib', 'bs4', 'beautifulsoup4',
         
         # Project modules
-        'serial_interface', 'data_processor', 'visualization', 'device_config', 'window_manager',
+        'serial_interface', 'data_processor', 'visualization', 'visualization_3d', 'device_config', 'window_manager',
         'patient_manager_ui', 'sarcopenia_database', 'detection_wizard_ui',
         'sarcneuro_service', 'logger_utils', 'date', 'port_manager', 'server_status',
         'data_converter', 'patient_info_dialog', 'detection_step_ui',
@@ -81,7 +86,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
