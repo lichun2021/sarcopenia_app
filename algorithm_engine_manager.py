@@ -269,14 +269,16 @@ class AlgorithmEngineManager:
                     
                     logger.info(f"AI评估结果已保存到: {ai_result_path}")
                 
-                # 生成报告HTML (跳过PDF转换)
-                try:
-                    report_html = self._generate_report(result, patient_info)
-                    if report_html:
-                        result['report_html'] = report_html
-                except Exception as pdf_error:
-                    logger.warning(f"跳过PDF生成: {pdf_error}")
-                    pass
+                # 对于综合分析，report_html 已经在 _analyze_sync 中生成
+                # 其他分析类型才需要在这里生成报告
+                if test_type.upper() != "COMPREHENSIVE":
+                    try:
+                        report_html = self._generate_report(result, patient_info)
+                        if report_html:
+                            result['report_html'] = report_html
+                    except Exception as pdf_error:
+                        logger.warning(f"跳过PDF生成: {pdf_error}")
+                        pass
             
             # 添加元数据
             if result:
@@ -290,7 +292,13 @@ class AlgorithmEngineManager:
                 if self.cache is not None:
                     self.cache[cache_key] = result
             
+            # 调试：检查结果中是否包含报告
             logger.info(f"分析完成，耗时: {time.time() - start_time:.2f}秒")
+            if result:
+                logger.info(f"返回结果包含的键: {list(result.keys())}")
+                logger.info(f"report_html 存在: {'report_html' in result}")
+                logger.info(f"report_path: {result.get('report_path', 'None')}")
+            
             return result
             
         except Exception as e:
@@ -316,7 +324,7 @@ class AlgorithmEngineManager:
                 
                 # 使用 multi_file_workflow 的两个方法
                 # 导入 multi_file_workflow 模块
-                from gemsage.multi_file_workflow import analyze_multiple_files, generate_reports_from_analyses
+                from gemsage.multi_file_workflow import analyze_multiple_files, generate_reports_from_analyses_json
                 
                 # 第一步：使用 analyze_multiple_files 分析文件（使用日期目录）
                 csv_files = [str(temp_csv_path)]
@@ -328,27 +336,63 @@ class AlgorithmEngineManager:
                 raw_result = analysis_results[0]
                 logger.info(f"multi_file_workflow分析返回结果: {raw_result}")
                 
-                # 将原始患者信息保存到分析结果中，以便 generate_reports_from_analyses 使用
+                # 将原始患者信息保存到分析结果中
                 if analysis_results:
                     analysis_results[0]['original_patient_info'] = patient_info
-                    
-                    # 重新保存包含患者信息的分析结果
-                    import json
-                    summary_file = os.path.join(analysis_dir, "analysis_summary.json")
-                    if os.path.exists(summary_file):
-                        with open(summary_file, 'r', encoding='utf-8') as f:
-                            summary = json.load(f)
-                        summary['results'][0]['original_patient_info'] = patient_info
-                        with open(summary_file, 'w', encoding='utf-8') as f:
-                            json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
                 
-                # 第二步：使用 generate_reports_from_analyses 生成报告（默认combined模式）
+                # 第二步：使用 generate_reports_from_analyses_json 生成报告（直接传递JSON数据）
                 logger.info("生成综合报告...")
-                report_success = generate_reports_from_analyses(analysis_dir, "combined")
-                if report_success:
-                    logger.info("✅ 报告生成成功")
-                else:
-                    logger.error("❌ 报告生成失败")
+                try:
+                    # 准备分析结果列表
+                    if 'original_patient_info' not in analysis_results[0]:
+                        analysis_results[0]['original_patient_info'] = patient_info
+                    
+                    # 使用新方法生成报告HTML
+                    report_html = generate_reports_from_analyses_json(analysis_results, "combined")
+                    
+                    # 保存HTML报告到文件
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    reports_dir = os.path.join("tmp", today, "reports")
+                    os.makedirs(reports_dir, exist_ok=True)
+                    
+                    # 生成报告文件名：名字_性别_年龄_当天日期
+                    patient_name = patient_info.get('name', '未知患者')
+                    patient_gender_raw = patient_info.get('gender', '未知')
+                    patient_age = patient_info.get('age', '未知')
+                    today_date = datetime.now().strftime("%Y%m%d")
+                    
+                    # 转换性别为中文
+                    gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                    patient_gender = gender_map.get(patient_gender_raw, patient_gender_raw)
+                    
+                    report_filename = f"{patient_name}_{patient_gender}_{patient_age}岁_{today_date}.html"
+                    report_path = os.path.join(reports_dir, report_filename)
+                    
+                    # 写入报告文件
+                    with open(report_path, 'w', encoding='utf-8') as f:
+                        f.write(report_html)
+                    
+                    logger.info(f"✅ 报告生成成功: {report_path}")
+                    report_success = True
+                    
+                    # 将生成的HTML添加到结果中
+                    raw_result['report_html'] = report_html
+                    raw_result['report_path'] = report_path
+                    
+                    # 清理不需要的JSON文件
+                    try:
+                        import shutil
+                        if os.path.exists(temp_analysis_dir):
+                            shutil.rmtree(temp_analysis_dir)
+                            logger.info(f"🗑️ 清理临时文件目录: {temp_analysis_dir}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"清理临时文件失败: {cleanup_error}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ 报告生成失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    report_success = False
                 
                 logger.info(f"最终分析结果: {raw_result}")
                 
@@ -547,6 +591,12 @@ class AlgorithmEngineManager:
                 }
             }
             
+            # 传递报告相关字段
+            if 'report_html' in raw_result:
+                formatted_result['report_html'] = raw_result['report_html']
+            if 'report_path' in raw_result:
+                formatted_result['report_path'] = raw_result['report_path']
+            
             return formatted_result
             
         except Exception as e:
@@ -707,10 +757,16 @@ class AlgorithmEngineManager:
     ) -> Optional[str]:
         """生成PDF格式的分析报告"""
         try:
-            # 先生成HTML报告
-            html_content = self._generate_report(analysis_result, patient_info)
+            # 检查是否已有HTML报告
+            data = analysis_result.get('data', {})
+            metrics = data.get('metrics', {})
+            html_content = metrics.get('report_html') or data.get('report_html') or analysis_result.get('report_html')
+            
+            # 如果没有现成的HTML，才生成新的
             if not html_content:
-                raise Exception("HTML报告生成失败")
+                html_content = self._generate_report(analysis_result, patient_info)
+                if not html_content:
+                    raise Exception("HTML报告生成失败")
             
             # 如果未指定输出路径，生成默认路径
             if output_path is None:

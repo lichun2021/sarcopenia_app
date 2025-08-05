@@ -274,6 +274,94 @@ def combine_analysis_results(results):
     
     return combined_result
 
+def generate_reports_from_analyses_json(analysis_results, report_type="combined"):
+    """
+    基于JSON数据生成报告（不依赖目录）
+    
+    参数:
+        analysis_results: 分析结果列表（JSON格式）
+        report_type: 报告类型
+            - "individual": 每个分析结果生成一个独立报告
+            - "combined": 所有结果合并成一个综合报告
+            - "both": 生成独立报告 + 综合报告
+    
+    返回:
+        str: HTML格式的报告内容（如果是单个报告）
+        list: HTML格式的报告列表（如果是多个报告）
+    """
+    if not analysis_results:
+        raise ValueError("分析结果不能为空")
+    
+    generator = FullMedicalReportGenerator()
+    generated_reports = []
+    
+    # 生成独立报告
+    if report_type in ["individual", "both"]:
+        for i, result in enumerate(analysis_results, 1):
+            try:
+                # 获取患者信息
+                if 'original_patient_info' in result:
+                    patient_info = result['original_patient_info']
+                else:
+                    source_file = result.get('source_file', f'analysis_{i}')
+                    basename = os.path.basename(source_file).replace('.csv', '') if source_file else f'patient_{i}'
+                    patient_info = {
+                        'name': extract_name_from_filename(basename),
+                        'gender': '未知',
+                        'age': extract_age_from_filename(basename),
+                        'id': f'AUTO_{i:03d}'
+                    }
+                
+                # 直接使用原有方法生成报告
+                report_html = generator.generate_report_from_algorithm(result, patient_info)
+                generated_reports.append(report_html)
+                
+            except Exception as e:
+                raise ValueError(f"报告 {i} 生成失败: {e}")
+    
+    # 生成综合报告
+    if report_type in ["combined", "both"]:
+        try:
+            # 合并所有分析数据
+            combined_result = combine_analysis_results(analysis_results)
+            
+            # 综合患者信息
+            if len(analysis_results) == 1 and 'original_patient_info' in analysis_results[0]:
+                combined_patient_info = analysis_results[0]['original_patient_info'].copy()
+                
+                # 转换性别为中文
+                gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                if 'gender' in combined_patient_info:
+                    combined_patient_info['gender'] = gender_map.get(
+                        combined_patient_info['gender'], 
+                        combined_patient_info['gender']
+                    )
+            else:
+                avg_age = calculate_average_age(analysis_results)
+                combined_patient_info = {
+                    'name': f'{len(analysis_results)}个样本综合分析',
+                    'gender': '综合',
+                    'age': avg_age if avg_age > 0 else 35,
+                    'id': 'COMBINED_ANALYSIS'
+                }
+            
+            # 直接使用原有方法生成综合报告
+            combined_html = generator.generate_report_from_algorithm(combined_result, combined_patient_info)
+            
+            if report_type == "combined":
+                return combined_html
+            else:
+                generated_reports.append(combined_html)
+                
+        except Exception as e:
+            raise ValueError(f"综合报告生成失败: {e}")
+    
+    # 返回结果
+    if len(generated_reports) == 1:
+        return generated_reports[0]
+    else:
+        return generated_reports
+
 def main():
     """主程序 - 演示多文件工作流程"""
     print("🧪 多文件工作流程演示")

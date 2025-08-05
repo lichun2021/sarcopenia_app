@@ -2390,6 +2390,7 @@ class PressureSensorUI:
                         'sub_scores': analysis_data.get('sub_scores', {}),
                         'suggestions': analysis_data.get('suggestions', []),
                         'report_html': result.get('report_html', ''),
+                        'report_path': result.get('report_path', ''),
                         'metrics': analysis_data.get('metrics', {})
                     }
                 }
@@ -2652,30 +2653,54 @@ class PressureSensorUI:
                                 self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
                                 self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
                                 
-                                # 生成报告（尝试PDF，如果失败则使用HTML）
-                                self.log_ai_message("📄 生成报告...")
+                                # 获取已生成的报告HTML和路径
+                                self.log_ai_message("📄 获取生成的报告...")
                                 try:
-                                    report_result = self.algorithm_engine._generate_report(
-                                        {'data': self._last_analysis_result},
-                                        patient_info
-                                    )
-                                    if report_result and len(report_result) == 2:
-                                        html_content, report_path = report_result
-                                        if report_path:
-                                            if report_path.endswith('.pdf'):
-                                                self.log_ai_message(f"📄 PDF报告已生成: {report_path}")
+                                    # 从 result 中获取报告HTML和路径
+                                    # 报告数据在 result['result'] 里
+                                    result_data = result.get('result', {})
+                                    report_html = result_data.get('report_html') or result.get('report_html')
+                                    report_path = result_data.get('report_path') or result.get('report_path')
+                                    
+                                    # 调试输出
+                                    self.log_ai_message(f"[DEBUG] result keys: {list(result.keys())}")
+                                    self.log_ai_message(f"[DEBUG] result['result'] keys: {list(result_data.keys())}")
+                                    self.log_ai_message(f"[DEBUG] report_html exists: {report_html is not None}")
+                                    self.log_ai_message(f"[DEBUG] report_path: {report_path}")
+                                    
+                                    if report_html and report_path:
+                                        # 尝试生成PDF
+                                        try:
+                                            self.log_ai_message("📥 转换为PDF格式...")
+                                            # 生成PDF文件名：名字_性别_年龄_当天日期
+                                            patient_name = patient_info.get('name', '未知患者')
+                                            patient_gender_raw = patient_info.get('gender', '未知')
+                                            patient_age = patient_info.get('age', '未知')
+                                            today_date = datetime.now().strftime("%Y%m%d")
+                                            
+                                            # 转换性别为中文
+                                            gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                                            patient_gender = gender_map.get(patient_gender_raw, patient_gender_raw)
+                                            
+                                            pdf_filename = f"{patient_name}_{patient_gender}_{patient_age}岁_{today_date}.pdf"
+                                            pdf_dir = os.path.dirname(report_path)
+                                            pdf_path_new = os.path.join(pdf_dir, pdf_filename)
+                                            
+                                            pdf_path = self.algorithm_engine.convert_html_to_pdf(report_html, pdf_path_new)
+                                            if pdf_path and os.path.exists(pdf_path):
+                                                self.log_ai_message(f"📄 PDF报告已生成: {pdf_path}")
+                                                self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, pdf_path))
                                             else:
-                                                self.log_ai_message(f"📄 HTML报告已生成: {report_path}")
-                                            # 显示成功对话框，传递报告路径
+                                                self.log_ai_message(f"[WARN] PDF转换失败，使用HTML报告: {report_path}")
+                                                self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path))
+                                        except Exception as pdf_error:
+                                            self.log_ai_message(f"[WARN] PDF转换异常: {pdf_error}，使用HTML报告")
                                             self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path))
-                                        else:
-                                            self.log_ai_message("[WARN] 报告保存失败")
-                                            self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                                     else:
-                                        self.log_ai_message("[WARN] 报告生成失败")
+                                        self.log_ai_message("[WARN] 没有找到报告内容")
                                         self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                                 except Exception as report_error:
-                                    self.log_ai_message(f"[ERROR] 报告生成异常: {report_error}")
+                                    self.log_ai_message(f"[ERROR] 获取报告异常: {report_error}")
                                     self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None))
                             else:
                                 raise Exception("无法获取分析详细结果")
