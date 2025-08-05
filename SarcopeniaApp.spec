@@ -40,10 +40,13 @@ a = Analysis(
         'reportlab.platypus.doctemplate', 'reportlab.platypus.flowables',
         'reportlab.pdfbase', 'reportlab.pdfbase.pdfmetrics', 'reportlab.pdfbase.ttfonts',
         'reportlab.pdfbase.cidfonts', 'reportlab.pdfbase._cidfontdata',
-        'reportlab.graphics', 'reportlab.graphics.barcode', 'reportlab.graphics.barcode.code128',
-        'reportlab.graphics.barcode.code93', 'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.common',
-        'reportlab.graphics.barcode.eanbc', 'reportlab.graphics.barcode.qr', 'reportlab.graphics.barcode.usps',
-        'reportlab.graphics.barcode.usps4s', 'reportlab.graphics.barcode.lto',
+        'reportlab.graphics', 'reportlab.graphics.barcode', 
+        'reportlab.graphics.barcode.common', 'reportlab.graphics.barcode.code128', 'reportlab.graphics.barcode.code93',
+        'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.eanbc', 'reportlab.graphics.barcode.qr',
+        'reportlab.graphics.barcode.usps', 'reportlab.graphics.barcode.usps4s', 'reportlab.graphics.barcode.lto',
+        'reportlab.graphics.barcode.widgets', 'reportlab.graphics.barcode.fourstate', 'reportlab.graphics.barcode.dmtx',
+        'reportlab.graphics.barcode.aztec', 'reportlab.graphics.barcode.code11', 'reportlab.graphics.barcode.itf',
+        'reportlab.graphics.barcode.codabar', 'reportlab.graphics.barcode.ecc200datamatrix',
         'html5lib', 'bs4', 'beautifulsoup4',
         
         # Project modules
