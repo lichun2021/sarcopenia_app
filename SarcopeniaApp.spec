@@ -5,7 +5,12 @@ a = Analysis(
     ['pressure_sensor_ui.py'],
     pathex=[],
     binaries=[],
-    datas=[('sarcneuro-edge', 'sarcneuro-edge'), ('config.ini', '.')],
+    datas=[
+        ('sarcneuro-edge', 'sarcneuro-edge'), 
+        ('config.ini', '.'),
+        ('gemsage/*.html', 'gemsage'),
+        ('GEMSAGE_MODIFICATIONS.md', '.')
+    ],
     hiddenimports=[
         # Tkinter and GUI
         'tkinter', 'tkinter.ttk', 'tkinter.scrolledtext', 'tkinter.messagebox', 'tkinter.filedialog',
@@ -40,7 +45,19 @@ a = Analysis(
         'patient_manager_ui', 'sarcopenia_database', 'detection_wizard_ui',
         'sarcneuro_service', 'logger_utils', 'date', 'port_manager', 'server_status',
         'data_converter', 'patient_info_dialog', 'detection_step_ui',
-        'multi_port_interface', 'integration_ui', 'run_detection_system'
+        'multi_port_interface', 'integration_ui', 'run_detection_system',
+        
+        # Algorithm engine
+        'algorithm_engine_manager',
+        
+        # GemSage modules
+        'gemsage', 'gemsage.core_calculator', 'gemsage.full_medical_report_generator',
+        'gemsage.multi_file_workflow', 'gemsage.ai_assessment_engine',
+        'gemsage.comprehensive_diagnosis', 'gemsage.adaptive_cop_analyzer',
+        'gemsage.progressive_cop_analyzer', 'gemsage.ground_reaction_force_analysis',
+        'gemsage.joint_angle_analysis', 'gemsage.joint_torque_power_analysis',
+        'gemsage.hardware_adaptive_service', 'gemsage.fix_step_detection',
+        'gemsage.debug_data_structure'
     ],
     hookspath=[],
     hooksconfig={},

@@ -3009,69 +3009,6 @@ class PressureSensorUI:
             self.log_ai_message(f"[ERROR] 报告生成详细错误: {e}")
             raise
     
-    def download_and_save_html_report(self, report_url, patient_info):
-        """下载HTML报告并保存到我们的目录结构"""
-        try:
-            import requests
-            from datetime import datetime
-            import os
-            import sys
-            
-            if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
-                raise Exception("算法引擎未初始化")
-            
-            # 直接使用保存的HTML报告内容
-            if hasattr(self, '_last_analysis_result') and self._last_analysis_result:
-                html_content = self._last_analysis_result.get('report_html', '')
-                if not html_content:
-                    raise Exception("没有可用的HTML报告内容")
-                
-                self.log_ai_message("🔗 使用本地HTML报告内容")
-            else:
-                raise Exception("没有可用的分析结果")
-            
-            # 获取exe所在目录
-            if getattr(sys, 'frozen', False):
-                # 打包后的环境，使用exe所在目录
-                exe_dir = os.path.dirname(sys.executable)
-                base_dir = exe_dir
-            else:
-                # 开发环境
-                base_dir = os.getcwd()
-            
-            # 创建按日期组织的目录结构
-            today = datetime.now().strftime("%Y-%m-%d")
-            report_dir = os.path.join(base_dir, "tmp", today, "reports")
-            os.makedirs(report_dir, exist_ok=True)
-            
-            # 生成本地文件名
-            patient_name = patient_info.get('name', '未知患者')
-            test_type_raw = patient_info.get('test_type', 'COMPREHENSIVE')
-            
-            # 将英文测试类型转换为中文
-            test_type_map = {
-                'COMPREHENSIVE': '综合分析',
-                'BALANCE': '平衡测试', 
-                'GAIT': '步态分析',
-                'STRENGTH': '力量测试',
-                'FLEXIBILITY': '柔韧性测试'
-            }
-            test_type = test_type_map.get(test_type_raw, test_type_raw)
-            
-            timestamp = datetime.now().strftime("%H%M%S")
-            filename = f"{patient_name}-{test_type}-综合报告-{timestamp}.html"
-            
-            # 保存到本地
-            local_path = os.path.join(report_dir, filename)
-            with open(local_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            self.log_ai_message(f"💾 HTML报告已保存到: {local_path}")
-            return local_path
-            
-        except Exception as e:
-            self.log_ai_message(f"[ERROR] HTML报告保存失败: {e}")
-            return None
 
     def get_analysis_result(self, analysis_id):
         """获取分析详细结果"""
@@ -3201,12 +3138,6 @@ class PressureSensorUI:
                 except:
                     pass
             
-            # 停止菜单栏的 SarcNeuro 服务
-            if hasattr(self, 'sarcneuro_service') and self.sarcneuro_service:
-                try:
-                    self.sarcneuro_service.stop_service()
-                except:
-                    pass
             
             # 清理可视化器资源
             if hasattr(self, 'visualizer') and hasattr(self.visualizer, 'cleanup'):
@@ -4156,11 +4087,10 @@ class PressureSensorUI:
     def start_sarcneuro_analysis_for_session(self):
         """使用SarcNeuro Edge API为检测会话进行分析"""
         try:
-            # 启动服务（如果未启动）
-            if not self.sarcneuro_service.is_running:
-                self.log_ai_message("[START] 启动 SarcNeuro Edge 分析服务...")
-                if not self.sarcneuro_service.start_service():
-                    raise Exception("无法启动 SarcNeuro Edge 服务")
+            # 检查算法引擎是否可用
+            if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
+                self.log_ai_message("[ERROR] 算法引擎未初始化")
+                raise Exception("算法引擎未初始化")
             
             # 获取会话的检测数据
             session_steps = db.get_session_steps(self.current_session['id'])
@@ -4260,25 +4190,12 @@ class PressureSensorUI:
                     self.log_ai_message(f"[WARN] 风险等级: {risk_level}")
                     self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
                     
-                    # 首先检查 analysis_data 是否已包含报告URL（和CSV导入一样）
-                    report_url = analysis_data.get('report_url')
-                    if report_url:
-                        self.log_ai_message(f"📄 从分析结果获取到HTML报告链接: {report_url}")
-                        # 下载HTML内容并保存到我们的目录结构
-                        local_report_path = self.download_and_save_html_report(report_url, patient_info)
-                        if local_report_path:
-                            self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                            # 显示成功对话框，传递本地报告路径（这是检测会话，与患者关联）
-                            self.show_analysis_complete_dialog(analysis_data, local_report_path, is_patient_linked=True)
-                        else:
-                            self.log_ai_message("[WARN] HTML报告保存失败")
-                            self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
-                    else:
-                        # 如果 analysis_data 中没有报告URL，再尝试获取详细结果（备用方案）
-                        analysis_id = analysis_data.get('analysis_id')
-                        test_id = analysis_data.get('test_id')
-                        
-                        if analysis_id and test_id:
+                    # 使用与CSV导入相同的逻辑获取报告
+                    analysis_id = analysis_data.get('analysis_id')
+                    test_id = analysis_data.get('test_id')
+                    
+                    if analysis_id and test_id:
+                        try:
                             self.log_ai_message(f"[INFO] 获取分析详细结果 (analysis_id: {analysis_id})")
                             
                             # 调用 /api/analysis/results/{analysis_id} 获取完整结果
@@ -4290,27 +4207,86 @@ class PressureSensorUI:
                                 self.log_ai_message(f"[DEBUG] report_url: {detailed_result.get('report_url')}")
                                 self.log_ai_message(f"[DEBUG] comprehensive_report_url: {detailed_result.get('comprehensive_report_url')}")
                                 
-                                # 检查是否已有报告URL (优先检查report_url，否则检查comprehensive_report_url)
-                                report_url = detailed_result.get('report_url') or detailed_result.get('comprehensive_report_url')
-                                if report_url:
-                                    self.log_ai_message(f"📄 获取到HTML报告链接: {report_url}")
-                                    # 下载HTML内容并保存到我们的目录结构
-                                    local_report_path = self.download_and_save_html_report(report_url, patient_info)
-                                    if local_report_path:
-                                        self.log_ai_message(f"📄 HTML报告已保存: {local_report_path}")
-                                        # 显示成功对话框，传递本地报告路径（这是检测会话，与患者关联）
-                                        self.show_analysis_complete_dialog(analysis_data, local_report_path, is_patient_linked=True)
+                                # 获取已生成的报告HTML和路径（与CSV导入相同的逻辑）
+                                self.log_ai_message("📄 获取生成的报告...")
+                                try:
+                                    # 从 result 中获取报告HTML和路径
+                                    # 报告数据在 result['result'] 里
+                                    result_data = result.get('result', {})
+                                    report_html = result_data.get('report_html') or result.get('report_html')
+                                    report_path = result_data.get('report_path') or result.get('report_path')
+                                    
+                                    # 调试输出
+                                    self.log_ai_message(f"[DEBUG] result keys: {list(result.keys())}")
+                                    self.log_ai_message(f"[DEBUG] result['result'] keys: {list(result_data.keys())}")
+                                    self.log_ai_message(f"[DEBUG] report_html exists: {report_html is not None}")
+                                    self.log_ai_message(f"[DEBUG] report_path: {report_path}")
+                                    
+                                    if report_html and report_path:
+                                        # 尝试生成PDF
+                                        try:
+                                            self.log_ai_message("📥 转换为PDF格式...")
+                                            # 生成PDF文件名：名字_性别_年龄_当天日期
+                                            patient_name = patient_info.get('name', '未知患者')
+                                            patient_gender_raw = patient_info.get('gender', '未知')
+                                            patient_age = patient_info.get('age', '未知')
+                                            today_date = datetime.now().strftime("%Y%m%d")
+                                            
+                                            # 转换性别为中文
+                                            gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                                            patient_gender = gender_map.get(patient_gender_raw, patient_gender_raw)
+                                            
+                                            pdf_filename = f"{patient_name}_{patient_gender}_{patient_age}岁_{today_date}.pdf"
+                                            pdf_dir = os.path.dirname(report_path)
+                                            pdf_path_new = os.path.join(pdf_dir, pdf_filename)
+                                            
+                                            pdf_path = self.algorithm_engine.convert_html_to_pdf(report_html, pdf_path_new)
+                                            if pdf_path and os.path.exists(pdf_path):
+                                                self.log_ai_message(f"📄 PDF报告已生成: {pdf_path}")
+                                                self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, pdf_path, is_patient_linked=True))
+                                            else:
+                                                self.log_ai_message(f"[WARN] PDF转换失败，使用HTML报告: {report_path}")
+                                                self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path, is_patient_linked=True))
+                                        except Exception as pdf_error:
+                                            self.log_ai_message(f"[WARN] PDF转换异常: {pdf_error}，使用HTML报告")
+                                            self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path, is_patient_linked=True))
                                     else:
-                                        self.log_ai_message("[WARN] HTML报告保存失败")
-                                        self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
-                                else:
-                                    self.log_ai_message("[WARN] 未找到报告链接")
-                                    self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
+                                        self.log_ai_message("[WARN] 没有找到报告内容")
+                                        self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True))
+                                except Exception as report_error:
+                                    self.log_ai_message(f"[ERROR] 获取报告异常: {report_error}")
+                                    self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True))
                             else:
                                 raise Exception("无法获取分析详细结果")
-                        else:
-                            self.log_ai_message("[WARN] 分析结果中缺少必要的ID信息")
-                            self.show_analysis_complete_dialog(analysis_data, None, is_patient_linked=True)
+                                
+                        except Exception as report_error:
+                            self.log_ai_message(f"[WARN] 报告生成失败: {report_error}")
+                            self.log_ai_message("[OK] 但AI分析已成功完成！")
+                            
+                            # 报告生成失败，但分析成功
+                            success_msg = f"""[OK] AI分析成功完成！
+
+[DATA] 分析结果：
+• 综合评分：{overall_score:.1f}/100  
+• 风险等级：{risk_level}
+• 置信度：{confidence:.1%}
+
+[WARN] 注意：报告生成失败，但AI分析数据完整。"""
+                            
+                            self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
+                    else:
+                        self.log_ai_message("[WARN] 分析结果中缺少analysis_id或test_id")
+                        
+                        success_msg = f"""[OK] AI分析成功完成！
+
+[DATA] 分析结果：
+• 综合评分：{overall_score:.1f}/100  
+• 风险等级：{risk_level}
+• 置信度：{confidence:.1%}
+
+[WARN] 注意：无法生成报告（缺少必要ID）。"""
+                        
+                        self.root.after(0, lambda: messagebox.showinfo("分析完成", success_msg))
                 else:
                     raise Exception(f"分析失败: {result.get('message', '未知错误')}")
                         
