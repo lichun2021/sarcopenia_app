@@ -1409,7 +1409,13 @@ class PressureSensorUI:
         self.generate_report_btn = ttk.Button(control_frame, text="📊 生成报告", 
                                             command=self.generate_report_for_patient,
                                             style='Hospital.TButton')
-        self.generate_report_btn.grid(row=0, column=6, padx=(0, 0), sticky='e')
+        self.generate_report_btn.grid(row=0, column=6, padx=(0, 10), sticky='e')
+        
+        # 新建患者按钮 - 在生成报告按钮旁边
+        self.new_patient_btn = ttk.Button(control_frame, text="👤 新建患者", 
+                                        command=self.create_new_patient_and_select,
+                                        style='Info.TButton')
+        self.new_patient_btn.grid(row=0, column=7, padx=(0, 0), sticky='e')
         
         
         
@@ -3579,6 +3585,31 @@ class PressureSensorUI:
         finally:
             # 清除标记
             self._selecting_for_detection = False
+    
+    def create_new_patient_and_select(self):
+        """创建新患者并自动选择"""
+        try:
+            from patient_manager_ui import PatientEditDialog
+            
+            # 直接打开新建患者对话框
+            dialog = PatientEditDialog(self.root, title="新建患者档案")
+            
+            if dialog.result:
+                # 保存新患者到数据库
+                patient_id = db.add_patient(**dialog.result)
+                if patient_id > 0:
+                    # 获取新创建的患者信息
+                    new_patient = db.get_patient_by_id(patient_id)
+                    if new_patient:
+                        self.current_patient = new_patient
+                        self.update_patient_status()
+                        self.log_message(f"[OK] 新建患者成功：{self.current_patient['name']}")
+                        messagebox.showinfo("成功", f"患者档案创建成功！\n已自动选择患者：{self.current_patient['name']}")
+                else:
+                    messagebox.showerror("错误", "患者档案创建失败！")
+        except Exception as e:
+            messagebox.showerror("错误", f"新建患者失败：{e}")
+            print(f"[ERROR] 新建患者错误: {e}")
     
     def update_patient_status(self):
         """更新患者状态显示"""

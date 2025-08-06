@@ -231,7 +231,9 @@ class Heatmap3DRenderer:
         try:
             print(f"[3D渲染] 创建Figure对象...")
             # 创建适中尺寸的3D图形，确保不被裁切
-            fig = Figure(figsize=(10, 10), dpi=80, facecolor='white')
+            fig = Figure(figsize=(10, 10), dpi=80, facecolor='none')
+            fig.patch.set_facecolor('none')
+            fig.patch.set_alpha(0)
             print(f"[3D渲染] Figure创建成功，添加3D子图...")
             ax = fig.add_subplot(111, projection='3d')
             print(f"[3D渲染] 3D子图创建成功")
@@ -308,10 +310,13 @@ class Heatmap3DRenderer:
             ax.yaxis.pane.set_linewidth(0)
             ax.zaxis.pane.set_linewidth(0)
             
-            # 设置背景为白色
-            ax.xaxis.pane.set_facecolor('white')
-            ax.yaxis.pane.set_facecolor('white')
-            ax.zaxis.pane.set_facecolor('white')
+            # 设置背景为透明
+            ax.xaxis.pane.set_facecolor('none')
+            ax.yaxis.pane.set_facecolor('none')
+            ax.zaxis.pane.set_facecolor('none')
+            ax.xaxis.pane.set_alpha(0)
+            ax.yaxis.pane.set_alpha(0)
+            ax.zaxis.pane.set_alpha(0)
             
             # 隐藏3D立方体的边框线
             ax.xaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
@@ -544,6 +549,11 @@ class EnhancedHeatmapVisualizer:
         # 当前模式
         self.current_mode = "2D"  # "2D" 或 "3D"
         
+        # 设置小尺寸的样式和白色背景
+        style = ttk.Style()
+        style.configure('Small.TRadiobutton', font=('Arial', 9), background='white')
+        
+
         # 创建控制面板
         self.setup_control_panel()
         
@@ -556,6 +566,8 @@ class EnhancedHeatmapVisualizer:
             array_rows, 
             array_cols
         )
+
+
         
         # 初始化3D渲染器 - 进一步降低FPS减少闪烁
         self.renderer_3d = Heatmap3DRenderer(array_rows, array_cols, target_fps=2)
@@ -571,36 +583,30 @@ class EnhancedHeatmapVisualizer:
     
     def setup_control_panel(self):
         """设置控制面板"""
-        self.control_frame = ttk.Frame(self.parent_frame)
-        self.control_frame.pack(side='top', fill='x', padx=5, pady=2)
+        # 创建白色背景的Frame
+        self.control_frame = tk.Frame(self.parent_frame, bg='white')
+        self.control_frame.pack(side='top', fill='x', padx=2, pady=1)
         
         # 模式切换按钮
         self.mode_var = tk.StringVar(value="2D")
         
-        ttk.Label(self.control_frame, text="显示模式:").pack(side='left', padx=(0, 5))
-        
         self.btn_2d = ttk.Radiobutton(
             self.control_frame, text="2D热力图", 
             variable=self.mode_var, value="2D",
-            command=self.switch_to_2d
+            command=self.switch_to_2d,
+            style='Small.TRadiobutton'
         )
-        self.btn_2d.pack(side='left', padx=5)
+        self.btn_2d.pack(side='left', padx=2)
         
         self.btn_3d = ttk.Radiobutton(
             self.control_frame, text="3D热力图", 
             variable=self.mode_var, value="3D",
-            command=self.switch_to_3d
+            command=self.switch_to_3d,
+            style='Small.TRadiobutton'
         )
-        self.btn_3d.pack(side='left', padx=5)
+        self.btn_3d.pack(side='left', padx=2)
         
-        # 分隔符
-        ttk.Separator(self.control_frame, orient='vertical').pack(side='left', fill='y', padx=10)
-        
-        # 状态显示
-        self.status_var = tk.StringVar(value="2D模式")
-        self.status_label = ttk.Label(self.control_frame, textvariable=self.status_var)
-        self.status_label.pack(side='right', padx=5)
-    
+
     def setup_display_area(self):
         """设置分离的显示区域"""
         # 创建主显示容器

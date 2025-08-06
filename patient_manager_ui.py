@@ -14,9 +14,10 @@ from window_manager import WindowManager, WindowLevel, setup_management_window
 class PatientManagerDialog:
     """患者档案管理对话框"""
     
-    def __init__(self, parent, title="患者档案管理", select_mode=False):
+    def __init__(self, parent, title="患者档案管理", select_mode=False, auto_close_on_new=False):
         self.parent = parent
         self.select_mode = select_mode  # 是否为选择模式
+        self.auto_close_on_new = auto_close_on_new  # 新建后是否自动关闭
         self.selected_patient = None
         
         # 创建对话框窗口 - 使用窗口管理器
@@ -412,6 +413,14 @@ class PatientManagerDialog:
             if patient_id > 0:
                 messagebox.showinfo("成功", f"患者档案创建成功！\n患者ID: {patient_id}")
                 self.refresh_patient_list()
+                
+                # 任何时候新建患者后都自动选择该患者
+                new_patient = db.get_patient_by_id(patient_id)
+                if new_patient:
+                    self.selected_patient = new_patient
+                    # 如果在选择模式下，直接关闭对话框
+                    if self.select_mode:
+                        self.dialog.destroy()
             else:
                 messagebox.showerror("错误", "患者档案创建失败！")
     
@@ -610,170 +619,234 @@ class PatientEditDialog:
             self.dialog.iconbitmap("icon.ico")
         except:
             pass
-        
+
+        self.base_font_size = 10
+        self.base_padding = 10
+        self.notes_height = 3
         # 创建界面
         self.create_ui()
         
         # 等待对话框关闭
         self.dialog.wait_window()
     
-    
+    def update_layout(self, event=None):
+        """根据窗口尺寸动态调整字体、间距和控件高度"""
+        width = max(self.dialog.winfo_width(), 300)  # 防止过小
+        height = max(self.dialog.winfo_height(), 350)  # 防止过小
+        
+        # 计算缩放因子，基于基准分辨率 400x500
+        scale_factor = min(width / 400, height / 500, 1.5)
+        self.base_font_size = max(6, int(9 * scale_factor))  # 最小字体6
+        self.base_padding = max(3, int(10 * scale_factor))   # 最小间距3
+        self.notes_height = max(1, int(3 * scale_factor))    # 备注高度动态调整
+        
+        # 更新样式
+        style = ttk.Style()
+        style.configure('Title.TLabel', font=('Microsoft YaHei UI', int(self.base_font_size * 1.3), 'bold'))
+        style.configure('Section.TLabelframe.Label', font=('Microsoft YaHei UI', self.base_font_size, 'bold'))
+        
+        # 更新动态控件
+        for widget in self.dynamic_widgets:
+            if isinstance(widget, ttk.Label):
+                widget.configure(font=('Microsoft YaHei UI', self.base_font_size))
+            elif isinstance(widget, (ttk.Entry, ttk.Combobox)):
+                widget.configure(font=('Microsoft YaHei UI', self.base_font_size))
+            elif isinstance(widget, tk.Text):
+                widget.configure(font=('Microsoft YaHei UI', self.base_font_size), height=self.notes_height)
+            elif isinstance(widget, (ttk.Frame, ttk.LabelFrame)):
+                widget.configure(padding=int(self.base_padding * 0.6))
+        
+        # 动态隐藏提示文本（在高度 < 400 时）
+        if height < 400:
+            if hasattr(self, 'tip_label'):
+                self.tip_label.pack_forget()
+            if hasattr(self, 'help_label'):
+                self.help_label.pack_forget()
+        else:
+            if hasattr(self, 'tip_label'):
+                self.tip_label.pack(anchor="w")
+            if hasattr(self, 'help_label'):
+                self.help_label.pack(anchor="w", pady=(3, 0))
+                
     def create_ui(self):
         """创建用户界面"""
-        # 设置窗口样式
-        style = ttk.Style()
-        style.configure('Title.TLabel', font=('Microsoft YaHei UI', 16, 'bold'))
-        style.configure('Section.TLabelframe.Label', font=('Microsoft YaHei UI', 11, 'bold'))
+        # 设置最小窗口尺寸
+        self.dialog.minsize(300, 350)
         
-        # 主框架 - 固定布局，无滚动条
-        main_frame = ttk.Frame(self.dialog, padding="30")
+        # 存储动态控件
+        self.dynamic_widgets = []
+        
+        # 主框架
+        main_frame = ttk.Frame(self.dialog, padding=self.base_padding)
         main_frame.pack(fill="both", expand=True)
+        self.dynamic_widgets.append(main_frame)
         
-        # 内容框架
-        content_frame = main_frame
+        # 绑定窗口大小变化
+        self.dialog.bind('<Configure>', self.update_layout)
         
         # 标题区域
-        title_frame = ttk.Frame(content_frame)
-        title_frame.pack(fill="x", pady=(0, 30))
+        title_frame = ttk.Frame(main_frame)
+        title_frame.pack(fill="x", pady=(0, self.base_padding * 0.6))
+        self.dynamic_widgets.append(title_frame)
         
         title_label = ttk.Label(title_frame, text="🏥 患者档案信息", style='Title.TLabel')
         title_label.pack()
+        self.dynamic_widgets.append(title_label)
         
         subtitle_label = ttk.Label(title_frame, text="请填写患者的基本信息", 
-                                 font=('Microsoft YaHei UI', 10), foreground='#666666')
-        subtitle_label.pack(pady=(5, 0))
+                                 font=('Microsoft YaHei UI', self.base_font_size - 2), 
+                                 foreground='#666666')
+        subtitle_label.pack(pady=(2, 0))
+        self.dynamic_widgets.append(subtitle_label)
         
-        # 基本信息区域 - 使用更好的布局
-        info_frame = ttk.LabelFrame(content_frame, text=" 📋 基本信息 ", 
-                                   style='Section.TLabelframe', padding="25")
-        info_frame.pack(fill="x", pady=(0, 25))
+        # 基本信息区域
+        info_frame = ttk.LabelFrame(main_frame, text=" 📋 基本信息 ", 
+                                   style='Section.TLabelframe', padding=self.base_padding * 0.6)
+        info_frame.pack(fill="x", pady=(0, self.base_padding * 0.6))
+        self.dynamic_widgets.append(info_frame)
         
         # 第一行：姓名和性别
         row1_frame = ttk.Frame(info_frame)
-        row1_frame.pack(fill="x", pady=(0, 20))
+        row1_frame.pack(fill="x", pady=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(row1_frame)
         
-        # 姓名 (左半边)
+        # 姓名
         name_frame = ttk.Frame(row1_frame)
-        name_frame.pack(side="left", fill="x", expand=True, padx=(0, 15))
+        name_frame.pack(side="left", fill="x", expand=True, padx=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(name_frame)
         
-        ttk.Label(name_frame, text="患者姓名 *", font=('Microsoft YaHei UI', 10, 'bold')).pack(anchor="w")
+        ttk.Label(name_frame, text="患者姓名 *", font=('Microsoft YaHei UI', self.base_font_size, 'bold')).pack(anchor="w")
         self.name_var = tk.StringVar(value=self.patient_data.get('name', ''))
-        name_entry = ttk.Entry(name_frame, textvariable=self.name_var, font=('Microsoft YaHei UI', 11))
-        name_entry.pack(fill="x", pady=(8, 0))
+        name_entry = ttk.Entry(name_frame, textvariable=self.name_var, font=('Microsoft YaHei UI', self.base_font_size))
+        name_entry.pack(fill="x", pady=(2, 0))
         name_entry.focus()
+        self.dynamic_widgets.append(name_entry)
         
-        # 性别 (右半边)
+        # 性别
         gender_frame = ttk.Frame(row1_frame)
-        gender_frame.pack(side="right", fill="x", expand=True, padx=(15, 0))
+        gender_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(gender_frame)
         
-        ttk.Label(gender_frame, text="性别 *", font=('Microsoft YaHei UI', 10, 'bold')).pack(anchor="w")
+        ttk.Label(gender_frame, text="性别 *", font=('Microsoft YaHei UI', self.base_font_size, 'bold')).pack(anchor="w")
         self.gender_var = tk.StringVar(value=self.patient_data.get('gender', '男'))
         gender_combo = ttk.Combobox(gender_frame, textvariable=self.gender_var, 
-                                   values=["男", "女"], font=('Microsoft YaHei UI', 11), state="readonly")
-        gender_combo.pack(fill="x", pady=(8, 0))
+                                   values=["男", "女"], font=('Microsoft YaHei UI', self.base_font_size), state="readonly")
+        gender_combo.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(gender_combo)
         
         # 第二行：年龄和电话
         row2_frame = ttk.Frame(info_frame)
-        row2_frame.pack(fill="x", pady=(0, 20))
+        row2_frame.pack(fill="x", pady=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(row2_frame)
         
-        # 年龄 (左半边)
+        # 年龄
         age_frame = ttk.Frame(row2_frame)
-        age_frame.pack(side="left", fill="x", expand=True, padx=(0, 15))
+        age_frame.pack(side="left", fill="x", expand=True, padx=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(age_frame)
         
-        ttk.Label(age_frame, text="年龄 *", font=('Microsoft YaHei UI', 10, 'bold')).pack(anchor="w")
+        ttk.Label(age_frame, text="年龄 *", font=('Microsoft YaHei UI', self.base_font_size, 'bold')).pack(anchor="w")
         self.age_var = tk.StringVar(value=str(self.patient_data.get('age', '')))
-        age_entry = ttk.Entry(age_frame, textvariable=self.age_var, font=('Microsoft YaHei UI', 11))
-        age_entry.pack(fill="x", pady=(8, 0))
+        age_entry = ttk.Entry(age_frame, textvariable=self.age_var, font=('Microsoft YaHei UI', self.base_font_size))
+        age_entry.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(age_entry)
         
-        # 电话 (右半边)
+        # 电话
         phone_frame = ttk.Frame(row2_frame)
-        phone_frame.pack(side="right", fill="x", expand=True, padx=(15, 0))
+        phone_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(phone_frame)
         
-        ttk.Label(phone_frame, text="联系电话", font=('Microsoft YaHei UI', 10)).pack(anchor="w")
+        ttk.Label(phone_frame, text="联系电话", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
         self.phone_var = tk.StringVar(value=self.patient_data.get('phone', '') or '')
-        phone_entry = ttk.Entry(phone_frame, textvariable=self.phone_var, font=('Microsoft YaHei UI', 11))
-        phone_entry.pack(fill="x", pady=(8, 0))
+        phone_entry = ttk.Entry(phone_frame, textvariable=self.phone_var, font=('Microsoft YaHei UI', self.base_font_size))
+        phone_entry.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(phone_entry)
         
         # 第三行：身高和体重
         row3_frame = ttk.Frame(info_frame)
         row3_frame.pack(fill="x")
+        self.dynamic_widgets.append(row3_frame)
         
-        # 身高 (左半边)
+        # 身高
         height_frame = ttk.Frame(row3_frame)
-        height_frame.pack(side="left", fill="x", expand=True, padx=(0, 15))
+        height_frame.pack(side="left", fill="x", expand=True, padx=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(height_frame)
         
-        ttk.Label(height_frame, text="身高 (cm)", font=('Microsoft YaHei UI', 10)).pack(anchor="w")
+        ttk.Label(height_frame, text="身高 (cm)", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
         self.height_var = tk.StringVar(value=str(self.patient_data.get('height', '') or ''))
-        height_entry = ttk.Entry(height_frame, textvariable=self.height_var, font=('Microsoft YaHei UI', 11))
-        height_entry.pack(fill="x", pady=(8, 0))
+        height_entry = ttk.Entry(height_frame, textvariable=self.height_var, font=('Microsoft YaHei UI', self.base_font_size))
+        height_entry.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(height_entry)
         
-        # 体重 (右半边)
+        # 体重
         weight_frame = ttk.Frame(row3_frame)
-        weight_frame.pack(side="right", fill="x", expand=True, padx=(15, 0))
+        weight_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(weight_frame)
         
-        ttk.Label(weight_frame, text="体重 (kg)", font=('Microsoft YaHei UI', 10)).pack(anchor="w")
+        ttk.Label(weight_frame, text="体重 (kg)", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
         self.weight_var = tk.StringVar(value=str(self.patient_data.get('weight', '') or ''))
-        weight_entry = ttk.Entry(weight_frame, textvariable=self.weight_var, font=('Microsoft YaHei UI', 11))
-        weight_entry.pack(fill="x", pady=(8, 0))
+        weight_entry = ttk.Entry(weight_frame, textvariable=self.weight_var, font=('Microsoft YaHei UI', self.base_font_size))
+        weight_entry.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(weight_entry)
         
-        # 备注区域 - 优化设计
-        notes_frame = ttk.LabelFrame(content_frame, text=" 📝 备注信息 ", 
-                                    style='Section.TLabelframe', padding="25")
-        notes_frame.pack(fill="x", pady=(0, 25))
+        # 备注区域
+        notes_frame = ttk.LabelFrame(main_frame, text=" 📝 备注信息 ", 
+                                    style='Section.TLabelframe', padding=self.base_padding * 0.6)
+        notes_frame.pack(fill="x", pady=(0, self.base_padding * 0.6))
+        self.dynamic_widgets.append(notes_frame)
         
-        # 备注输入 - 减少高度，无滚动条
-        self.notes_text = tk.Text(notes_frame, height=4, font=('Microsoft YaHei UI', 10),
+        self.notes_text = tk.Text(notes_frame, height=self.notes_height, font=('Microsoft YaHei UI', self.base_font_size),
                                  wrap=tk.WORD, relief='solid', borderwidth=1,
                                  bg='#fafafa', selectbackground='#e3f2fd')
-        
-        # 填入现有备注
         if self.patient_data.get('notes'):
             self.notes_text.insert(1.0, self.patient_data['notes'])
-        
         self.notes_text.pack(fill="x", expand=False)
+        self.dynamic_widgets.append(self.notes_text)
         
-        # 底部信息和按钮区域
-        bottom_frame = ttk.Frame(content_frame)
-        bottom_frame.pack(fill="x", pady=(30, 0))
+        # 底部信息和按钮区域 - 使用 place 固定在底部
+        bottom_frame = ttk.Frame(self.dialog)
+        bottom_frame.place(relx=0, rely=1.0, relwidth=1.0, anchor='sw')
+        self.dynamic_widgets.append(bottom_frame)
         
         # 必填项提示
         tip_frame = ttk.Frame(bottom_frame)
-        tip_frame.pack(fill="x", pady=(0, 25))
+        tip_frame.pack(fill="x", pady=(0, self.base_padding * 0.4))
+        self.dynamic_widgets.append(tip_frame)
         
-        tip_label = ttk.Label(tip_frame, text="* 标记为必填项", 
-                             font=('Microsoft YaHei UI', 9), foreground='#d32f2f')
-        tip_label.pack(anchor="w")
+        self.tip_label = ttk.Label(tip_frame, text="* 标记为必填项", 
+                                  font=('Microsoft YaHei UI', self.base_font_size - 2), foreground='#d32f2f')
+        self.tip_label.pack(anchor="w")
+        self.dynamic_widgets.append(self.tip_label)
         
-        help_label = ttk.Label(tip_frame, text="💡 提示：身高体重信息有助于更准确的分析结果", 
-                              font=('Microsoft YaHei UI', 9), foreground='#1976d2')
-        help_label.pack(anchor="w", pady=(5, 0))
+        self.help_label = ttk.Label(tip_frame, text="💡 提示：身高体重信息有助于更准确的分析结果", 
+                                   font=('Microsoft YaHei UI', self.base_font_size - 2), foreground='#1976d2')
+        self.help_label.pack(anchor="w", pady=(2, 0))
+        self.dynamic_widgets.append(self.help_label)
         
         # 按钮区域
         button_frame = ttk.Frame(bottom_frame)
         button_frame.pack(fill="x")
+        self.dynamic_widgets.append(button_frame)
         
         # 左侧状态信息
         status_frame = ttk.Frame(button_frame)
         status_frame.pack(side="left", fill="x", expand=True)
+        self.dynamic_widgets.append(status_frame)
         
-        if self.patient_data:
-            status_text = f"编辑模式 - 修改患者 {self.patient_data.get('name', '未知')} 的信息"
-        else:
-            status_text = "新建模式 - 创建新的患者档案"
-        
+        status_text = (f"编辑模式 - 修改患者 {self.patient_data.get('name', '未知')} 的信息"
+                      if self.patient_data else "新建模式 - 创建新的患者档案")
         status_label = ttk.Label(status_frame, text=status_text, 
-                                font=('Microsoft YaHei UI', 9), foreground='#666666')
+                                font=('Microsoft YaHei UI', self.base_font_size - 2), foreground='#666666')
         status_label.pack(anchor="w")
+        self.dynamic_widgets.append(status_label)
         
         # 右侧按钮
         btn_container = ttk.Frame(button_frame)
-        btn_container.pack(side="right", pady=(10, 0))
+        btn_container.pack(side="right", pady=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(btn_container)
         
-        # 取消按钮
         cancel_btn = ttk.Button(btn_container, text="❌ 取消", command=self.cancel)
-        cancel_btn.pack(side="right", padx=(15, 0))
+        cancel_btn.pack(side="right", padx=(self.base_padding * 0.4, 0))
         
-        # 确认按钮
         confirm_text = "💾 保存修改" if self.patient_data else "➕ 创建档案"
         confirm_btn = ttk.Button(btn_container, text=confirm_text, command=self.confirm)
         confirm_btn.pack(side="right")
@@ -782,6 +855,10 @@ class PatientEditDialog:
         self.dialog.bind('<Return>', lambda e: self.confirm())
         self.dialog.bind('<Escape>', lambda e: self.cancel())
         self.dialog.bind('<Control-s>', lambda e: self.confirm())
+        
+        # 初始更新布局
+        self.dialog.update()
+        self.update_layout()
     
     def validate_input(self):
         """验证输入数据"""
