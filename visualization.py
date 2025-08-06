@@ -41,25 +41,33 @@ class HeatmapVisualizer:
         self.setup_figure()
         
     def setup_colormap(self):
-        """设置高性能颜色映射 - 简化版本保持效果但提升性能"""
-        # 简化为8个关键颜色点，保持低压力区域对比度
+        """设置医学专用热力图颜色映射 - 专业压力成像效果"""
+        # 医学压力成像配色：模拟专业足底压力分析系统
+        # 参考Novel、Tekscan等医学设备的标准配色
         colors_list = [
-            '#FFFFFF',  # 纯白（0压力）
-            '#80C0FF',  # 明亮浅蓝（低压力明显）
-            '#1A8CFF',  # 明亮蓝
-            '#0066CC',  # 深蓝
-            '#003366',  # 深蓝紫
-            '#4A148C',  # 紫色
-            '#B71C1C',  # 深红
-            '#2E0000'   # 极深（最高压力）
+            '#000000',  # 黑色（0压力 - 无接触）
+            '#000033',  # 极深蓝（1-10 mmHg）
+            '#000066',  # 深蓝（10-20 mmHg）
+            '#0000CC',  # 纯蓝（20-30 mmHg）
+            '#0066FF',  # 亮蓝（30-40 mmHg）
+            '#00CCFF',  # 青色（40-50 mmHg）
+            '#00FF00',  # 绿色（50-60 mmHg）
+            '#FFFF00',  # 黄色（60-70 mmHg）
+            '#FF9900',  # 橙色（70-80 mmHg）
+            '#FF0000',  # 红色（80-90 mmHg）
+            '#FF00FF',  # 洋红（90-100 mmHg）
+            '#FFFFFF'   # 白色（>100 mmHg - 最大压力）
         ]
         
-        # 简单线性分布，减少计算开销
+        # 使用'hot'颜色映射作为备选方案（经典黑-红-黄-白渐变）
+        # self.custom_cmap = plt.cm.hot
+        
+        # 创建医学级高精度颜色映射
         self.custom_cmap = colors.LinearSegmentedColormap.from_list(
-            'fast_pressure', colors_list, N=64  # 减少到64级，提升性能
+            'medical_pressure', colors_list, N=256  # 256级色彩深度，医学成像标准
         )
         
-        # 使用简单线性归一化，取消Gamma校正以提升性能
+        # 使用简单线性归一化
         self.norm = colors.Normalize(vmin=0, vmax=255)
         
         # 压力单位转换：0-255 对应 0-60mmHg
@@ -95,8 +103,8 @@ class HeatmapVisualizer:
         else:  # 接近正方形
             figsize = (12, 12)
         
-        self.fig = Figure(figsize=figsize, dpi=100, facecolor='white')
-        self.ax = self.fig.add_subplot(111)
+        self.fig = Figure(figsize=figsize, dpi=100, facecolor='#1a1a1a')  # 深灰色背景
+        self.ax = self.fig.add_subplot(111, facecolor='black')  # 纯黑色数据区域
         
         # 初始化数据
         initial_data = np.zeros((self.array_rows, self.array_cols))
@@ -120,13 +128,16 @@ class HeatmapVisualizer:
         # 为提升性能，完全移除网格线
         # 网格线会增加渲染开销，影响实时性能
         
-        # 设置坐标轴标签
+        # 设置坐标轴标签（白色文字）
         self.ax.set_xticks(range(0, self.array_cols, max(1, self.array_cols//8)))
         self.ax.set_yticks(range(0, self.array_rows, max(1, self.array_rows//8)))
+        self.ax.tick_params(colors='white', which='both')  # 设置刻度颜色为白色
         
-        # 添加颜色条
+        # 添加颜色条（医学风格）
         self.colorbar = self.fig.colorbar(self.im, ax=self.ax, fraction=0.046, pad=0.04)
-        self.colorbar.set_label('Pressure (mmHg)', rotation=270, labelpad=25, fontsize=14, fontweight='bold')
+        self.colorbar.set_label('Pressure (mmHg)', rotation=270, labelpad=25, fontsize=14, 
+                                fontweight='bold', color='white')
+        self.colorbar.ax.yaxis.set_tick_params(color='white', labelcolor='white')
         
         # 设置颜色条标签 - 显示mmHg单位，0-255对应0-60mmHg
         tick_positions = [0, 42, 85, 128, 170, 213, 255]  # 更多刻度点
@@ -148,8 +159,8 @@ class HeatmapVisualizer:
         
     def update_title(self):
         """更新标题"""
-        title = f'Pressure Sensor ({self.array_rows}x{self.array_cols}) - Smooth Gradient'
-        self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols})'
+        self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
         
     def update_data(self, matrix_2d, statistics=None):
         """更新显示数据 - 带帧跳跃优化"""
@@ -189,14 +200,14 @@ class HeatmapVisualizer:
             # 确保颜色映射范围正确
             self.im.set_clim(0, 255)
             
-            # 更新标题包含统计信息
+            # 更新标题包含统计信息（白色文字）
             if statistics:
                 max_mmhg = statistics["max_value"] * self.pressure_scale
                 min_mmhg = statistics["min_value"] * self.pressure_scale
                 avg_mmhg = statistics["mean_value"] * self.pressure_scale
-                title = f'Pressure ({self.array_rows}x{self.array_cols}) - '
+                title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols}) - '
                 title += f'Max:{max_mmhg:.1f} Min:{min_mmhg:.1f} Avg:{avg_mmhg:.1f}mmHg'
-                self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+                self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
             
             # 使用快速重绘，只更新数据区域
             self.canvas.draw_idle()  # 使用idle绘制，减少频繁重绘

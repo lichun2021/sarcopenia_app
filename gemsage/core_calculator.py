@@ -246,16 +246,22 @@ class PressureAnalysisCore:
                             
                             print(f"📊 第{idx+1}行解析出{len(sensor_values)}个传感器值")
                             
-                            # 转换为32x32矩阵
-                            if len(sensor_values) == 1024:  # 32x32 = 1024
+                            # 转换为矩阵格式
+                            if len(sensor_values) == 2048:  # 64x32 = 2048 (双垫子)
+                                matrix_2d = []
+                                for i in range(32):
+                                    row_data = sensor_values[i*64:(i+1)*64]
+                                    matrix_2d.append(row_data)
+                                data_matrix.append(matrix_2d)
+                            elif len(sensor_values) == 1024:  # 32x32 = 1024 (单垫子)
                                 matrix_2d = []
                                 for i in range(32):
                                     row_data = sensor_values[i*32:(i+1)*32]
                                     matrix_2d.append(row_data)
-                                data_matrix.append(matrix_2d)  # 修改：使用append而不是extend
+                                data_matrix.append(matrix_2d)
                                 print(f"✅ 第{idx+1}行成功转换为32x32矩阵")
                             else:
-                                print(f"⚠️  第{idx+1}行传感器数据点数不正确: {len(sensor_values)} (期望1024)")
+                                print(f"⚠️  第{idx+1}行传感器数据点数不正确: {len(sensor_values)} (期望1024或2048)")
                                 
                         else:
                             print(f"⚠️  第{idx+1}行data字段格式不识别: {data_str}")
@@ -281,7 +287,7 @@ class PressureAnalysisCore:
     
     def calculate_cop_position(self, pressure_matrix: List[List[float]]) -> Optional[Dict]:
         """计算压力中心位置 - 使用硬件自适应参数"""
-        if not pressure_matrix:
+        if pressure_matrix is None or (isinstance(pressure_matrix, list) and len(pressure_matrix) == 0):
             return None
         
         # 获取当前硬件参数
@@ -318,6 +324,72 @@ class PressureAnalysisCore:
         
         return None
     
+    def separate_foot_data(self, data_frames):
+        """分离左右脚数据（与平台算法同步）
+        
+        Args:
+            data_frames: 压力数据帧列表（包含data字段的字典列表）
+            
+        Returns:
+            tuple: (left_foot_data, right_foot_data)
+        """
+        left_foot_data = []
+        right_foot_data = []
+        
+        for frame in data_frames:
+            data = frame.get('data', [])
+            
+            # 根据数据长度确定矩阵形状
+            if len(data) == 1024:
+                # 32x32矩阵，分为左右两半（各16列）
+                matrix = np.array(data).reshape(32, 32)
+                left_matrix = matrix[:, :16]  # 左半部分（列0-15）
+                right_matrix = matrix[:, 16:]  # 右半部分（列16-31）
+                
+                left_foot_data.append({
+                    'time': frame.get('time', 0),
+                    'timestamp': frame.get('timestamp', ''),
+                    'data': left_matrix.flatten().tolist(),
+                    'max': int(np.max(left_matrix)),
+                    'press': int(np.sum(left_matrix)),
+                    'area': int(np.sum(left_matrix > 20))  # 活跃单元数
+                })
+                
+                right_foot_data.append({
+                    'time': frame.get('time', 0),
+                    'timestamp': frame.get('timestamp', ''),
+                    'data': right_matrix.flatten().tolist(),
+                    'max': int(np.max(right_matrix)),
+                    'press': int(np.sum(right_matrix)),
+                    'area': int(np.sum(right_matrix > 20))
+                })
+                
+            elif len(data) == 2048:
+                # 32x64矩阵，分为左右两半（各32列）
+                matrix = np.array(data).reshape(32, 64)
+                left_matrix = matrix[:, :32]  # 左半部分（列0-31）
+                right_matrix = matrix[:, 32:]  # 右半部分（列32-63）
+                
+                left_foot_data.append({
+                    'time': frame.get('time', 0),
+                    'timestamp': frame.get('timestamp', ''),
+                    'data': left_matrix.flatten().tolist(),
+                    'max': int(np.max(left_matrix)),
+                    'press': int(np.sum(left_matrix)),
+                    'area': int(np.sum(left_matrix > 20))
+                })
+                
+                right_foot_data.append({
+                    'time': frame.get('time', 0),
+                    'timestamp': frame.get('timestamp', ''),
+                    'data': right_matrix.flatten().tolist(),
+                    'max': int(np.max(right_matrix)),
+                    'press': int(np.sum(right_matrix)),
+                    'area': int(np.sum(right_matrix > 20))
+                })
+        
+        return left_foot_data, right_foot_data
+    
     def detect_gait_events(self, pressure_data: List[List[List[float]]]) -> List[Dict]:
         """检测步态事件 - 使用硬件自适应参数"""
         events = []
@@ -333,6 +405,118 @@ class PressureAnalysisCore:
                 })
         
         return events
+    
+    def detect_physical_gait_events(self, data_frames):
+        """检测物理步态事件（与平台算法同步）
+        基于COP轨迹和压力峰值检测左右脚步态事件
+        
+        Args:
+            data_frames: 包含time, data等字段的数据帧列表
+            
+        Returns:
+            dict: 包含左右脚步态事件和参数
+        """
+        # 分离左右脚数据
+        left_foot_data, right_foot_data = self.separate_foot_data(data_frames)
+        
+        # 计算COP轨迹
+        cop_trajectory = []
+        for frame in data_frames:
+            data = frame.get('data', [])
+            if len(data) == 1024:
+                matrix = np.array(data).reshape(32, 32)
+            elif len(data) == 2048:
+                matrix = np.array(data).reshape(32, 64)
+            else:
+                continue
+                
+            cop = self.calculate_cop_position(matrix.tolist())
+            if cop:
+                cop_trajectory.append({
+                    'time': frame.get('time', 0),
+                    'x': cop['x'],
+                    'y': cop['y'],
+                    'pressure': cop['total_pressure']
+                })
+        
+        if len(cop_trajectory) < 2:
+            return {'error': 'Insufficient COP data'}
+        
+        # 确定前进方向（X或Y轴摆动范围更大的为前进方向）
+        x_values = [c['x'] for c in cop_trajectory]
+        y_values = [c['y'] for c in cop_trajectory]
+        x_range = max(x_values) - min(x_values)
+        y_range = max(y_values) - min(y_values)
+        
+        forward_axis = 'x' if x_range > y_range else 'y'
+        sideward_axis = 'y' if forward_axis == 'x' else 'x'
+        
+        # 检测压力峰值作为步态事件
+        peaks = []
+        pressures = [c['pressure'] for c in cop_trajectory]
+        min_peak_distance = 10  # 最小峰值间隔
+        pressure_threshold = np.mean(pressures) * 0.8
+        
+        for i in range(1, len(pressures) - 1):
+            if (pressures[i] > pressures[i-1] and 
+                pressures[i] > pressures[i+1] and
+                pressures[i] > pressure_threshold):
+                if not peaks or (i - peaks[-1]['index']) >= min_peak_distance:
+                    peaks.append({
+                        'index': i,
+                        'time': cop_trajectory[i]['time'],
+                        'forward_pos': cop_trajectory[i][forward_axis],
+                        'sideward_pos': cop_trajectory[i][sideward_axis],
+                        'pressure': pressures[i]
+                    })
+        
+        # 根据侧向位置区分左右脚（与平台算法相同）
+        if not peaks:
+            return {'error': 'No gait events detected'}
+            
+        sideward_positions = [p['sideward_pos'] for p in peaks]
+        avg_sideward = np.mean(sideward_positions)
+        
+        left_steps = []
+        right_steps = []
+        
+        for peak in peaks:
+            if peak['sideward_pos'] < avg_sideward:
+                left_steps.append(peak)
+            else:
+                right_steps.append(peak)
+        
+        # 计算左右脚步长
+        left_step_lengths = []
+        for i in range(1, len(left_steps)):
+            step_length = abs(left_steps[i]['forward_pos'] - left_steps[i-1]['forward_pos'])
+            left_step_lengths.append(step_length)
+        
+        right_step_lengths = []
+        for i in range(1, len(right_steps)):
+            step_length = abs(right_steps[i]['forward_pos'] - right_steps[i-1]['forward_pos'])
+            right_step_lengths.append(step_length)
+        
+        # 计算平均值
+        left_avg_step_length = np.mean(left_step_lengths) if left_step_lengths else 0
+        right_avg_step_length = np.mean(right_step_lengths) if right_step_lengths else 0
+        
+        # 计算步频
+        total_time = cop_trajectory[-1]['time'] - cop_trajectory[0]['time']
+        left_cadence = (len(left_steps) / total_time) * 60 if total_time > 0 else 0
+        right_cadence = (len(right_steps) / total_time) * 60 if total_time > 0 else 0
+        
+        return {
+            'forward_axis': forward_axis,
+            'left_steps': len(left_steps),
+            'right_steps': len(right_steps),
+            'left_step_length': left_avg_step_length,
+            'right_step_length': right_avg_step_length,
+            'left_cadence': left_cadence,
+            'right_cadence': right_cadence,
+            'total_steps': len(peaks),
+            'cop_trajectory': cop_trajectory[:10]  # 返回前10个点作为示例
+        }
     
     def calculate_step_metrics(self, gait_events: List[Dict]) -> Dict:
         """计算步态指标 - 使用改进的压力峰值检测算法"""

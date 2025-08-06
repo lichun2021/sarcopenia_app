@@ -332,6 +332,12 @@ class AlgorithmEngineManager:
                 temp_analysis_dir = os.path.join("tmp", today, "temp_analysis_results")
                 analysis_results, analysis_dir = analyze_multiple_files(csv_files, temp_analysis_dir)
                 
+                # 打印JSON格式的分析结果
+                import json
+                print("\n========== analyze_multiple_files 结果 ==========")
+                print(json.dumps(analysis_results, indent=2, ensure_ascii=False))
+                print("==================================================\n")
+                
                 # 获取第一个（也是唯一的）分析结果
                 raw_result = analysis_results[0]
                 logger.info(f"multi_file_workflow分析返回结果: {raw_result}")

@@ -66,6 +66,18 @@ class HardwareAdaptiveService:
         
         hardware_list = [
             # 优先级1：当前系统的主要硬件
+            # 双垫子步道配置（2个32x32传感器，共2048数据点）
+            HardwareSpec(
+                id="dual_walkway_pads",
+                name="双垫子步道系统 3130×900mm",
+                width=3.13,  # 两个垫子总宽度
+                height=0.90,
+                grid_width=64,  # 2个32列 = 64列
+                grid_height=32,
+                data_format="64col_2048",  # 新的数据格式
+                priority=1,
+                threshold=20
+            ),
             HardwareSpec(
                 id="gait_walkway_main",
                 name="主步道压力垫 1565×900mm",
@@ -74,7 +86,7 @@ class HardwareAdaptiveService:
                 grid_width=32,
                 grid_height=32,
                 data_format="32col",
-                priority=1,
+                priority=2,  # 降低优先级
                 threshold=20
             ),
             HardwareSpec(
@@ -229,9 +241,32 @@ class HardwareAdaptiveService:
                 # 检查第一行数据格式
                 first_row = data[0]
                 
-                if hasattr(first_row, 'data') and hasattr(first_row.data, '__len__'):
+                # 首先检查是否有data字段（字典格式）
+                if isinstance(first_row, dict) and 'data' in first_row:
+                    data_field = first_row['data']
+                    if isinstance(data_field, list):
+                        data_length = len(data_field)
+                        if data_length == 2048:
+                            data_info.update({
+                                'format': '6col_2048',
+                                'cols': 6,
+                                'total_points': len(data)
+                            })
+                        elif data_length == 1024:
+                            data_info.update({
+                                'format': '6col_1024',
+                                'cols': 6,
+                                'total_points': len(data)
+                            })
+                elif hasattr(first_row, 'data') and hasattr(first_row.data, '__len__'):
                     # 对象格式（类似肌少症格式）
-                    if len(first_row.data) == 1024:
+                    if len(first_row.data) == 2048:
+                        data_info.update({
+                            'format': '6col_2048',
+                            'cols': 6,
+                            'total_points': len(data)
+                        })
+                    elif len(first_row.data) == 1024:
                         data_info.update({
                             'format': '6col_1024',
                             'cols': 6,
@@ -243,14 +278,29 @@ class HardwareAdaptiveService:
                     data_info['cols'] = cols
                     data_info['total_points'] = len(data)
                     
-                    if cols >= 32:
+                    if cols >= 64:
+                        data_info['format'] = '64col_2048'
+                    elif cols >= 32:
                         data_info['format'] = '32col'
                     elif cols == 6:
-                        data_info['format'] = '6col_1024'
+                        # 检查是否是压缩的2048或1024数据
+                        if isinstance(first_row, dict) and 'data' in first_row:
+                            if len(first_row['data']) == 2048:
+                                data_info['format'] = '6col_2048'
+                            elif len(first_row['data']) == 1024:
+                                data_info['format'] = '6col_1024'
+                        else:
+                            data_info['format'] = '6col_1024'
                 elif hasattr(first_row, '__dict__'):
                     # 对象格式，尝试获取data属性
                     if hasattr(first_row, 'data') and isinstance(first_row.data, (list, np.ndarray)):
-                        if len(first_row.data) == 1024:
+                        if len(first_row.data) == 2048:
+                            data_info.update({
+                                'format': '6col_2048',
+                                'cols': 6,
+                                'total_points': len(data)
+                            })
+                        elif len(first_row.data) == 1024:
                             data_info.update({
                                 'format': '6col_1024',
                                 'cols': 6,
@@ -274,7 +324,9 @@ class HardwareAdaptiveService:
             confidence += 20  # 给默认格式一些分数
         
         # 网格尺寸匹配（权重30%）
-        if hardware.data_format == '32col' and data_info['cols'] >= 32:
+        if hardware.data_format == '64col_2048' and data_info['format'] in ['64col_2048', '6col_2048']:
+            confidence += 30
+        elif hardware.data_format == '32col' and data_info['cols'] >= 32:
             confidence += 30
         elif hardware.data_format == '6col_1024' and data_info['format'] == '6col_1024':
             confidence += 30
