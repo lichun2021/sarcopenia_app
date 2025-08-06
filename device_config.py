@@ -28,8 +28,8 @@ class DeviceConfigDialog:
         
         # 设备类型定义
         self.device_types = {
-            'footpad': {'name': '脚垫', 'icon': '👣', 'array_size': '32x32', 'com_ports': 1},
-            'cushion': {'name': '坐垫', 'icon': '🪑', 'array_size': '32x32', 'com_ports': 1}, 
+            'cushion': {'name': '坐垫', 'icon': '🪑', 'array_size': '32x32', 'com_ports': 1},
+            'footpad': {'name': '脚垫', 'icon': '👣', 'array_size': '32x32', 'com_ports': 1}, 
             'walkway_dual': {'name': '步道', 'icon': '🚶', 'array_size': '32x64', 'com_ports': 2},
             # 'walkway': {'name': '步道(单口)', 'icon': '🚶', 'array_size': '32x96', 'com_ports': 1},
             # 'walkway_triple': {'name': '步道(三口)', 'icon': '🚶‍♀️', 'array_size': '32x96', 'com_ports': 3}
@@ -1169,8 +1169,22 @@ class DeviceManager:
             
     def get_device_list(self):
         """获取设备列表"""
-        return [(device_id, config['name'], config['icon']) 
-                for device_id, config in self.devices.items()]
+        # 定义设备显示顺序
+        device_order = ['cushion', 'footpad', 'walkway_dual', 'walkway', 'walkway_triple']
+        
+        # 按指定顺序返回设备列表
+        result = []
+        for device_id in device_order:
+            if device_id in self.devices:
+                config = self.devices[device_id]
+                result.append((device_id, config['name'], config['icon']))
+        
+        # 添加任何不在预定义顺序中的设备
+        for device_id, config in self.devices.items():
+            if device_id not in device_order:
+                result.append((device_id, config['name'], config['icon']))
+        
+        return result
     
     def switch_device(self, device_id):
         """切换当前设备"""
