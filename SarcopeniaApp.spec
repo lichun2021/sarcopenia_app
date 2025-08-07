@@ -60,7 +60,7 @@ a = Analysis(
         'algorithm_engine_manager',
         
         # GemSage modules
-        'gemsage', 'gemsage.core_calculator', 'gemsage.full_medical_report_generator',
+        'gemsage', 'gemsage.core_calculator', 'gemsage.full_medical_report_generator','gemsage.enhanced_report_generator',
         'gemsage.multi_file_workflow', 'gemsage.ai_assessment_engine',
         'gemsage.comprehensive_diagnosis', 'gemsage.adaptive_cop_analyzer',
         'gemsage.progressive_cop_analyzer', 'gemsage.ground_reaction_force_analysis',
