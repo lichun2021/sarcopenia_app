@@ -67,14 +67,14 @@ class DataProcessor:
         ws_point_data = data_array.copy()  # 只复制一次
         ws_2d = ws_point_data.reshape(32, 32)
         
-        # 第一步：1-15行调换 (使用numpy数组操作，更快)
-        # 前8行分别与对应的后面行交换
-        for i in range(8):
+        # 第一步：前15行（0-14）进行镜像翻转
+        # 正确的镜像翻转：行0和行14交换，行1和行13交换，...，行7保持不变（中间行）
+        for i in range(7):  # 只需要交换前7行
             mirror_row = 14 - i
             # 使用numpy的数组交换，比逐个元素交换快得多
             ws_2d[[i, mirror_row]] = ws_2d[[mirror_row, i]]
         
-        # 第二步：将前15行移到后面 (1-15)(16-32) => (16-32)(1-15)
+        # 第二步：将前15行移到后面 (0-14)(15-31) => (15-31)(0-14)
         # 使用numpy切片操作，避免创建中间副本
         result_2d = np.vstack([ws_2d[15:], ws_2d[:15]])
         

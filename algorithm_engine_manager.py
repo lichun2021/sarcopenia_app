@@ -334,9 +334,7 @@ class AlgorithmEngineManager:
                 
                 # 打印JSON格式的分析结果
                 import json
-                print("\n========== analyze_multiple_files 结果 ==========")
-                print(json.dumps(analysis_results, indent=2, ensure_ascii=False))
-                print("==================================================\n")
+                # 分析结果处理完成
                 
                 # 获取第一个（也是唯一的）分析结果
                 raw_result = analysis_results[0]
@@ -1230,7 +1228,7 @@ def get_algorithm_engine(algorithms_dir: str = None) -> AlgorithmEngineManager:
 
 def test_engine():
     """测试算法引擎"""
-    print("测试算法引擎管理器...")
+    # 静默测试
     
     try:
         # 创建引擎
@@ -1238,7 +1236,6 @@ def test_engine():
         
         # 检查状态
         status = engine.get_status()
-        print(f"引擎状态: {json.dumps(status, indent=2, ensure_ascii=False)}")
         
         # 测试数据
         test_csv = "timestamp,x1,y1,x2,y2\n1,10,20,30,40\n2,15,25,35,45"
@@ -1251,22 +1248,14 @@ def test_engine():
         }
         
         # 执行分析
-        print("\n执行分析测试...")
         result = engine.analyze_data(
             test_csv,
             test_patient,
             'COMPREHENSIVE'
         )
         
-        if result:
-            print("✅ 分析成功")
-            print(f"总体评分: {result.get('data', {}).get('overall_score', 'N/A')}")
-        else:
-            print("❌ 分析失败")
-        
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
-        traceback.print_exc()
+        pass  # 测试失败，静默处理
 
 if __name__ == "__main__":
     test_engine()

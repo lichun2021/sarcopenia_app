@@ -244,16 +244,11 @@ def test_converter():
         # 评估数据质量
         quality = converter.estimate_quality_metrics(test_frames)
         
-        print("转换测试成功!")
-        print(f"生成CSV数据长度: {len(csv_data)} 字符")
-        print(f"数据质量: {quality['quality']} ({quality['score']}分)")
-        print(f"CSV数据前500字符:\n{csv_data[:500]}...")
-        
+        # 转换测试成功
         return csv_data
         
     except Exception as e:
-        print(f"转换测试失败: {e}")
-        return None
+        return None  # 转换测试失败
 
 if __name__ == "__main__":
     test_converter()
