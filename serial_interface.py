@@ -114,6 +114,25 @@ class SerialInterface:
     def connect(self, port_name):
         """连接到指定端口或多端口"""
         try:
+            # 检查是否已经连接
+            if self.is_running:
+                # 检查是否是相同的端口
+                if self.multi_port_config and len(self.multi_port_config) > 1:
+                    # 多端口模式，检查是否已连接
+                    if all(port.is_open for port in self.serial_ports.values() if port):
+                        print(f"⚠️ 多端口设备已连接，跳过重复连接")
+                        return True
+                else:
+                    # 单端口模式
+                    if self.serial_port and self.serial_port.is_open:
+                        current_port = getattr(self.serial_port, 'port', None)
+                        if current_port == port_name:
+                            print(f"⚠️ 端口 {port_name} 已连接，跳过重复连接")
+                            return True
+                        else:
+                            print(f"🔄 端口变更从 {current_port} 到 {port_name}，先断开旧连接")
+                            self.disconnect()
+            
             # 检查是否为多端口模式
             if self.multi_port_config and len(self.multi_port_config) > 1:
                 return self._connect_multi_port()
@@ -195,20 +214,34 @@ class SerialInterface:
         return None
     
     def disconnect(self):
-        """断开连接"""
+        """断开连接 - 增强版本，确保完全释放端口"""
         self.is_running = False
         
         # 关闭单端口连接
         if self.serial_port and self.serial_port.is_open:
-            self.serial_port.close()
+            try:
+                self.serial_port.close()
+                # 给一点时间让端口完全释放
+                import time
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"❌ 断开单端口时出错: {e}")
         
         # 关闭多端口连接
         for device_id, serial_port in self.serial_ports.items():
             try:
                 if serial_port and serial_port.is_open:
                     serial_port.close()
+                    # 给端口时间释放
+                    import time
+                    time.sleep(0.1)
             except Exception as e:
                 print(f"❌ 设备{device_id} 断开连接时出错: {e}")
+        
+        # 清空端口引用
+        self.serial_port = None
+        for device_id in self.serial_ports:
+            self.serial_ports[device_id] = None
         
         # 清理多端口资源
         self.serial_ports.clear()

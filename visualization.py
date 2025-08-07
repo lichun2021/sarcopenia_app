@@ -41,36 +41,75 @@ class HeatmapVisualizer:
         self.setup_figure()
         
     def setup_colormap(self):
-        """设置医学专用热力图颜色映射 - 专业压力成像效果"""
-        # 医学压力成像配色：模拟专业足底压力分析系统
-        # 参考Novel、Tekscan等医学设备的标准配色
-        colors_list = [
-            '#000000',  # 黑色（0压力 - 无接触）
-            '#000033',  # 极深蓝（1-10 mmHg）
-            '#000066',  # 深蓝（10-20 mmHg）
-            '#0000CC',  # 纯蓝（20-30 mmHg）
-            '#0066FF',  # 亮蓝（30-40 mmHg）
-            '#00CCFF',  # 青色（40-50 mmHg）
-            '#00FF00',  # 绿色（50-60 mmHg）
-            '#FFFF00',  # 黄色（60-70 mmHg）
-            '#FF9900',  # 橙色（70-80 mmHg）
-            '#FF0000',  # 红色（80-90 mmHg）
-            '#FF00FF',  # 洋红（90-100 mmHg）
-            '#FFFFFF'   # 白色（>100 mmHg - 最大压力）
+        """设置医学专用热力图颜色映射 - 256级医院精度"""
+        # 创建256级精细渐变色谱，确保每个压力值都有独特的颜色
+        # 医院级压力成像标准：黑→深蓝→蓝→青→绿→黄→橙→红→深红→紫→白
+        
+        # 定义关键颜色节点（11个节点创建平滑过渡）
+        colors_nodes = [
+            (0.0,    '#000000'),  # 0: 纯黑（无压力）
+            (0.1,    '#000066'),  # 25.5: 深蓝
+            (0.2,    '#0000FF'),  # 51: 纯蓝
+            (0.3,    '#0066FF'),  # 76.5: 亮蓝
+            (0.4,    '#00CCFF'),  # 102: 青色
+            (0.5,    '#00FF00'),  # 127.5: 纯绿
+            (0.6,    '#FFFF00'),  # 153: 黄色
+            (0.7,    '#FF9900'),  # 178.5: 橙色
+            (0.8,    '#FF0000'),  # 204: 纯红
+            (0.9,    '#FF00FF'),  # 229.5: 洋红
+            (1.0,    '#FFFFFF')   # 255: 纯白（最大压力）
         ]
         
-        # 使用'hot'颜色映射作为备选方案（经典黑-红-黄-白渐变）
-        # self.custom_cmap = plt.cm.hot
+        # 创建256个离散颜色值，确保每个0-255的值都有唯一颜色
+        import numpy as np
+        positions = np.array([node[0] for node in colors_nodes])
+        colors_hex = [node[1] for node in colors_nodes]
         
-        # 创建医学级高精度颜色映射
-        self.custom_cmap = colors.LinearSegmentedColormap.from_list(
-            'medical_pressure', colors_list, N=256  # 256级色彩深度，医学成像标准
+        # 转换hex颜色到RGB
+        colors_rgb = []
+        for hex_color in colors_hex:
+            r = int(hex_color[1:3], 16) / 255.0
+            g = int(hex_color[3:5], 16) / 255.0
+            b = int(hex_color[5:7], 16) / 255.0
+            colors_rgb.append((r, g, b))
+        
+        # 创建256个插值颜色
+        colors_256 = []
+        for i in range(256):
+            # 归一化位置 (0-255 -> 0-1)
+            norm_pos = i / 255.0
+            
+            # 找到插值区间
+            idx = np.searchsorted(positions, norm_pos)
+            if idx == 0:
+                colors_256.append(colors_rgb[0])
+            elif idx >= len(positions):
+                colors_256.append(colors_rgb[-1])
+            else:
+                # 线性插值
+                pos1, pos2 = positions[idx-1], positions[idx]
+                c1, c2 = colors_rgb[idx-1], colors_rgb[idx]
+                t = (norm_pos - pos1) / (pos2 - pos1)
+                
+                r = c1[0] * (1-t) + c2[0] * t
+                g = c1[1] * (1-t) + c2[1] * t
+                b = c1[2] * (1-t) + c2[2] * t
+                colors_256.append((r, g, b))
+        
+        # 创建256级离散颜色映射，每个值对应一个独特颜色
+        self.custom_cmap = colors.ListedColormap(colors_256, name='medical_pressure_256', N=256)
+        
+        # 也创建连续版本用于平滑显示
+        self.continuous_cmap = colors.LinearSegmentedColormap.from_list(
+            'medical_pressure_continuous', 
+            [node[1] for node in colors_nodes], 
+            N=256  # 256级插值精度
         )
         
         # 使用简单线性归一化
         self.norm = colors.Normalize(vmin=0, vmax=255)
         
-        # 压力单位转换：0-255 对应 0-60mmHg
+        # 压力单位转换：0-255 对应 0-60mmHg（硬件标定压力范围）
         self.pressure_scale = 60.0 / 255.0  # mmHg per unit
     
     def smooth_data(self, data_matrix):
@@ -109,12 +148,12 @@ class HeatmapVisualizer:
         # 初始化数据
         initial_data = np.zeros((self.array_rows, self.array_cols))
         
-        # 创建热力图 - 优化性能设置
+        # 创建热力图 - 医院级精度设置
         self.im = self.ax.imshow(
             initial_data, 
-            cmap=self.custom_cmap,
+            cmap=self.custom_cmap,     # 256级离散颜色映射
             norm=self.norm,
-            interpolation='bilinear',  # 双线性插值，性能与效果的平衡
+            interpolation='nearest',   # 最近邻插值，保持精确的颜色值，无混合
             aspect='equal',            # 保持像素点正方形，确保正确比例显示
             animated=True,             # 启用动画模式提高性能
             alpha=1.0,                 # 去掉透明度提升性能
@@ -122,7 +161,7 @@ class HeatmapVisualizer:
         )
         
         # 设置标题和标签 - 移除轴标签，只保留刻度
-        self.update_title()
+        # self.update_title()
         # 移除X/Y轴标签以简化界面
         
         # 为提升性能，完全移除网格线
@@ -139,11 +178,17 @@ class HeatmapVisualizer:
                                 fontweight='bold', color='white')
         self.colorbar.ax.yaxis.set_tick_params(color='white', labelcolor='white')
         
-        # 设置颜色条标签 - 显示mmHg单位，0-255对应0-60mmHg
-        tick_positions = [0, 42, 85, 128, 170, 213, 255]  # 更多刻度点
-        tick_labels = [f'{int(pos * self.pressure_scale)} mmHg' for pos in tick_positions]
+        # 设置颜色条标签 - 医院级精度，256级显示
+        # 更密集的刻度点，展示256级精度
+        tick_positions = [0, 32, 64, 96, 128, 160, 192, 224, 255]  # 9个刻度点
+        tick_labels = [f'{int(pos * self.pressure_scale):.0f}' for pos in tick_positions]
         self.colorbar.set_ticks(tick_positions)
         self.colorbar.set_ticklabels(tick_labels)
+        
+        # 添加次要刻度，展示更高精度
+        minor_ticks = list(range(0, 256, 16))  # 每16个值一个次要刻度
+        self.colorbar.ax.yaxis.set_ticks(minor_ticks, minor=True)
+        self.colorbar.ax.yaxis.set_tick_params(which='minor', length=3, color='white')
         
         # 设置坐标轴范围，确保热力图填满整个显示区域
         self.ax.set_xlim(-0.5, self.array_cols - 0.5)
@@ -157,10 +202,10 @@ class HeatmapVisualizer:
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
         
-    def update_title(self):
-        """更新标题"""
-        title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols})'
-        self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
+    # def update_title(self):
+    #     """更新标题"""
+    #     title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols})'
+    #     self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
         
     def update_data(self, matrix_2d, statistics=None):
         """更新显示数据 - 带帧跳跃优化"""
@@ -201,13 +246,13 @@ class HeatmapVisualizer:
             self.im.set_clim(0, 255)
             
             # 更新标题包含统计信息（白色文字）
-            if statistics:
-                max_mmhg = statistics["max_value"] * self.pressure_scale
-                min_mmhg = statistics["min_value"] * self.pressure_scale
-                avg_mmhg = statistics["mean_value"] * self.pressure_scale
-                title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols}) - '
-                title += f'Max:{max_mmhg:.1f} Min:{min_mmhg:.1f} Avg:{avg_mmhg:.1f}mmHg'
-                self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
+            # if statistics:
+                # max_mmhg = statistics["max_value"] * self.pressure_scale
+                # min_mmhg = statistics["min_value"] * self.pressure_scale
+                # avg_mmhg = statistics["mean_value"] * self.pressure_scale
+                # title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols}) - '
+                # title += f'Max:{max_mmhg:.1f} Min:{min_mmhg:.1f} Avg:{avg_mmhg:.1f}mmHg'
+                # self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
             
             # 使用快速重绘，只更新数据区域
             self.canvas.draw_idle()  # 使用idle绘制，减少频繁重绘
@@ -245,12 +290,12 @@ class HeatmapVisualizer:
             # 重新创建图形组件
             initial_data = np.zeros((self.array_rows, self.array_cols))
             
-            # 创建热力图
+            # 创建热力图 - 医院级精度设置
             self.im = self.ax.imshow(
                 initial_data, 
-                cmap=self.custom_cmap,
+                cmap=self.custom_cmap,     # 256级离散颜色映射
                 norm=self.norm,
-                interpolation='bilinear',
+                interpolation='nearest',   # 最近邻插值，保持精确的颜色值
                 aspect='equal',
                 animated=True,
                 alpha=1.0,
@@ -258,7 +303,7 @@ class HeatmapVisualizer:
             )
             
             # 更新标题
-            self.update_title()
+            # self.update_title()
             
             # 设置坐标轴
             self.ax.set_xticks(range(0, self.array_cols, max(1, self.array_cols//8)))
@@ -269,11 +314,16 @@ class HeatmapVisualizer:
                 self.colorbar = self.fig.colorbar(self.im, ax=self.ax, fraction=0.046, pad=0.04)
                 self.colorbar.set_label('Pressure (mmHg)', rotation=270, labelpad=25, fontsize=14, fontweight='bold')
                 
-                # 设置颜色条标签
-                tick_positions = [0, 42, 85, 128, 170, 213, 255]
-                tick_labels = [f'{int(pos * self.pressure_scale)} mmHg' for pos in tick_positions]
+                # 设置颜色条标签 - 医院级精度
+                tick_positions = [0, 32, 64, 96, 128, 160, 192, 224, 255]
+                tick_labels = [f'{int(pos * self.pressure_scale):.0f}' for pos in tick_positions]
                 self.colorbar.set_ticks(tick_positions)
                 self.colorbar.set_ticklabels(tick_labels)
+                
+                # 添加次要刻度
+                minor_ticks = list(range(0, 256, 16))
+                self.colorbar.ax.yaxis.set_ticks(minor_ticks, minor=True)
+                self.colorbar.ax.yaxis.set_tick_params(which='minor', length=3, color='white')
             
             # 设置坐标轴范围，确保热力图填满整个显示区域
             self.ax.set_xlim(-0.5, self.array_cols - 0.5)

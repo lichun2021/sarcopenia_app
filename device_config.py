@@ -1187,7 +1187,7 @@ class DeviceManager:
         return result
     
     def switch_device(self, device_id):
-        """切换当前设备"""
+        """切换当前设备 - 增强端口释放逻辑"""
         if device_id in self.devices:
             # 先断开当前设备连接，释放COM口
             if self.current_device and self.current_device != device_id:
@@ -1203,6 +1203,11 @@ class DeviceManager:
                             # 确保完全断开连接
                             old_interface.disconnect()
                             print(f"✅ 旧设备 '{old_device_name}' 连接已断开")
+                            
+                            # 给端口一点时间完全释放
+                            import time
+                            time.sleep(0.2)
+                            
                         except Exception as e:
                             print(f"⚠️ 断开旧设备连接时出错: {e}")
             
@@ -1224,7 +1229,7 @@ class DeviceManager:
         return None
     
     def connect_current_device(self):
-        """连接当前设备"""
+        """连接当前设备 - 添加重试机制解决端口占用问题"""
         if self.current_device and self.current_device in self.devices:
             device_config = self.devices[self.current_device]
             serial_interface = self.serial_interfaces[self.current_device]
@@ -1236,18 +1241,16 @@ class DeviceManager:
                     # 单端口设备
                     port_name = device_config.get('port') or device_config.get('ports', [None])[0]
                     if port_name:
-                        return serial_interface.connect(port_name)
+                        return self._connect_with_retry(serial_interface, port_name, device_config['name'])
                     else:
                         print(f"❌ 设备 {device_config['name']} 缺少端口配置")
                         return False
                 else:
                     # 多端口设备 - 使用透明连接方式
-                    # 新的SerialInterface支持通过connect()方法透明处理多端口
-                    # 只需要传入任意一个端口即可，因为多端口配置已经在setup_devices中设置
                     ports = device_config.get('ports', [])
                     if ports:
                         # 使用第一个端口作为连接入口，SerialInterface会内部处理多端口连接
-                        return serial_interface.connect(ports[0])
+                        return self._connect_with_retry(serial_interface, ports[0], device_config['name'])
                     else:
                         print(f"❌ 设备 {device_config['name']} 缺少端口配置")
                         return False
@@ -1255,6 +1258,42 @@ class DeviceManager:
             except Exception as e:
                 print(f"连接设备失败: {e}")
                 return False
+        return False
+    
+    def _connect_with_retry(self, serial_interface, port_name, device_name):
+        """带重试机制的连接方法"""
+        import time
+        
+        # 第一次尝试
+        try:
+            if serial_interface.connect(port_name):
+                return True
+        except Exception as e:
+            print(f"⚠️ 设备 {device_name} 首次连接失败: {e}")
+        
+        # 等待一段时间让端口完全释放
+        print(f"🔄 等待端口 {port_name} 释放...")
+        time.sleep(0.5)
+        
+        # 第二次尝试
+        try:
+            if serial_interface.connect(port_name):
+                print(f"✅ 设备 {device_name} 重试连接成功")
+                return True
+        except Exception as e:
+            print(f"⚠️ 设备 {device_name} 重试连接失败: {e}")
+        
+        # 再等待一段时间
+        time.sleep(1.0)
+        
+        # 第三次尝试（最后一次）
+        try:
+            if serial_interface.connect(port_name):
+                print(f"✅ 设备 {device_name} 最终重试连接成功")
+                return True
+        except Exception as e:
+            print(f"❌ 设备 {device_name} 所有重试均失败: {e}")
+        
         return False
     
     def disconnect_current_device(self):

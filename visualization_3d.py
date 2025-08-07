@@ -46,8 +46,8 @@ class Heatmap3DRenderer:
         self.stop_event = threading.Event()
         
         # 3D视角参数 - 优化的观察角度
-        self.elevation = 85  # 几乎垂直俯视
-        self.azimuth = -90    # 正面观察
+        self.elevation = 75  # 稍微倾斜的俯视角度，更清晰
+        self.azimuth = 45    # 45度方位角，显示立体感
         
         # 渲染状态
         self.last_render_time = 0
@@ -62,90 +62,65 @@ class Heatmap3DRenderer:
         self.setup_colormap()
         
     def setup_colormap(self):
-        """设置3D热力图颜色映射 - 粒子式热力梯度"""
-        # 粒子热力图颜色映射：蓝->青->绿->黄->橙->红
-        colors_list = [
-            '#0066FF',  # 蓝色（低压力）
-            '#00CCFF',  # 青色
-            '#00FF66',  # 绿色
-            '#66FF00',  # 黄绿
-            '#FFFF00',  # 黄色
-            '#FF9900',  # 橙色
-            '#FF3300',  # 红色（高压力）
-            '#CC0000'   # 深红（最高压力）
+        """设置3D热力图颜色映射 - 256级医院精度（与2D同步）"""
+        # 创建256级精细渐变色谱，与2D完全一致
+        # 医院级压力成像标准：黑→深蓝→蓝→青→绿→黄→橙→红→深红→紫→白
+        
+        # 定义关键颜色节点（11个节点创建平滑过渡）
+        colors_nodes = [
+            (0.0,    '#000000'),  # 0: 纯黑（无压力）
+            (0.1,    '#000066'),  # 25.5: 深蓝
+            (0.2,    '#0000FF'),  # 51: 纯蓝
+            (0.3,    '#0066FF'),  # 76.5: 亮蓝
+            (0.4,    '#00CCFF'),  # 102: 青色
+            (0.5,    '#00FF00'),  # 127.5: 纯绿
+            (0.6,    '#FFFF00'),  # 153: 黄色
+            (0.7,    '#FF9900'),  # 178.5: 橙色
+            (0.8,    '#FF0000'),  # 204: 纯红
+            (0.9,    '#FF00FF'),  # 229.5: 洋红
+            (1.0,    '#FFFFFF')   # 255: 纯白（最大压力）
         ]
         
-        # 3D热力图专用颜色映射 - 提升精细度
-        self.custom_cmap = colors.LinearSegmentedColormap.from_list(
-            'pressure_3d_detailed', colors_list, N=256  # 增加到256级以提升精细度
-        )
+        # 创建256个离散颜色值，确保每个0-255的值都有唯一颜色
+        import numpy as np
+        positions = np.array([node[0] for node in colors_nodes])
+        colors_hex = [node[1] for node in colors_nodes]
+        
+        # 转换hex颜色到RGB
+        colors_rgb = []
+        for hex_color in colors_hex:
+            r = int(hex_color[1:3], 16) / 255.0
+            g = int(hex_color[3:5], 16) / 255.0
+            b = int(hex_color[5:7], 16) / 255.0
+            colors_rgb.append((r, g, b))
+        
+        # 创建256个插值颜色
+        colors_256 = []
+        for i in range(256):
+            # 归一化位置 (0-255 -> 0-1)
+            norm_pos = i / 255.0
+            
+            # 找到插值区间
+            idx = np.searchsorted(positions, norm_pos)
+            if idx == 0:
+                colors_256.append(colors_rgb[0])
+            elif idx >= len(positions):
+                colors_256.append(colors_rgb[-1])
+            else:
+                # 线性插值
+                pos1, pos2 = positions[idx-1], positions[idx]
+                c1, c2 = colors_rgb[idx-1], colors_rgb[idx]
+                t = (norm_pos - pos1) / (pos2 - pos1)
+                
+                r = c1[0] * (1-t) + c2[0] * t
+                g = c1[1] * (1-t) + c2[1] * t
+                b = c1[2] * (1-t) + c2[2] * t
+                colors_256.append((r, g, b))
+        
+        # 创建256级离散颜色映射，每个值对应一个独特颜色
+        self.custom_cmap = colors.ListedColormap(colors_256, name='medical_pressure_3d_256', N=256)
         self.norm = colors.Normalize(vmin=0, vmax=255)
         self.pressure_scale = 60.0 / 255.0  # mmHg per unit
-    
-    def _generate_footprint_particles(self, matrix_2d: np.ndarray) -> np.ndarray:
-        """生成脚印粒子数据"""
-        particles = []
-        
-        # 分析压力数据，识别脚印区域
-        threshold = np.max(matrix_2d) * 0.1  # 压力阈值
-        
-        # 遍历每个点，根据压力值生成粒子
-        for i in range(self.array_rows):
-            for j in range(self.array_cols):
-                pressure = matrix_2d[i, j]
-                
-                if pressure > threshold:
-                    # 计算粒子密度（压力越大，粒子越多）
-                    intensity = pressure / 255.0
-                    particle_count = int(intensity * 5) + 1  # 1-5个粒子
-                    
-                    for _ in range(particle_count):
-                        # 在该点周围随机生成粒子位置
-                        x = j + np.random.normal(0, 0.3)
-                        y = i + np.random.normal(0, 0.3)
-                        z = intensity * 10 + np.random.uniform(0, 2)  # Z轴高度
-                        
-                        # 根据强度计算颜色
-                        color = self._get_heatmap_color(intensity)
-                        
-                        # 粒子大小
-                        size = (intensity * 30 + 10) * np.random.uniform(0.8, 1.2)
-                        
-                        particles.append([x, y, z, color[0], color[1], color[2], size])
-        
-        return np.array(particles) if particles else np.array([]).reshape(0, 7)
-    
-    def _get_heatmap_color(self, intensity: float) -> tuple:
-        """根据强度获取热力图颜色"""
-        # 蓝 -> 青 -> 绿 -> 黄 -> 橙 -> 红 渐变
-        if intensity < 0.15:
-            # 蓝色
-            r, g, b = 0, 0.4, 1.0
-        elif intensity < 0.3:
-            # 蓝到青
-            t = (intensity - 0.15) / 0.15
-            r, g, b = 0, 0.4 + 0.4*t, 1.0
-        elif intensity < 0.45:
-            # 青到绿
-            t = (intensity - 0.3) / 0.15
-            r, g, b = 0, 0.8 + 0.2*t, 1.0 - 0.6*t
-        elif intensity < 0.6:
-            # 绿到黄
-            t = (intensity - 0.45) / 0.15
-            r, g, b = t, 1.0, 0.4 - 0.4*t
-        elif intensity < 0.75:
-            # 黄到橙
-            t = (intensity - 0.6) / 0.15
-            r, g, b = 1.0, 1.0 - 0.4*t, 0
-        elif intensity < 0.9:
-            # 橙到红
-            t = (intensity - 0.75) / 0.15
-            r, g, b = 1.0, 0.6 - 0.4*t, 0
-        else:
-            # 深红
-            r, g, b = 0.8, 0.1, 0
-        
-        return (r, g, b)
         
     def start_rendering(self):
         """启动渲染线程"""
@@ -182,6 +157,7 @@ class Heatmap3DRenderer:
                 'statistics': statistics,
                 'timestamp': time.time()
             })
+            # 数据已提交到队列
             
         except queue.Full:
             # 队列满，丢弃这一帧
@@ -196,11 +172,15 @@ class Heatmap3DRenderer:
     
     def _render_loop(self):
         """渲染主循环"""
+        loop_count = 0
+        
         while not self.stop_event.is_set():
             try:
+                loop_count += 1
+                
                 # 等待数据，带超时
                 try:
-                    data_item = self.data_queue.get(timeout=0.2)
+                    data_item = self.data_queue.get(timeout=0.2)  # 增加超时时间匹配低帧率
                 except queue.Empty:
                     continue
                 
@@ -232,6 +212,7 @@ class Heatmap3DRenderer:
                         old_result = self.result_queue.get_nowait()
                         if old_result[0]:  # 关闭旧图形
                             plt.close(old_result[0])
+                        # 减少频繁的旧结果移除输出
                     
                     self.result_queue.put_nowait((fig, {
                         'render_time': render_time,
@@ -245,13 +226,14 @@ class Heatmap3DRenderer:
                         plt.close(fig)
                 
             except Exception as e:
-                # 只在严重错误时打印
-                if "Figure" in str(e) or "memory" in str(e).lower():
-                    print(f"[3D热力图] 严重错误: {e}")
+                print(f"[3D热力图] 渲染错误: {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(0.01)  # 防止错误循环
     
     def _render_3d_frame(self, matrix_2d: np.ndarray, statistics: Optional[Dict]) -> Tuple[Figure, Dict]:
-        """渲染单个3D帧 - 粒子式脚印可视化"""
+        """渲染单个3D帧 - 高性能版本，支持矩形设备"""
+        
         # 检查数据
         if matrix_2d is None or matrix_2d.size == 0:
             return None, {}
@@ -261,44 +243,60 @@ class Heatmap3DRenderer:
             self.array_rows, self.array_cols = matrix_2d.shape
         
         try:
-            # 创建适中尺寸的3D图形，深色背景
-            fig = Figure(figsize=(10, 10), dpi=80, facecolor='#141428')
-            fig.patch.set_facecolor('#141428')
-            fig.patch.set_alpha(1.0)
-            ax = fig.add_subplot(111, projection='3d', facecolor='#141428')
+            # 根据数组尺寸调整图形大小，确保矩形设备显示正确
+            aspect_ratio = self.array_cols / self.array_rows
+            
+            # 调整阈值，确保32x32正确识别为正方形
+            if aspect_ratio > 1.6:  # 明显的宽矩形（如32x64=2.0）
+                figsize = (12, 8)  # 宽矩形图形
+            elif aspect_ratio < 0.625:  # 明显的高矩形（如32x64转置）
+                figsize = (8, 12)  # 高矩形图形
+            else:  # 正方形或接近正方形（包括32x32=1.0）
+                figsize = (10, 10)
+                
+            fig = Figure(figsize=figsize, dpi=80, facecolor='none')
+            fig.patch.set_facecolor('none')
+            fig.patch.set_alpha(0)
+            ax = fig.add_subplot(111, projection='3d')
             
         except Exception as e:
+            print(f"[3D渲染] Figure或3D子图创建失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None, {}
         
         try:
-            # 检测脚印区域（基于压力数据）
-            footprint_particles = self._generate_footprint_particles(matrix_2d)
+            # 创建基本网格坐标
+            x = np.linspace(0, self.array_cols-1, self.array_cols)
+            y = np.linspace(0, self.array_rows-1, self.array_rows)
+            X, Y = np.meshgrid(x, y)
             
-            if len(footprint_particles) > 0:
-                # 提取粒子数据
-                x_coords = footprint_particles[:, 0]
-                y_coords = footprint_particles[:, 1]
-                z_coords = footprint_particles[:, 2]
-                colors = footprint_particles[:, 3:6]
-                sizes = footprint_particles[:, 6]
-                
-                # 绘制粒子散点图
-                scatter = ax.scatter(
-                    x_coords, y_coords, z_coords,
-                    c=colors,
-                    s=sizes,
-                    alpha=0.8,
-                    edgecolors='none',
-                    marker='o'
-                )
+            # Z轴数据（更小的缩放因子）
+            Z = matrix_2d * 0.15
+            
+            # 创建3D表面图，使用高精度颜色映射
+            surf = ax.plot_surface(
+                X, Y, Z,
+                facecolors=self.custom_cmap(self.norm(matrix_2d)),  # 使用原始数据做颜色映射
+                alpha=0.9,
+                linewidth=0,
+                antialiased=True,  # 开启抗锯齿提升细节
+                shade=False,  # 关闭阴影保持颜色纯净
+                rasterized=True
+            )
             
         except Exception as e:
+            print(f"[3D渲染] 创建3D表面图失败: {e}")
+            import traceback
+            traceback.print_exc()
             plt.close(fig)
             return None, {}
         
         try:
-            # 设置固定俯视角度（稍微倾斜以显示3D效果）
-            ax.view_init(elev=85, azim=-90)  # 几乎垂直俯视
+            # 设置固定俯视角度
+            ax.view_init(elev=self.elevation, azim=self.azimuth)
+            
+            # 完全移除等高线（性能杀手）
             
             # 移除标题减少渲染
             ax.set_title('')
@@ -316,36 +314,46 @@ class Heatmap3DRenderer:
             ax.yaxis.set_visible(False)
             ax.zaxis.set_visible(False)
             
-            # 设置深色背景
-            ax.xaxis.pane.fill = True
-            ax.yaxis.pane.fill = True
-            ax.zaxis.pane.fill = True
-            ax.xaxis.pane.set_facecolor('#141428')
-            ax.yaxis.pane.set_facecolor('#141428')
-            ax.zaxis.pane.set_facecolor('#141428')
-            ax.xaxis.pane.set_edgecolor('#141428')
-            ax.yaxis.pane.set_edgecolor('#141428')
-            ax.zaxis.pane.set_edgecolor('#141428')
-            ax.xaxis.pane.set_alpha(1.0)
-            ax.yaxis.pane.set_alpha(1.0)
-            ax.zaxis.pane.set_alpha(1.0)
+            # 隐藏3D坐标轴的线框和边线
+            ax.xaxis.pane.fill = False
+            ax.yaxis.pane.fill = False
+            ax.zaxis.pane.fill = False
+            ax.xaxis.pane.set_edgecolor('none')
+            ax.yaxis.pane.set_edgecolor('none')
+            ax.zaxis.pane.set_edgecolor('none')
+            ax.xaxis.pane.set_linewidth(0)
+            ax.yaxis.pane.set_linewidth(0)
+            ax.zaxis.pane.set_linewidth(0)
+            
+            # 设置背景为透明
+            ax.xaxis.pane.set_facecolor('none')
+            ax.yaxis.pane.set_facecolor('none')
+            ax.zaxis.pane.set_facecolor('none')
+            ax.xaxis.pane.set_alpha(0)
+            ax.yaxis.pane.set_alpha(0)
+            ax.zaxis.pane.set_alpha(0)
             
             # 隐藏3D立方体的边框线
-            ax.xaxis.line.set_color((0.08, 0.08, 0.16, 0.0))
-            ax.yaxis.line.set_color((0.08, 0.08, 0.16, 0.0))
-            ax.zaxis.line.set_color((0.08, 0.08, 0.16, 0.0))
+            ax.xaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+            ax.yaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+            ax.zaxis.line.set_color((1.0, 1.0, 1.0, 0.0))
             
-            # 设置坐标轴范围
+            # 设置坐标轴范围 - 真正居中
             ax.set_xlim(0, self.array_cols-1)
             ax.set_ylim(0, self.array_rows-1)
-            ax.set_zlim(0, 50)  # 固定Z轴范围
+            ax.set_zlim(0, np.max(Z) * 1.2 if np.max(Z) > 0 else 50)
             
-            # 设置3D轴的纵横比
-            ax.set_box_aspect([1,1,0.2])  # x:y:z = 1:1:0.2，压缩z轴
+            # 设置3D轴的纵横比以防止变形和裁切，支持矩形设备
+            aspect_ratio = self.array_cols / self.array_rows
+            if aspect_ratio > 1.6:  # 明显的宽矩形（如32x64的步道）
+                ax.set_box_aspect([aspect_ratio, 1, 0.3])  # 保持实际比例
+            elif aspect_ratio < 0.625:  # 明显的高矩形
+                ax.set_box_aspect([1, 1/aspect_ratio, 0.3])  # 保持实际比例
+            else:  # 正方形或接近正方形（包括32x32）
+                ax.set_box_aspect([1, 1, 0.3])  # 标准正方形比例
             
             # 设置适中的边距，确保不被裁切且尽可能填满
             fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
-            
             return fig, {
                 'max_value': np.max(matrix_2d),
                 'min_value': np.min(matrix_2d),
@@ -353,6 +361,9 @@ class Heatmap3DRenderer:
             }
             
         except Exception as e:
+            print(f"[3D渲染] 设置3D属性失败: {e}")
+            import traceback
+            traceback.print_exc()
             plt.close(fig)
             return None, {}
     
@@ -375,8 +386,9 @@ class Heatmap3DRenderer:
     def set_view_angle(self, elevation: float, azimuth: float):
         """设置3D视角（优化的观察角度）"""
         # 使用优化的视角，忽略传入参数
-        self.elevation = 85  # 几乎垂直俯视
-        self.azimuth = -90    # 正面观察
+        self.elevation = 75  # 稍微倾斜的俯视角度
+        self.azimuth = 45    # 45度方位角
+        print(f"[3D热力图] 固定观察角度: 仰角=75°, 方位角=45°")
     
     def get_stats(self) -> Dict:
         """获取渲染统计信息"""
@@ -410,28 +422,37 @@ class IndependentCanvasContainer:
         self.canvas_container = ttk.Frame(parent_frame)
         self.canvas_container.pack(fill='both', expand=True, padx=0, pady=0)
         
-        # Canvas容器已创建
     
     def update_canvas_async(self, new_fig):
-        """简化的canvas更新 - 基于测试成功的简单方案"""
+        """真正异步的canvas更新 - 使用after_idle避免阻塞UI"""
         if new_fig is None:
             return
         
         # 防止重复更新
         if self.is_updating:
-            print(f"[独立Canvas] 正在更新中，跳过")
             if new_fig:
                 plt.close(new_fig)
             return
         
-        print(f"[独立Canvas] 开始简化更新")
+        # 使用after_idle在UI空闲时更新，不阻塞主线程
+        try:
+            self.parent_frame.after_idle(self._async_update_wrapper, new_fig)
+        except Exception as e:
+            if new_fig:
+                plt.close(new_fig)
+    
+    def _async_update_wrapper(self, new_fig):
+        """异步更新包装器"""
+        if self.is_updating:
+            if new_fig:
+                plt.close(new_fig)
+            return
+            
         self.is_updating = True
         
         try:
-            # 直接在主线程更新，就像成功的简单测试一样
             self._simple_update(new_fig)
         except Exception as e:
-            print(f"[独立Canvas] 更新失败: {e}")
             if new_fig:
                 plt.close(new_fig)
         finally:
@@ -439,7 +460,6 @@ class IndependentCanvasContainer:
     
     def _simple_update(self, new_fig):
         """简单直接的更新方式 - 最小化闪烁"""
-        print(f"[独立Canvas] 执行简单更新")
         
         # 先暂停绘制避免中间状态闪烁
         if self.canvas:
@@ -447,7 +467,6 @@ class IndependentCanvasContainer:
         
         # 如果是第一次创建canvas
         if self.canvas is None:
-            print(f"[独立Canvas] 首次创建canvas")
             self.canvas = FigureCanvasTkAgg(new_fig, master=self.canvas_container)
             canvas_widget = self.canvas.get_tk_widget()
             canvas_widget.pack(fill='both', expand=True)
@@ -456,7 +475,6 @@ class IndependentCanvasContainer:
             canvas_widget.configure(highlightthickness=0, bd=0, relief='flat')
         else:
             # 快速替换canvas，减少闪烁时间
-            print(f"[独立Canvas] 快速替换canvas")
             old_widget = self.canvas.get_tk_widget()
             
             # 关闭旧figure
@@ -472,10 +490,15 @@ class IndependentCanvasContainer:
             # 销毁旧widget
             old_widget.destroy()
         
-        # 直接绘制
-        print(f"[独立Canvas] 执行绘制")
-        self.canvas.draw_idle()
-        print(f"[独立Canvas] 绘制完成")
+        # 使用最轻量级的绘制方式，避免阻塞UI
+        try:
+            # 尝试使用flush_events避免阻塞
+            self.canvas.draw_idle()
+            # 立即处理pending事件，不累积
+            self.canvas.flush_events()
+        except:
+            # 如果flush_events不可用，使用标准draw_idle
+            self.canvas.draw_idle()
         
         self.fig = new_fig
     
@@ -489,7 +512,6 @@ class IndependentCanvasContainer:
                 current_size = (current_width, current_height)
                 
                 if current_size != self.last_canvas_size and current_width > 1 and current_height > 1:
-                    print(f"[Canvas尺寸] 检测到尺寸变化: {self.last_canvas_size} -> {current_size}")
                     self.last_canvas_size = current_size
                     self.adjust_figure_centering()
                 
@@ -505,7 +527,6 @@ class IndependentCanvasContainer:
             if not self.fig or not self.canvas:
                 return
                 
-            print(f"[Canvas居中] 应用简化的居中布局")
             
             # 使用最简单的方式让图形填满Canvas
             if self.fig.axes:
@@ -514,9 +535,21 @@ class IndependentCanvasContainer:
                 # 设置适中的边距，确保不被裁切且居中显示
                 self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
                 
-                # 确保3D轴的纵横比合适
+                # 确保3D轴的纵横比合适，根据实际数据维度调整
                 try:
-                    ax.set_box_aspect([1,1,0.3])  # 压缩z轴避免裁切
+                    # 尝试从当前图中获取数据维度
+                    xlim = ax.get_xlim()
+                    ylim = ax.get_ylim()
+                    if xlim[1] > 0 and ylim[1] > 0:
+                        data_aspect = xlim[1] / ylim[1]
+                        if data_aspect > 1.6:  # 明显的宽矩形
+                            ax.set_box_aspect([data_aspect, 1, 0.3])
+                        elif data_aspect < 0.625:  # 明显的高矩形
+                            ax.set_box_aspect([1, 1/data_aspect, 0.3])
+                        else:  # 正方形或接近正方形
+                            ax.set_box_aspect([1, 1, 0.3])
+                    else:
+                        ax.set_box_aspect([1, 1, 0.3])  # 默认比例
                 except:
                     pass  # 某些matplotlib版本可能不支持
                 
@@ -575,8 +608,8 @@ class EnhancedHeatmapVisualizer:
 
 
         
-        # 初始化3D渲染器 - 进一步降低FPS减少闪烁
-        self.renderer_3d = Heatmap3DRenderer(array_rows, array_cols, target_fps=2)
+        # 初始化3D渲染器 - 大幅降低FPS以保护UI响应性
+        self.renderer_3d = Heatmap3DRenderer(array_rows, array_cols, target_fps=1)
         
         # 创建独立的3D Canvas容器
         self.canvas_3d_container = IndependentCanvasContainer(self.display_3d_frame)
@@ -612,15 +645,6 @@ class EnhancedHeatmapVisualizer:
         )
         self.btn_3d.pack(side='left', padx=2)
         
-        # 状态显示
-        self.status_var = tk.StringVar(value="2D模式 - 实时渲染")
-        self.status_label = ttk.Label(
-            self.control_frame, 
-            textvariable=self.status_var,
-            font=('Arial', 8),
-            background='white'
-        )
-        self.status_label.pack(side='right', padx=5)
 
     def setup_display_area(self):
         """设置分离的显示区域"""
@@ -641,7 +665,6 @@ class EnhancedHeatmapVisualizer:
         if self.current_mode == "2D":
             return
             
-        print("[可视化] 切换到2D模式")
         self.current_mode = "2D"
         
         # 隐藏3D区域
@@ -655,30 +678,23 @@ class EnhancedHeatmapVisualizer:
     def switch_to_3d(self):
         """切换到3D模式"""
         if self.current_mode == "3D":
-            print("[可视化] 已经是3D模式，无需切换")
             return
             
-        print("[可视化] 开始切换到3D模式")
         self.current_mode = "3D"
         
-        print("[可视化] 隐藏2D区域")
         # 隐藏2D区域
         self.display_2d_frame.pack_forget()
         
-        print("[可视化] 显示3D区域")
         # 显示3D区域
         self.display_3d_frame.pack(fill='both', expand=True)
         
-        print("[可视化] 获取3D渲染器状态")
         stats = self.renderer_3d.get_stats()
         self.status_var.set(f"3D模式 - FPS: {stats['actual_fps']:.1f}")
-        
-        print("[可视化] 3D模式切换完成")
     
     def set_3d_view(self, elevation: float, azimuth: float):
         """设置3D视角（保留接口兼容性，但固定优化角度）"""
         # 固定使用优化的观察角度
-        self.renderer_3d.set_view_angle(85, -90)
+        self.renderer_3d.set_view_angle(75, 45)
         
         if self.current_mode == "3D":
             stats = self.renderer_3d.get_stats()
@@ -691,16 +707,17 @@ class EnhancedHeatmapVisualizer:
             if matrix_2d is None or matrix_2d.size == 0:
                 return
             
-            # 总是更新2D（保持响应性）
-            self.visualizer_2d.update_data(matrix_2d, statistics)
-            
-            # 如果是3D模式，也更新3D渲染器（但降低频率）
-            if self.current_mode == "3D":
-                # 只有当Canvas不在更新状态时才提交新数据
+            # 根据当前模式选择性更新，节省资源
+            if self.current_mode == "2D":
+                # 2D模式：只更新2D，不更新3D
+                self.visualizer_2d.update_data(matrix_2d, statistics)
+            else:
+                # 3D模式：更新2D（后台保持数据）和3D
+                self.visualizer_2d.update_data(matrix_2d, statistics)
+                
+                # 只有当Canvas不在更新状态时才提交新数据到3D
                 if not self.canvas_3d_container.is_updating:
                     self.renderer_3d.update_data(matrix_2d, statistics)
-                else:
-                    print(f"[可视化] 3D Canvas正在更新，跳过数据更新")
                 
         except Exception as e:
             print(f"[可视化] 数据更新错误: {e}")
@@ -722,19 +739,14 @@ class EnhancedHeatmapVisualizer:
                         fps = stats.get('actual_fps', 0)
                         self.status_var.set(f"3D模式 - FPS: {fps:.1f}")
                         
-                        # 减少日志输出
-                        frame_count = render_info.get('frame_count', 0)
-                        if frame_count % 20 == 0:  # 每20帧打印一次
-                            print(f"[可视化] 3D渲染正常，帧#{frame_count}, FPS: {fps:.1f}")
-                # 移除"暂无结果"的日志，减少输出
                 
         except Exception as e:
             print(f"[可视化] 3D结果检查错误: {e}")
             import traceback
             traceback.print_exc()
         finally:
-            # 匹配更低帧率的检查频率，减少闪烁
-            self.parent_frame.after(500, self.check_3d_results)  # 2 FPS检查频率，匹配渲染频率
+            # 进一步降低检查频率，保护UI线程
+            self.parent_frame.after(1000, self.check_3d_results)  # 1 FPS检查频率，保护UI响应性
     
     def set_array_size(self, rows, cols):
         """设置新的阵列大小"""
