@@ -411,17 +411,42 @@ class PressureAnalysisCore:
         基于COP轨迹和压力峰值检测左右脚步态事件
         
         Args:
-            data_frames: 包含time, data等字段的数据帧列表
+            data_frames: 压力数据列表（可以是矩阵列表或字典格式）
             
         Returns:
             dict: 包含左右脚步态事件和参数
         """
+        # 将原始数据转换为标准格式（如果需要）
+        formatted_frames = []
+        for i, frame in enumerate(data_frames):
+            if isinstance(frame, dict):
+                formatted_frames.append(frame)
+            else:
+                # 处理矩阵格式（如果parse_csv_data返回的是矩阵）
+                if isinstance(frame, list) and frame and isinstance(frame[0], list):
+                    # 已经是矩阵格式，需要展平
+                    flat_data = []
+                    for row in frame:
+                        flat_data.extend(row)
+                    formatted_frames.append({
+                        'time': i * 0.033,  # 假设30Hz采样率
+                        'timestamp': f'frame_{i}',
+                        'data': flat_data
+                    })
+                else:
+                    # 原始数组格式，转换为字典
+                    formatted_frames.append({
+                        'time': i * 0.033,  # 假设30Hz采样率
+                        'timestamp': f'frame_{i}',
+                        'data': frame if isinstance(frame, list) else frame.tolist()
+                    })
+        
         # 分离左右脚数据
-        left_foot_data, right_foot_data = self.separate_foot_data(data_frames)
+        left_foot_data, right_foot_data = self.separate_foot_data(formatted_frames)
         
         # 计算COP轨迹
         cop_trajectory = []
-        for frame in data_frames:
+        for frame in formatted_frames:
             data = frame.get('data', [])
             if len(data) == 1024:
                 matrix = np.array(data).reshape(32, 32)
@@ -829,11 +854,24 @@ class PressureAnalysisCore:
             gait_events = self.detect_gait_events(pressure_sequence)
             step_metrics = self.calculate_step_metrics(gait_events)
             
+            # 🚀 物理步态事件检测 - 左右脚分离
+            physical_gait_events = self.detect_physical_gait_events(pressure_sequence)
+            
             # 🚀 步态相位分析 - 新增同步功能
             gait_phases = self.analyze_gait_phases(gait_events)
             
             # 平衡分析
             balance_metrics = self.analyze_balance(pressure_sequence)
+            
+            # 合并步态分析结果（包含左右脚分离数据）
+            if 'error' not in physical_gait_events:
+                # 将左右脚分离的数据合并到step_metrics中
+                step_metrics['left_steps'] = physical_gait_events.get('left_steps', 0)
+                step_metrics['right_steps'] = physical_gait_events.get('right_steps', 0)
+                step_metrics['left_step_length'] = physical_gait_events.get('left_step_length', 0)
+                step_metrics['right_step_length'] = physical_gait_events.get('right_step_length', 0)
+                step_metrics['left_cadence'] = physical_gait_events.get('left_cadence', 0)
+                step_metrics['right_cadence'] = physical_gait_events.get('right_cadence', 0)
             
             # 综合评估
             result = {
@@ -844,6 +882,7 @@ class PressureAnalysisCore:
                 'gait_analysis': step_metrics,
                 'gait_phases': gait_phases,  # 🚀 新增步态相位数据
                 'balance_analysis': balance_metrics,
+                'physical_gait_events': physical_gait_events,  # 🚀 物理步态事件（左右脚分离）
                 'analysis_timestamp': pd.Timestamp.now().isoformat()
             }
             
