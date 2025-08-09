@@ -1740,7 +1740,7 @@ class PressureSensorUI:
         # 模态对话框期间放缓/暂停更新，避免与 tkwait 竞争
         if getattr(self, '_opening_modal', False):
             try:
-                self._update_after_id = self.root.after(150, self.update_data)
+                self._update_after_id = self.root.after(500, self.update_data)  # 进一步降低到500ms
             except Exception:
                 pass
             return
@@ -1859,9 +1859,9 @@ class PressureSensorUI:
         except Exception as e:
             self.log_message(f"[ERROR] 更新数据时出错: {e}")
         
-        # 继续更新循环 (优化为100ms ≈ 10 FPS，合理降低帧率)
+        # 继续更新循环 (进一步降低到200ms ≈ 5 FPS，减少主线程负载)
         try:
-            self._update_after_id = self.root.after(100, self.update_data)  # 合理降低帧率到10fps
+            self._update_after_id = self.root.after(200, self.update_data)  # 降低帧率到5fps，减少UI卡顿
         except Exception:
             # 关闭阶段可能已销毁root，静默忽略
             pass
