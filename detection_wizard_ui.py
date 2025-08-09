@@ -16,7 +16,12 @@ from sarcopenia_database import db
 class DetectionWizardDialog:
     """检测向导对话框 - 翻页式6步检测"""
     
-    def __init__(self, parent, patient_info, session_info):
+    def __init__(self, parent, patient_info, session_info, force_start_step=None):
+        print(f"[WIZARD_INIT] DetectionWizardDialog初始化开始")
+        print(f"[WIZARD_INIT] 接收到参数: force_start_step={force_start_step}")
+        print(f"[WIZARD_INIT] 患者信息: {patient_info['name'] if patient_info else 'None'}")
+        print(f"[WIZARD_INIT] 会话信息: {session_info['id'] if session_info else 'None'}")
+        
         # 区分UI parent和主界面对象
         if hasattr(parent, 'root'):
             # parent是主界面对象
@@ -68,10 +73,20 @@ class DetectionWizardDialog:
                         'start_time': step.get('start_time', ''),
                         'end_time': step.get('end_time', '')
                     }
+            
+            # 如果指定了强制起始步骤，使用该步骤
+            if force_start_step is not None and 1 <= force_start_step <= self.total_steps:
+                print(f"[INFO] 强制跳转：从第{self.current_step}步改为第{force_start_step}步")
+                self.current_step = force_start_step
         else:
             # 减少新建会话的调试输出
             self.current_step = 1
             self.step_results = {}
+            
+            # 如果指定了强制起始步骤，使用该步骤（新会话情况）
+            if force_start_step is not None and 1 <= force_start_step <= self.total_steps:
+                print(f"[INFO] 新会话强制跳转：从第1步改为第{force_start_step}步")
+                self.current_step = force_start_step
         self.is_running = False
         self.start_time = None
         self.timer_thread = None
@@ -150,7 +165,24 @@ class DetectionWizardDialog:
         
         # 创建界面
         self.create_ui()
+        
+        # 更新步骤内容 - 此时current_step已经是正确的值（包含force_start_step的影响）
+        print(f"[DEBUG] 即将调用update_step_content，current_step={self.current_step}")
         self.update_step_content()
+        
+        # 如果使用了强制起始步骤，确保UI已正确更新
+        if force_start_step is not None:
+            print(f"[DEBUG] 使用了强制跳转到第{force_start_step}步，当前current_step={self.current_step}")
+            # 验证UI是否正确更新了
+            print(f"[DEBUG] 验证：step_progress.value={self.step_progress['value']}")
+            expected_title = f"第{self.current_step}步：{self.steps_config[self.current_step]['name']}"
+            print(f"[DEBUG] 期望的标题：{expected_title}")
+            print(f"[DEBUG] 实际的标题：{self.step_title.cget('text')}")
+            
+            # 如果标题不匹配，强制再次更新
+            if self.step_title.cget('text') != expected_title:
+                print(f"[DEBUG] 标题不匹配，强制再次更新UI")
+                self.dialog.after_idle(lambda: self._final_force_update())
         
         # 绑定关闭事件
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -159,11 +191,17 @@ class DetectionWizardDialog:
         self.center_window()
         self.dialog.deiconify()
         
-        # 初始检查：如果当前步骤设备未配置，给出提示
-        self.check_initial_device_status()
+        # 延迟初始设备状态检查，确保不干扰强制跳转
+        self.dialog.after(100, self.check_initial_device_status)
         
         # 等待对话框关闭
         self.dialog.wait_window()
+    
+    def _final_force_update(self):
+        """最终强制UI更新"""
+        print(f"[DEBUG] _final_force_update: 再次强制更新UI到第{self.current_step}步")
+        self.update_step_content()
+        print(f"[DEBUG] _final_force_update: 完成，step_title={self.step_title.cget('text')}")
     
     def center_window(self):
         """居中显示窗口"""
@@ -313,14 +351,27 @@ class DetectionWizardDialog:
     
     def update_step_content(self):
         """更新当前步骤的内容显示"""
+        print(f"[DEBUG] update_step_content: current_step={self.current_step}")
         step_config = self.steps_config[self.current_step]
+        print(f"[DEBUG] step_config: {step_config['name']}")
         
         # 更新进度标签
         self.progress_label.config(text=f"第 {self.current_step}/{self.total_steps} 步")
         self.step_progress['value'] = self.current_step
         
         # 更新步骤标题
-        self.step_title.config(text=f"第{self.current_step}步：{step_config['name']}")
+        step_title_text = f"第{self.current_step}步：{step_config['name']}"
+        print(f"[DEBUG] 设置step_title为: {step_title_text}")
+        self.step_title.config(text=step_title_text)
+        
+        # 验证设置是否生效
+        actual_text = self.step_title.cget('text')
+        print(f"[DEBUG] 设置后验证step_title实际文本: {actual_text}")
+        if actual_text != step_title_text:
+            print(f"[ERROR] step_title设置失败！期望:{step_title_text}, 实际:{actual_text}")
+            # 尝试强制设置
+            self.step_title['text'] = step_title_text
+            print(f"[DEBUG] 强制设置后验证: {self.step_title.cget('text')}")
         
         # 更新设备和时长信息，添加状态图标
         device_configured, device_type = self.check_device_configured()

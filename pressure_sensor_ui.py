@@ -95,6 +95,8 @@ class PressureSensorUI:
         self.last_data_time = time.time()
         self.auto_reconnect_enabled = True
         self.device_lost_warned = False  # 防止重复弹窗
+        self.reconnect_attempts = 0  # 重连尝试次数
+        self.last_reconnect_time = 0  # 上次重连时间
         
         # 活动的检测向导引用
         self._active_detection_wizard = None
@@ -397,29 +399,45 @@ class PressureSensorUI:
         device_configs = config_dialog.show_dialog()
         
         if device_configs:
-            # 如果已有串口连接，将其传递给设备管理器以便重用
-            if self.serial_interface:
-                current_port = self.serial_interface.get_current_port()
-                if current_port:
-                    # 找到使用此端口的设备配置
-                    for device_id, config in device_configs.items():
-                        ports = config.get('ports', [])
-                        com_ports = config.get('com_ports', 1)
-                        
-                        if current_port in ports:
-                            # 检查是否为单端口设备
-                            if com_ports == 1:
-                                # 单端口设备：直接传递现有接口
-                                self.device_manager.serial_interfaces[device_id] = self.serial_interface
-                                print(f"传递现有单端口连接 {current_port} 给设备管理器 (设备: {config['name']})")
-                            else:
-                                # 多端口设备：不能直接使用现有单端口连接
-                                # 设备管理器的setup_devices会检测到现有连接并正确处理转换
-                                print(f"检测到多端口设备 {config['name']} 包含现有端口 {current_port}")
-                                print(f"将由设备管理器处理单端口到多端口的转换 (端口: {', '.join(ports)})")
-                            break
+            # 先断开所有现有连接以避免COM端口占用
+            self.log_message("[INFO] 断开现有连接...")
+            try:
+                # 停止数据采集
+                if self.is_running:
+                    self.stop_detection()
+                
+                # 断开设备管理器中的所有接口
+                if self.device_manager:
+                    for device_id, interface in self.device_manager.serial_interfaces.items():
+                        if interface:
+                            try:
+                                interface.disconnect()
+                                self.log_message(f"[INFO] 已断开设备 {device_id} 的连接")
+                            except Exception as e:
+                                print(f"[WARN] 断开设备 {device_id} 连接失败: {e}")
+                    
+                    # 清空接口字典
+                    self.device_manager.serial_interfaces.clear()
+                
+                # 断开主串口接口
+                if self.serial_interface:
+                    try:
+                        self.serial_interface.disconnect()
+                        self.log_message("[INFO] 已断开主串口接口")
+                    except Exception as e:
+                        print(f"[WARN] 断开主串口接口失败: {e}")
+                    self.serial_interface = None
+                
+                # 给系统一点时间释放端口
+                import time
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"[ERROR] 断开连接时出错: {e}")
             
-            # 设置设备配置
+            self.log_message("[INFO] 开始重新连接...")
+            
+            # 设置设备配置（会自动创建新的连接）
             self.device_manager.setup_devices(device_configs)
             self.device_configured = True
             
@@ -707,31 +725,59 @@ class PressureSensorUI:
     def connection_monitor(self):
         """连接监控和自动重连"""
         try:
-            if self.device_configured and self.is_running:
+            # 只有在设备配置完成时才监控（移除 is_running 条件，因为它可能在正常情况下为False）
+            if self.device_configured and hasattr(self, 'device_manager') and self.device_manager:
                 current_time = time.time()
                 
-                # 检查是否超过10秒没有数据
-                if current_time - self.last_data_time > 10:
-                    if not self.device_lost_warned:
-                        # 弹窗提示设备丢失
-                        device_info = self.device_manager.get_current_device_info()
-                        if device_info:
+                # 检查设备管理器中的连接状态
+                is_device_connected = False
+                try:
+                    if hasattr(self.device_manager, 'serial_interfaces') and self.device_manager.serial_interfaces:
+                        # 检查所有串口接口是否连接
+                        for device_id, interface in self.device_manager.serial_interfaces.items():
+                            if interface and hasattr(interface, 'is_connected') and interface.is_connected():
+                                is_device_connected = True
+                                break
+                except:
+                    is_device_connected = False
+                
+                # 如果设备已断开且超过15秒没有数据（增加容错时间）
+                if not is_device_connected and (current_time - self.last_data_time > 15):
+                    # 检查重连限制
+                    time_since_last_reconnect = current_time - self.last_reconnect_time
+                    
+                    # 限制重连：最多尝试5次，且两次重连间隔至少30秒
+                    if self.reconnect_attempts < 5 and time_since_last_reconnect > 30:
+                        if not self.device_lost_warned:
+                            # 弹窗提示设备丢失
+                            device_info = self.device_manager.get_current_device_info()
+                            if device_info:
+                                self.device_lost_warned = True
+                                self.show_device_lost_warning(device_info)
+                        
+                        self.log_message(f"[WARN] 检测到设备连接断开，尝试重新连接... (尝试 {self.reconnect_attempts + 1}/5)")
+                        
+                        # 记录重连尝试
+                        self.reconnect_attempts += 1
+                        self.last_reconnect_time = current_time
+                        
+                        # 更温和的重连策略：不强制断开，直接尝试重连
+                        self.root.after(3000, self.auto_connect_device)
+                    elif self.reconnect_attempts >= 5:
+                        if not self.device_lost_warned:
+                            self.log_message("[ERROR] 已达到最大重连次数(5次)，停止自动重连")
                             self.device_lost_warned = True
-                            self.show_device_lost_warning(device_info)
-                    
-                    self.log_message("[WARN] 检测到连接异常，尝试重新连接...")
-                    
-                    # 断开当前连接
-                    self.stop_connection()
-                    
-                    # 等待一下再重连
-                    self.root.after(2000, self.auto_connect_device)
+                elif is_device_connected:
+                    # 设备连接正常，重置警告状态和重连计数
+                    self.device_lost_warned = False
+                    self.reconnect_attempts = 0
+                    self.last_reconnect_time = 0
                     
         except Exception as e:
             self.log_message(f"[ERROR] 连接监控出错: {e}")
         
-        # 每5秒检查一次连接状态
-        self.root.after(5000, self.connection_monitor)
+        # 增加监控间隔到10秒，减少干扰
+        self.root.after(10000, self.connection_monitor)
     
     def show_device_lost_warning(self, device_info):
         """显示设备丢失警告"""
@@ -3737,15 +3783,38 @@ class PressureSensorUI:
                 pass
 
             selector = PatientManagerDialog(self.root, title="选择患者档案", select_mode=True)
+            print(f"[PATIENT_DIALOG] PatientManagerDialog关闭，selected_patient: {selector.selected_patient['name'] if selector.selected_patient else 'None'}")
+            print(f"[PATIENT_DIALOG] jump_to_step: {selector.jump_to_step}")
+            
             if selector.selected_patient:
                 self.current_patient = selector.selected_patient
-                # 重置检测步骤导航索引
-                self.current_step_index = 0
-                # 清除之前的会话信息
-                if hasattr(self, 'current_session'):
-                    self.current_session = None
-                self.update_patient_status()
-                return True
+                print(f"[PATIENT_DIALOG] 设置current_patient: {self.current_patient['name']}")
+                
+                # 检查是否需要跳转到特定步骤
+                if selector.jump_to_step:
+                    jump_info = selector.jump_to_step
+                    print(f"[INFO] 处理跳转请求：患者 {jump_info['patient_name']}，第 {jump_info['step_number']} 步")
+                    
+                    # 设置会话信息
+                    self.current_session = {'id': jump_info['session_id']}
+                    # 设置步骤导航索引（步骤编号-1）
+                    self.current_step_index = jump_info['step_number'] - 1
+                    
+                    # 更新患者状态
+                    self.update_patient_status()
+                    
+                    # 延迟启动检测向导并跳转到指定步骤
+                    self.root.after(500, lambda: self.start_detection_with_step_jump(jump_info['step_number']))
+                    return True
+                else:
+                    # 正常选择患者流程
+                    # 重置检测步骤导航索引
+                    self.current_step_index = 0
+                    # 清除之前的会话信息
+                    if hasattr(self, 'current_session'):
+                        self.current_session = None
+                    self.update_patient_status()
+                    return True
             return False
         except Exception as e:
             messagebox.showerror("错误", f"选择患者失败：{e}")
@@ -3760,6 +3829,40 @@ class PressureSensorUI:
                 pass
             self._opening_modal = False
             self._selecting_for_detection = False
+    
+    def start_detection_with_step_jump(self, target_step):
+        """启动检测并跳转到指定步骤"""
+        try:
+            print(f"[STEP_JUMP] 开始执行步骤跳转，目标步骤: {target_step}")
+            print(f"[INFO] 启动检测向导并跳转到第 {target_step} 步")
+            
+            # 检查设备配置
+            if not self.device_configured:
+                messagebox.showwarning("设备未配置", "请先完成设备配置才能开始检测")
+                self.show_device_config()
+                return
+            
+            # 启动检测向导
+            from detection_wizard_ui import DetectionWizardDialog
+            
+            force_step = target_step if target_step > 1 else None
+            print(f"[STEP_JUMP] 即将创建DetectionWizardDialog，target_step={target_step}, force_start_step={force_step}")
+            print(f"[STEP_JUMP] current_patient={self.current_patient['name'] if self.current_patient else 'None'}")
+            print(f"[STEP_JUMP] current_session={self.current_session['id'] if self.current_session else 'None'}")
+            
+            wizard = DetectionWizardDialog(
+                parent=self,  # 传递主界面对象
+                patient_info=self.current_patient,
+                session_info=self.current_session,
+                force_start_step=force_step  # 传递强制起始步骤
+            )
+            
+            # 显示向导窗口
+            wizard.dialog.deiconify()
+            
+        except Exception as e:
+            print(f"[ERROR] 启动检测向导并跳转失败: {e}")
+            messagebox.showerror("错误", f"启动检测失败：{e}")
     
     def create_new_patient_and_select(self):
         """创建新患者并自动选择"""
@@ -3905,19 +4008,21 @@ class PressureSensorUI:
                 session_info = today_sessions[0]  # 取第一个（最新的）会话
                 
                 if session_info['status'] == 'completed':
-                    # 已完成的会话，询问是否生成报告
+                    # 已完成的会话，询问是否重新开始检测
                     response = messagebox.askyesno(
                         "检测已完成",
                         f"患者 {self.current_patient['name']} 今天的检测已完成。\n\n"
                         f"会话名称：{session_info['session_name']}\n"
                         f"完成时间：{session_info['created_time'][:19].replace('T', ' ')}\n\n"
-                        "是否生成AI分析报告？",
+                        "是否重新开始检测？\n"
+                        "选择'是'将清除之前的检测数据并重新开始。",
                         icon='question'
                     )
                     
                     if response:
-                        # 生成报告
-                        self.generate_report_for_session(session_info['id'])
+                        # 用户选择重新开始，重置数据并开始新检测
+                        self.reset_patient_detection_data()
+                        self.start_new_detection()
                     return
                 else:
                     # 未完成的会话，检查是否实际已完成
@@ -3930,19 +4035,21 @@ class PressureSensorUI:
                         print(f"[DEBUG] 会话实际已完成（{completed_steps}/{total_steps}步），更新状态")
                         db.update_test_session_progress(session_info['id'], total_steps, 'completed')
                         
-                        # 询问是否生成报告
+                        # 询问是否重新开始检测
                         response = messagebox.askyesno(
                             "检测已完成",
                             f"患者 {self.current_patient['name']} 的检测已完成。\n\n"
                             f"会话名称：{session_info['session_name']}\n"
                             f"完成步骤：{completed_steps}/{total_steps}\n\n"
-                            "是否生成AI分析报告？",
+                            "是否重新开始检测？\n"
+                            "选择'是'将清除之前的检测数据并重新开始。",
                             icon='question'
                         )
                         
                         if response:
-                            # 生成报告
-                            self.generate_report_for_session(session_info['id'])
+                            # 用户选择重新开始，重置数据并开始新检测
+                            self.reset_patient_detection_data()
+                            self.start_new_detection()
                     else:
                         # 确实未完成，询问是否恢复
                         response = messagebox.askyesno(
@@ -3969,21 +4076,38 @@ class PressureSensorUI:
             messagebox.showerror("错误", f"启动检测失败：{e}")
             print(f"[ERROR] 启动检测错误: {e}")
     
-    def delete_old_sessions_and_start_new(self):
-        """删除旧会话并开始新的检测"""
+    def reset_patient_detection_data(self):
+        """重置患者的检测数据（删除所有相关会话和数据）"""
         try:
+            if not self.current_patient:
+                return
+                
             # 获取当前患者的所有会话
             sessions = db.get_patient_test_sessions(self.current_patient['id'])
             
-            # 删除所有旧会话
+            # 删除所有会话（包括步骤数据）
             deleted_count = 0
             for session in sessions:
                 if db.delete_test_session(session['id']):
                     deleted_count += 1
             
-            if deleted_count > 0:
-                print(f"[INFO] 已删除 {deleted_count} 个旧会话")
+            # 清除当前会话状态
+            self.current_session = None
+            self.detection_in_progress = False
+            if hasattr(self, 'current_step_index'):
+                self.current_step_index = 0
             
+            print(f"[INFO] 已重置患者 {self.current_patient['name']} 的检测数据，删除了 {deleted_count} 个会话")
+            
+        except Exception as e:
+            print(f"[ERROR] 重置患者检测数据失败: {e}")
+            messagebox.showerror("错误", f"重置检测数据失败：{e}")
+    
+    def delete_old_sessions_and_start_new(self):
+        """删除旧会话并开始新的检测"""
+        try:
+            # 使用新的重置方法
+            self.reset_patient_detection_data()
             # 开始新的检测
             self.start_new_detection()
             
@@ -5458,9 +5582,37 @@ class PressureSensorUI:
                                             pdf_path = self.algorithm_engine.convert_html_to_pdf(report_html, pdf_path_new)
                                             if pdf_path and os.path.exists(pdf_path):
                                                 self.log_ai_message(f"📄 PDF报告已生成: {pdf_path}")
+                                                
+                                                # 保存分析结果和报告路径到数据库
+                                                try:
+                                                    db.save_analysis_result(
+                                                        session_id=self.current_session['id'],
+                                                        analysis_type="AI分析报告",
+                                                        analysis_data=analysis_data,
+                                                        ai_report_path=pdf_path,
+                                                        confidence_score=analysis_data.get('confidence', 0)
+                                                    )
+                                                    self.log_ai_message(f"[INFO] 报告路径已保存到数据库")
+                                                except Exception as db_error:
+                                                    self.log_ai_message(f"[WARN] 保存报告路径失败: {db_error}")
+                                                
                                                 self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, pdf_path, is_patient_linked=True))
                                             else:
                                                 self.log_ai_message(f"[WARN] PDF转换失败，使用HTML报告: {report_path}")
+                                                
+                                                # 保存分析结果和HTML报告路径到数据库
+                                                try:
+                                                    db.save_analysis_result(
+                                                        session_id=self.current_session['id'],
+                                                        analysis_type="AI分析报告",
+                                                        analysis_data=analysis_data,
+                                                        ai_report_path=report_path,
+                                                        confidence_score=analysis_data.get('confidence', 0)
+                                                    )
+                                                    self.log_ai_message(f"[INFO] HTML报告路径已保存到数据库")
+                                                except Exception as db_error:
+                                                    self.log_ai_message(f"[WARN] 保存HTML报告路径失败: {db_error}")
+                                                
                                                 self.root.after(0, lambda: self.show_analysis_complete_dialog(analysis_data, report_path, is_patient_linked=True))
                                         except Exception as pdf_error:
                                             self.log_ai_message(f"[WARN] PDF转换异常: {pdf_error}，使用HTML报告")

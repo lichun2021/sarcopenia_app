@@ -19,6 +19,7 @@ class PatientManagerDialog:
         self.select_mode = select_mode  # 是否为选择模式
         self.auto_close_on_new = auto_close_on_new  # 新建后是否自动关闭
         self.selected_patient = None
+        self.jump_to_step = None  # 用于存储跳转到检测步骤的信息
         
         # 创建对话框窗口 - 使用窗口管理器
         self.dialog = WindowManager.create_managed_window(parent, WindowLevel.MANAGEMENT, title)
@@ -64,11 +65,83 @@ class PatientManagerDialog:
         search_frame = ttk.Frame(toolbar_frame)
         search_frame.pack(side="left", fill="x", expand=True)
         
+        # 患者姓名搜索
         ttk.Label(search_frame, text="🔍 搜索患者:").pack(side="left", padx=(0, 5))
         self.search_var = tk.StringVar()
-        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=20)
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=15)
         self.search_entry.pack(side="left", padx=(0, 10))
         self.search_entry.bind('<KeyRelease>', self.on_search_change)
+        
+        # 日期区间搜索
+        ttk.Label(search_frame, text="📅 创建时间:").pack(side="left", padx=(10, 5))
+        
+        date_frame = ttk.Frame(search_frame)
+        date_frame.pack(side="left", padx=(0, 5))
+        
+        # 直接使用 tkcalendar 的 DateEntry 组件
+        try:
+            from tkcalendar import DateEntry
+            from datetime import datetime, timedelta
+            
+            # 开始日期
+            ttk.Label(date_frame, text="从", font=("Microsoft YaHei UI", 8)).pack(side="left", padx=(0, 2))
+            self.start_date_entry = DateEntry(
+                date_frame,
+                width=10,
+                background='darkblue',
+                foreground='white', 
+                borderwidth=1,
+                date_pattern='yyyy-mm-dd',
+                font=("Microsoft YaHei UI", 8),
+                state='readonly'
+            )
+            self.start_date_entry.pack(side="left")
+            self.start_date_entry.bind('<<DateEntrySelected>>', self.on_date_range_changed)
+            
+            # 到
+            ttk.Label(date_frame, text="到", font=("Microsoft YaHei UI", 8)).pack(side="left", padx=(5, 2))
+            self.end_date_entry = DateEntry(
+                date_frame,
+                width=10,
+                background='darkblue',
+                foreground='white', 
+                borderwidth=1,
+                date_pattern='yyyy-mm-dd',
+                font=("Microsoft YaHei UI", 8),
+                state='readonly'
+            )
+            self.end_date_entry.pack(side="left")
+            self.end_date_entry.bind('<<DateEntrySelected>>', self.on_date_range_changed)
+            
+            # 默认设置为最近一周
+            today = datetime.now()
+            week_ago = today - timedelta(days=7)
+            self.start_date_entry.set_date(week_ago)
+            self.end_date_entry.set_date(today)
+            
+            # 快捷按钮
+            quick_frame = ttk.Frame(date_frame)
+            quick_frame.pack(side="left", padx=(5, 0))
+            
+            ttk.Button(quick_frame, text="今天", width=4, 
+                      command=self.set_date_today).pack(side="left", padx=(2, 1))
+            ttk.Button(quick_frame, text="本周", width=4, 
+                      command=self.set_date_this_week).pack(side="left", padx=(1, 0))
+            
+        except ImportError:
+            # 后备方案：使用普通输入框
+            self.date_var = tk.StringVar()
+            self.date_entry = ttk.Entry(date_frame, textvariable=self.date_var, width=12)
+            self.date_entry.pack(side="left")
+            self.date_entry.bind('<KeyRelease>', self.on_search_change)
+            
+            # 日期选择按钮（仅在后备模式下显示）
+            date_btn = ttk.Button(date_frame, text="📅", width=3, command=self.show_date_picker)
+            date_btn.pack(side="left", padx=(2, 0))
+            
+            # 清空日期按钮（仅在后备模式下显示）
+            clear_date_btn = ttk.Button(date_frame, text="✖", width=3, command=self.clear_date_filter)
+            clear_date_btn.pack(side="left", padx=(2, 0))
         
         # 按钮区域
         button_frame = ttk.Frame(toolbar_frame)
@@ -169,9 +242,35 @@ class PatientManagerDialog:
             self.patient_tree.delete(item)
         
         # 获取患者数据
-        keyword = self.search_var.get().strip()
-        if keyword:
-            patients = db.search_patients(keyword)
+        name_keyword = self.search_var.get().strip()
+        
+        # 处理日期区间，兼容新的区间选择和旧的单日期选择
+        start_date = None
+        end_date = None
+        try:
+            if hasattr(self, 'start_date_entry') and hasattr(self, 'end_date_entry'):
+                # 新的日期区间模式
+                start_date = self.start_date_entry.get().strip()
+                end_date = self.end_date_entry.get().strip()
+            elif hasattr(self, 'date_entry') and hasattr(self.date_entry, 'get'):
+                # 后备模式：单日期
+                single_date = self.date_entry.get().strip()
+                if single_date:
+                    start_date = end_date = single_date
+            elif hasattr(self, 'date_var'):
+                # 更旧的后备模式
+                single_date = self.date_var.get().strip()
+                if single_date:
+                    start_date = end_date = single_date
+        except:
+            start_date = end_date = None
+        
+        if name_keyword or start_date or end_date:
+            patients = db.search_patients_by_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                name_filter=name_keyword if name_keyword else None
+            )
         else:
             patients = db.get_all_patients()
         
@@ -216,6 +315,194 @@ class PatientManagerDialog:
         if hasattr(self, '_search_after_id'):
             self.dialog.after_cancel(self._search_after_id)
         self._search_after_id = self.dialog.after(300, self.refresh_patient_list)
+    
+    def on_date_selected(self, event=None):
+        """日期选择事件处理（后备模式）"""
+        if hasattr(self, 'date_entry'):
+            selected_date = self.date_entry.get()
+            print(f"[DATE_DEBUG] 选择的日期: {selected_date}")
+            self.refresh_patient_list()
+    
+    def on_date_range_changed(self, event=None):
+        """日期区间变化事件处理"""
+        try:
+            self.refresh_patient_list()
+        except Exception as e:
+            print(f"日期区间变化处理错误: {e}")
+    
+    def set_date_today(self):
+        """设置为今天"""
+        from datetime import datetime
+        today = datetime.now()
+        self.start_date_entry.set_date(today)
+        self.end_date_entry.set_date(today)
+        self.refresh_patient_list()
+    
+    def set_date_this_week(self):
+        """设置为本周（最近7天）"""
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        week_ago = today - timedelta(days=7)
+        self.start_date_entry.set_date(week_ago)
+        self.end_date_entry.set_date(today)
+        self.refresh_patient_list()
+    
+    def show_date_picker(self):
+        """显示日期选择器 - 使用现代化的日历组件"""
+        try:
+            from tkcalendar import Calendar
+            import tkinter as tk
+            from datetime import datetime
+            
+            # 创建日期选择对话框
+            date_dialog = tk.Toplevel(self.dialog)
+            date_dialog.title("📅 选择检测日期")
+            date_dialog.geometry("350x320")
+            date_dialog.resizable(False, False)
+            date_dialog.transient(self.dialog)
+            date_dialog.grab_set()
+            
+            # 居中显示
+            date_dialog.geometry("+%d+%d" % (
+                self.dialog.winfo_rootx() + 50,
+                self.dialog.winfo_rooty() + 50
+            ))
+            
+            # 设置图标
+            try:
+                date_dialog.iconbitmap("icon.ico")
+            except:
+                pass
+            
+            main_frame = ttk.Frame(date_dialog)
+            main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+            
+            # 标题
+            title_label = ttk.Label(main_frame, text="请选择检测日期", 
+                                   font=("Microsoft YaHei UI", 12, "bold"))
+            title_label.pack(pady=(0, 15))
+            
+            # 获取当前日期或已选择的日期
+            current_date = datetime.now()
+            if self.date_var.get():
+                try:
+                    current_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d")
+                except:
+                    pass
+            
+            # 创建现代化日历组件
+            cal = Calendar(main_frame, 
+                          selectmode='day',
+                          date_pattern='yyyy-mm-dd',
+                          year=current_date.year,
+                          month=current_date.month,
+                          day=current_date.day,
+                          # 美化样式
+                          background="white",
+                          foreground="black",
+                          bordercolor="lightgray",
+                          headersbackground="lightblue",
+                          headersforeground="black",
+                          selectbackground="blue",
+                          selectforeground="white",
+                          normalbackground="white",
+                          normalforeground="black",
+                          weekendbackground="lightgray",
+                          weekendforeground="black",
+                          othermonthforeground="gray",
+                          othermonthbackground="white",
+                          font=("Microsoft YaHei UI", 9),
+                          showweeknumbers=False)
+            cal.pack(pady=(0, 15))
+            
+            # 按钮区域
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            def confirm_date():
+                """确认选择的日期"""
+                selected_date = cal.get_date()
+                # 转换为标准格式 yyyy-mm-dd
+                try:
+                    if selected_date:
+                        # tkcalendar 可能返回不同格式，统一转换
+                        date_obj = datetime.strptime(selected_date, cal.date_pattern)
+                        formatted_date = date_obj.strftime("%Y-%m-%d")
+                        self.date_var.set(formatted_date)
+                        self.refresh_patient_list()
+                        date_dialog.destroy()
+                except Exception as e:
+                    print(f"日期格式转换错误: {e}")
+                    # 直接使用原始格式
+                    self.date_var.set(selected_date)
+                    self.refresh_patient_list()
+                    date_dialog.destroy()
+            
+            def cancel_selection():
+                """取消选择"""
+                date_dialog.destroy()
+            
+            def select_today():
+                """选择今天"""
+                today = datetime.now()
+                cal.selection_set(today)
+                formatted_date = today.strftime("%Y-%m-%d")
+                self.date_var.set(formatted_date)
+                self.refresh_patient_list()
+                date_dialog.destroy()
+            
+            def clear_date():
+                """清空日期"""
+                self.date_var.set("")
+                self.refresh_patient_list()
+                date_dialog.destroy()
+            
+            # 按钮布局
+            ttk.Button(button_frame, text="📅 今天", command=select_today).pack(side="left")
+            ttk.Button(button_frame, text="🗑️ 清空", command=clear_date).pack(side="left", padx=(5, 0))
+            
+            ttk.Button(button_frame, text="❌ 取消", command=cancel_selection).pack(side="right")
+            ttk.Button(button_frame, text="✅ 确定", command=confirm_date).pack(side="right", padx=(0, 5))
+            
+        except ImportError:
+            print("tkcalendar 模块未安装，使用简化版日期选择器")
+            self._show_simple_date_picker()
+        except Exception as e:
+            print(f"显示日期选择器失败: {e}")
+            self._show_simple_date_picker()
+    
+    def _show_simple_date_picker(self):
+        """简化版日期选择器（后备方案）"""
+        from tkinter import simpledialog
+        from datetime import datetime
+        
+        current_date = self.date_var.get() or datetime.now().strftime("%Y-%m-%d")
+        date_str = simpledialog.askstring(
+            "输入日期", 
+            "请输入检测日期 (格式: 2025-08-09):", 
+            initialvalue=current_date
+        )
+        if date_str:
+            self.date_var.set(date_str)
+            self.refresh_patient_list()
+    
+    def clear_date_filter(self):
+        """清空日期过滤"""
+        try:
+            if hasattr(self, 'start_date_entry') and hasattr(self, 'end_date_entry'):
+                # 清空日期区间选择器
+                self.start_date_entry.set_date(None)
+                self.end_date_entry.set_date(None)
+            elif hasattr(self, 'date_entry') and hasattr(self.date_entry, 'set_date'):
+                # DateEntry 组件，设置为 None 清空
+                self.date_entry.set_date(None)
+            elif hasattr(self, 'date_var'):
+                # 普通输入框
+                self.date_var.set("")
+        except Exception as e:
+            print(f"清空日期过滤器时出错: {e}")
+        
+        self.refresh_patient_list()
     
     def on_patient_select(self, event=None):
         """患者选择事件"""
@@ -337,7 +624,12 @@ class PatientManagerDialog:
                 if latest_session and latest_session['status'] == 'completed':
                     reports = db.find_session_reports(latest_session['id'])
                     if reports:
-                        self.open_report(reports[0])
+                        # 优先选择PDF文件
+                        pdf_reports = [r for r in reports if r.lower().endswith('.pdf')]
+                        if pdf_reports:
+                            self.open_report(pdf_reports[0])
+                        else:
+                            self.open_report(reports[0])
                         return
             
             # 如果没有报告，提示用户并询问是否编辑患者信息
@@ -367,8 +659,11 @@ class PatientManagerDialog:
                 reports = db.find_session_reports(latest_session['id'])
                 if reports:
                     context_menu.add_separator()
+                    # 优先选择PDF文件
+                    pdf_reports = [r for r in reports if r.lower().endswith('.pdf')]
+                    primary_report = pdf_reports[0] if pdf_reports else reports[0]
                     context_menu.add_command(label="📄 查看检测报告", 
-                                          command=lambda: self.open_report(reports[0]))
+                                          command=lambda: self.open_report(primary_report))
                     
                     # 如果有多个报告，添加子菜单
                     if len(reports) > 1:
@@ -392,13 +687,28 @@ class PatientManagerDialog:
         """打开检测报告"""
         import os
         import webbrowser
+        import subprocess
+        import platform
         from tkinter import messagebox
         
         try:
             if os.path.exists(report_path):
-                # 使用默认浏览器打开HTML报告
-                webbrowser.open(f'file:///{os.path.abspath(report_path)}')
-                print(f"[INFO] 打开报告: {report_path}")
+                # 根据文件类型和操作系统选择打开方式
+                file_ext = os.path.splitext(report_path)[1].lower()
+                
+                if file_ext == '.pdf':
+                    # PDF文件使用系统默认应用程序打开
+                    if platform.system() == "Windows":
+                        os.startfile(report_path)
+                    elif platform.system() == "Darwin":  # macOS
+                        subprocess.run(['open', report_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', report_path])
+                    print(f"[INFO] 打开PDF报告: {report_path}")
+                else:
+                    # HTML文件使用浏览器打开
+                    webbrowser.open(f'file:///{os.path.abspath(report_path)}')
+                    print(f"[INFO] 打开HTML报告: {report_path}")
             else:
                 messagebox.showerror("错误", f"报告文件不存在：\n{report_path}")
         except Exception as e:
@@ -412,6 +722,8 @@ class PatientManagerDialog:
             # 新建成功后清空搜索，确保能看到新记录
             try:
                 self.search_var.set("")
+                if hasattr(self, 'date_var'):
+                    self.date_var.set("")
             except Exception:
                 pass
             patient_id = db.add_patient(**dialog.result)
@@ -536,6 +848,51 @@ class PatientManagerDialog:
     def select_patient(self):
         """选择患者"""
         if self.selected_patient:
+            # 检查患者是否有未完成的检测会话
+            patient_id = self.selected_patient['id']
+            patient_name = self.selected_patient['name']
+            print(f"[SELECT_DEBUG] 开始检查患者 {patient_name} (ID: {patient_id}) 的检测会话")
+            
+            # 获取最新会话
+            latest_session = db.get_patient_latest_session(patient_id)
+            print(f"[SELECT_DEBUG] 最新会话: {latest_session}")
+            
+            if latest_session:
+                print(f"[SELECT_DEBUG] 会话状态: {latest_session['status']}")
+                if latest_session['status'] == 'in_progress':
+                    print(f"[SELECT_DEBUG] 发现进行中的会话，准备显示跳转弹窗")
+                else:
+                    print(f"[SELECT_DEBUG] 会话状态不是in_progress，跳过跳转逻辑")
+            else:
+                print(f"[SELECT_DEBUG] 没有找到最新会话")
+            
+            if latest_session and latest_session['status'] == 'in_progress':
+                # 有未完成的会话，询问是否直接跳转到检测步骤
+                current_step = latest_session.get('current_step', 1)
+                total_steps = latest_session.get('total_steps', 6)
+                
+                response = messagebox.askyesno(
+                    "检测未完成",
+                    f"患者 {patient_name} 有未完成的检测会话\n\n"
+                    f"当前进度：{current_step}/{total_steps} 步\n\n"
+                    f"是否直接跳转到第 {current_step} 步继续检测？\n"
+                    f"选择'否'将选择该患者但不跳转。",
+                    icon='question'
+                )
+                
+                if response:
+                    # 用户选择跳转，设置跳转信息
+                    self.jump_to_step = {
+                        'patient_id': patient_id,
+                        'session_id': latest_session['id'],
+                        'step_number': current_step,
+                        'patient_name': patient_name
+                    }
+                    print(f"[PATIENT_SELECT] 用户选择跳转，设置jump_to_step: {self.jump_to_step}")
+                    print(f"[INFO] 将跳转到患者 {patient_name} 的第 {current_step} 步检测")
+                else:
+                    print(f"[PATIENT_SELECT] 用户选择不跳转，继续正常选择流程")
+            
             self.dialog.destroy()
     
     def check_patient_today_completed(self, patient_id: int) -> bool:

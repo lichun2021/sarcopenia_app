@@ -168,7 +168,7 @@ class SarcopeniaDatabase:
                 SELECT id, name, gender, age, height, weight, phone, notes, created_time, updated_time
                 FROM patients
                 WHERE is_active = 1
-                ORDER BY updated_time DESC
+                ORDER BY created_time DESC
             ''')
             
             columns = [desc[0] for desc in cursor.description]
@@ -656,12 +656,11 @@ class SarcopeniaDatabase:
     
     def find_session_reports(self, session_id: int) -> List[str]:
         """查找会话相关的报告文件"""
-        import glob
         import os
         
         report_files = []
         
-        # 首先查询数据库中存储的报告路径
+        # 直接从数据库中查询报告路径
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -669,59 +668,179 @@ class SarcopeniaDatabase:
             # 从分析结果表中查找报告路径
             cursor.execute('''
                 SELECT ai_report_path FROM analysis_results 
-                WHERE session_id = ? AND ai_report_path IS NOT NULL
+                WHERE session_id = ? AND ai_report_path IS NOT NULL AND ai_report_path != ''
             ''', (session_id,))
             
             db_reports = cursor.fetchall()
             for (report_path,) in db_reports:
-                if report_path and os.path.exists(report_path):
-                    report_files.append(report_path)
+                if report_path:
+                    # 转换为绝对路径
+                    if not os.path.isabs(report_path):
+                        report_path = os.path.abspath(report_path)
+                    
+                    if os.path.exists(report_path):
+                        report_files.append(report_path)
+                        # 只在真正需要调试时才输出
+                        # print(f"[DEBUG] 从数据库找到报告: {report_path}")
+                    
         except Exception as e:
             print(f"[DEBUG] 数据库查询报告路径失败: {e}")
         finally:
             conn.close()
         
-        # 如果数据库中没有找到，使用文件系统搜索
-        if not report_files:
-            report_patterns = [
-                f"*{session_id}*.html",
-                f"comprehensive_report_*.html",  # 修改模式以匹配综合报告
-                f"*综合报告*.html",
-                f"*分析报告*.html"
-            ]
-            
-            # 在多个可能的目录中搜索
-            search_dirs = [
-                ".",
-                "analysis_reports",
-                "reports", 
-                "sarcneuro_data/reports",
-                "sarcneuro-edge/reports"
-            ]
-            
-            # 按日期搜索
-            from datetime import datetime
-            today = datetime.now().strftime("%Y-%m-%d")
-            search_dirs.extend([
-                today,
-                f"tmp/{today}",
-                f"{today}/analysis_reports"
-            ])
-            
-            for search_dir in search_dirs:
-                if os.path.exists(search_dir):
-                    for pattern in report_patterns:
-                        files = glob.glob(os.path.join(search_dir, pattern))
-                        # 对于综合报告，按修改时间排序，获取最新的
-                        if pattern.startswith("comprehensive_report_") and files:
-                            files.sort(key=os.path.getmtime, reverse=True)
-                            # 只取最新的一个综合报告
-                            report_files.extend(files[:1])
-                        else:
-                            report_files.extend(files)
+        return report_files
+    
+    def search_patients_by_date_range(self, start_date: str = None, end_date: str = None, name_filter: str = None) -> List[Dict]:
+        """按日期区间和姓名搜索患者"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        # 去重并返回
-        return list(set(report_files))
+        try:
+            base_query = '''
+                SELECT p.id, p.name, p.gender, p.age, p.height, p.weight, 
+                       p.phone, p.created_time, p.notes
+                FROM patients p
+                WHERE p.is_active = 1
+            '''
+            params = []
+            conditions = []
+            
+            if start_date and end_date:
+                # 日期区间查询
+                conditions.append('DATE(p.created_time) BETWEEN ? AND ?')
+                params.extend([start_date, end_date])
+            elif start_date:
+                # 只有开始日期
+                conditions.append('DATE(p.created_time) >= ?')
+                params.append(start_date)
+            elif end_date:
+                # 只有结束日期
+                conditions.append('DATE(p.created_time) <= ?')
+                params.append(end_date)
+                
+            if name_filter:
+                conditions.append('p.name LIKE ?')
+                params.append(f'%{name_filter}%')
+            
+            if conditions:
+                base_query += ' AND ' + ' AND '.join(conditions)
+            
+            # 确保按创建时间降序排列
+            base_query += ' ORDER BY p.created_time DESC'
+            
+            cursor.execute(base_query, params)
+            columns = [desc[0] for desc in cursor.description]
+            patients = []
+            rows = cursor.fetchall()
+            for row in rows:
+                patient = dict(zip(columns, row))
+                patients.append(patient)
+            
+            return patients
+            
+        except Exception as e:
+            print(f"[ERROR] 按日期区间搜索患者失败: {e}")
+            return []
+        finally:
+            conn.close()
+    
+    def search_patients_by_date(self, date_filter: str = None, name_filter: str = None) -> List[Dict]:
+        """按日期和姓名搜索患者"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            base_query = '''
+                SELECT p.id, p.name, p.gender, p.age, p.height, p.weight, 
+                       p.phone, p.created_time, p.notes
+                FROM patients p
+                WHERE p.is_active = 1
+            '''
+            params = []
+            conditions = []
+            
+            if date_filter:
+                # 按患者创建时间过滤
+                conditions.append('DATE(p.created_time) = ?')
+                params.append(date_filter)
+                print(f"[DB_DEBUG] 日期过滤查询: DATE(p.created_time) = '{date_filter}'")
+                
+            if name_filter:
+                conditions.append('p.name LIKE ?')
+                params.append(f'%{name_filter}%')
+            
+            if conditions:
+                base_query += ' AND ' + ' AND '.join(conditions)
+            
+            # 确保按创建时间降序排列
+            base_query += ' ORDER BY p.created_time DESC'
+            
+            print(f"[DB_DEBUG] 完整查询: {base_query}")
+            print(f"[DB_DEBUG] 参数: {params}")
+            
+            cursor.execute(base_query, params)
+            columns = [desc[0] for desc in cursor.description]
+            patients = []
+            rows = cursor.fetchall()
+            for row in rows:
+                patient = dict(zip(columns, row))
+                patients.append(patient)
+            
+            print(f"[DB_DEBUG] 查询结果: 找到 {len(patients)} 位患者")
+            
+            # 始终显示数据库中的样例创建时间，帮助调试
+            cursor.execute("SELECT p.created_time, DATE(p.created_time), p.name FROM patients p WHERE p.is_active = 1 ORDER BY p.created_time DESC LIMIT 5")
+            sample_data = cursor.fetchall()
+            print(f"[DB_DEBUG] 数据库中最近创建的5位患者:")
+            for row in sample_data:
+                print(f"  创建时间: {row[0]} | 日期部分: {row[1]} | 患者: {row[2]}")
+            
+            if date_filter:
+                print(f"[DB_DEBUG] 查找创建日期为 '{date_filter}' 的患者，找到 {len(patients)} 位")
+                if len(patients) > 0:
+                    print(f"[DB_DEBUG] 匹配的患者: {[p['name'] for p in patients]}")
+            
+            if date_filter and len(patients) == 0:
+                # 如果没有结果，查看数据库中实际的创建日期
+                cursor.execute("SELECT DISTINCT DATE(created_time) as create_dates FROM patients WHERE is_active = 1 ORDER BY create_dates DESC LIMIT 10")
+                sample_dates = [row[0] for row in cursor.fetchall()]
+                print(f"[DB_DEBUG] 数据库中患者的创建日期: {sample_dates}")
+            
+            return patients
+            
+        except Exception as e:
+            print(f"[ERROR] 按日期搜索患者失败: {e}")
+            return []
+        finally:
+            conn.close()
+    
+    def save_analysis_result(self, session_id: int, analysis_type: str, analysis_data: dict, 
+                           ai_report_path: str = None, confidence_score: float = None) -> int:
+        """保存AI分析结果"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            from datetime import datetime
+            created_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            cursor.execute('''
+                INSERT INTO analysis_results 
+                (session_id, analysis_type, analysis_data, ai_report_path, confidence_score, created_time)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (session_id, analysis_type, str(analysis_data), ai_report_path, confidence_score, created_time))
+            
+            result_id = cursor.lastrowid
+            conn.commit()
+            print(f"[INFO] 保存分析结果成功，ID: {result_id}, 报告路径: {ai_report_path}")
+            return result_id
+            
+        except Exception as e:
+            print(f"[ERROR] 保存分析结果失败: {e}")
+            conn.rollback()
+            return -1
+        finally:
+            conn.close()
     
     def delete_test_session(self, session_id: int) -> bool:
         """删除检测会话及其所有步骤"""

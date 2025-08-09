@@ -26,6 +26,7 @@ a = Analysis(
         'scipy', 'scipy.ndimage',
         'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg', 
         'matplotlib.figure', 'matplotlib.colors', 'matplotlib.font_manager',
+        'tkcalendar', 'babel', 'babel.dates',
         'uvicorn', 'uvicorn.main', 'uvicorn.config', 'uvicorn.server',
         'fastapi', 'fastapi.middleware.cors', 'fastapi.responses', 'fastapi.staticfiles',
         'pydantic', 'asyncio', 'jinja2',

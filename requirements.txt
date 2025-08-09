@@ -3,6 +3,7 @@ numpy>=1.21.0
 matplotlib>=3.5.0
 pyserial>=3.5
 scipy>=1.7.0
+tkcalendar>=1.6.1
 
 # SarcNeuro-Edge dependencies (Windows compatible versions)
 fastapi>=0.100.0

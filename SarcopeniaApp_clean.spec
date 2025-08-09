@@ -43,6 +43,11 @@ hiddenimports = [
     'starlette.routing',
     'starlette.staticfiles',
     
+    # UI 组件依赖
+    'tkcalendar',
+    'babel',
+    'babel.dates',
+    
     # 其他必需依赖
     'multipart',
     'json',
