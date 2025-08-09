@@ -11,6 +11,7 @@ from matplotlib.figure import Figure
 import matplotlib.colors as colors
 import matplotlib.font_manager as fm
 from scipy import ndimage
+from scipy.ndimage import zoom, gaussian_filter
 
 # 解决中文字体警告问题
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS', 'Microsoft YaHei']
@@ -24,9 +25,15 @@ class HeatmapVisualizer:
         self.array_rows = array_rows
         self.array_cols = array_cols
         
-        # 平滑处理参数 - 默认关闭以提升性能
-        self.enable_smoothing = False  # 关闭平滑处理提升性能
-        self.smooth_sigma = 0.5        # 减小sigma值降低计算量
+        # 高质量渲染参数
+        self.enable_high_quality = True  # 启用高质量渲染
+        self.upscale_factor = 4          # 升采样倍数（32x32 -> 128x128）
+        self.gaussian_sigma = 1.2        # 高斯平滑参数
+        self.interpolation_order = 3     # 双三次插值（order=3）
+        
+        # 平滑处理参数 - 用于快速模式
+        self.enable_smoothing = False    # 快速模式的简单平滑
+        self.smooth_sigma = 0.5          # 快速模式的sigma值
         
         # 性能优化参数
         self.frame_skip_counter = 0
@@ -42,22 +49,29 @@ class HeatmapVisualizer:
         
     def setup_colormap(self):
         """设置医学专用热力图颜色映射 - 256级医院精度"""
-        # 创建256级精细渐变色谱，确保每个压力值都有独特的颜色
-        # 医院级压力成像标准：黑→深蓝→蓝→青→绿→黄→橙→红→深红→紫→白
+        # 使用matplotlib内置的jet色谱作为基础，这是医学影像的标准配色
+        import matplotlib.cm as cm
         
-        # 定义关键颜色节点（11个节点创建平滑过渡）
+        # 获取jet色谱并创建副本
+        self.jet_cmap = cm.get_cmap('jet').copy()
+        
+        # 设置坏值（NaN）为透明
+        self.jet_cmap.set_bad(color=(0, 0, 0, 0))
+        
+        # 创建256级精细渐变色谱，确保每个压力值都有独特的颜色
+        # 医院级压力成像标准：深蓝→蓝→青→绿→黄→橙→红→深红
+        
+        # 定义关键颜色节点（基于jet色谱的改进版）
         colors_nodes = [
-            (0.0,    '#000000'),  # 0: 纯黑（无压力）
-            (0.1,    '#000066'),  # 25.5: 深蓝
-            (0.2,    '#0000FF'),  # 51: 纯蓝
-            (0.3,    '#0066FF'),  # 76.5: 亮蓝
-            (0.4,    '#00CCFF'),  # 102: 青色
-            (0.5,    '#00FF00'),  # 127.5: 纯绿
-            (0.6,    '#FFFF00'),  # 153: 黄色
-            (0.7,    '#FF9900'),  # 178.5: 橙色
-            (0.8,    '#FF0000'),  # 204: 纯红
-            (0.9,    '#FF00FF'),  # 229.5: 洋红
-            (1.0,    '#FFFFFF')   # 255: 纯白（最大压力）
+            (0.0,    '#000033'),  # 0: 深蓝黑（无压力）
+            (0.125,  '#0000FF'),  # 32: 纯蓝
+            (0.25,   '#0080FF'),  # 64: 亮蓝
+            (0.375,  '#00FFFF'),  # 96: 青色
+            (0.5,    '#00FF00'),  # 128: 纯绿
+            (0.625,  '#FFFF00'),  # 160: 黄色
+            (0.75,   '#FF8000'),  # 192: 橙色
+            (0.875,  '#FF0000'),  # 224: 纯红
+            (1.0,    '#800000')   # 255: 深红（最大压力）
         ]
         
         # 创建256个离散颜色值，确保每个0-255的值都有唯一颜色
@@ -124,6 +138,24 @@ class HeatmapVisualizer:
         except:
             # 如果scipy不可用，返回原数据
             return data_matrix
+    
+    def apply_high_quality_rendering(self, data_matrix):
+        """应用高质量渲染：升采样 + 双三次插值 + 高斯平滑"""
+        if not self.enable_high_quality:
+            return self.smooth_data(data_matrix)
+        
+        try:
+            # 1. 先进行升采样（双三次插值）
+            upscaled = zoom(data_matrix, self.upscale_factor, order=self.interpolation_order)
+            
+            # 2. 应用高斯平滑，消除像素化边界
+            smoothed = gaussian_filter(upscaled, sigma=self.gaussian_sigma)
+            
+            return smoothed
+        except Exception as e:
+            # 如果高质量渲染失败，回退到普通平滑
+            print(f"高质量渲染失败，使用普通模式: {e}")
+            return self.smooth_data(data_matrix)
         
     def setup_figure(self):
         """设置matplotlib图形"""
@@ -149,11 +181,14 @@ class HeatmapVisualizer:
         initial_data = np.zeros((self.array_rows, self.array_cols))
         
         # 创建热力图 - 医院级精度设置
+        # 根据是否启用高质量模式选择插值方法
+        interpolation_method = 'bicubic' if self.enable_high_quality else 'nearest'
+        
         self.im = self.ax.imshow(
             initial_data, 
-            cmap=self.custom_cmap,     # 256级离散颜色映射
+            cmap=self.continuous_cmap if self.enable_high_quality else self.custom_cmap,  # 高质量用连续色谱
             norm=self.norm,
-            interpolation='nearest',   # 最近邻插值，保持精确的颜色值，无混合
+            interpolation=interpolation_method,  # 高质量用双三次，否则最近邻
             aspect='equal',            # 保持像素点正方形，确保正确比例显示
             animated=True,             # 启用动画模式提高性能
             alpha=1.0,                 # 去掉透明度提升性能
@@ -228,8 +263,11 @@ class HeatmapVisualizer:
             self.frame_skip_counter = 0
             self.last_render_time = current_time
             
-            # 应用平滑处理
-            smoothed_matrix = self.smooth_data(matrix_2d)
+            # 应用高质量渲染或平滑处理
+            if self.enable_high_quality:
+                smoothed_matrix = self.apply_high_quality_rendering(matrix_2d)
+            else:
+                smoothed_matrix = self.smooth_data(matrix_2d)
             
             # 检查数组大小是否改变，如果改变需要重新配置
             if matrix_2d.shape != (self.array_rows, self.array_cols):
@@ -237,7 +275,10 @@ class HeatmapVisualizer:
                 # 需要重新设置图像大小
                 self.set_array_size(self.array_rows, self.array_cols)
                 # 重新设置后，继续用新数据更新（不要return）
-                smoothed_matrix = self.smooth_data(matrix_2d)  # 重新计算平滑数据
+                if self.enable_high_quality:
+                    smoothed_matrix = self.apply_high_quality_rendering(matrix_2d)
+                else:
+                    smoothed_matrix = self.smooth_data(matrix_2d)
             
             # 更新热力图数据
             self.im.set_array(smoothed_matrix)
@@ -291,11 +332,14 @@ class HeatmapVisualizer:
             initial_data = np.zeros((self.array_rows, self.array_cols))
             
             # 创建热力图 - 医院级精度设置
+            # 根据是否启用高质量模式选择插值方法
+            interpolation_method = 'bicubic' if self.enable_high_quality else 'nearest'
+            
             self.im = self.ax.imshow(
                 initial_data, 
-                cmap=self.custom_cmap,     # 256级离散颜色映射
+                cmap=self.continuous_cmap if self.enable_high_quality else self.custom_cmap,  # 高质量用连续色谱
                 norm=self.norm,
-                interpolation='nearest',   # 最近邻插值，保持精确的颜色值
+                interpolation=interpolation_method,  # 高质量用双三次，否则最近邻
                 aspect='equal',
                 animated=True,
                 alpha=1.0,
@@ -369,6 +413,32 @@ class HeatmapVisualizer:
     def get_figure(self):
         """获取matplotlib图形对象"""
         return self.fig
+    
+    def set_quality_mode(self, high_quality=True):
+        """切换渲染质量模式
+        
+        Args:
+            high_quality: True为高质量模式（升采样+平滑），False为快速模式
+        """
+        self.enable_high_quality = high_quality
+        if high_quality:
+            # 高质量模式参数
+            self.upscale_factor = 4
+            self.gaussian_sigma = 1.2
+            self.interpolation_order = 3
+            print("已切换到高质量渲染模式（128x128，双三次插值）")
+        else:
+            # 快速模式参数
+            self.enable_smoothing = False
+            print("已切换到快速渲染模式（原始分辨率）")
+        
+        # 重新设置图像插值方法
+        if hasattr(self, 'im'):
+            interpolation_method = 'bicubic' if high_quality else 'nearest'
+            cmap = self.continuous_cmap if high_quality else self.custom_cmap
+            self.im.set_interpolation(interpolation_method)
+            self.im.set_cmap(cmap)
+            self.canvas.draw_idle()
     
     def save_snapshot(self, filename):
         """保存热力图快照"""
