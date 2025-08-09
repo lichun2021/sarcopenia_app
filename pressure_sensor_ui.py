@@ -18,7 +18,6 @@ from datetime import datetime
 from serial_interface import SerialInterface
 from data_processor import DataProcessor
 from visualization import HeatmapVisualizer
-from visualization_3d import EnhancedHeatmapVisualizer
 from device_config import DeviceConfigDialog, DeviceManager
 from patient_manager_ui import PatientManagerDialog
 from sarcopenia_database import db
@@ -99,6 +98,21 @@ class PressureSensorUI:
         
         # 活动的检测向导引用
         self._active_detection_wizard = None
+        
+        # 检测步骤状态变量
+        self.step_in_progress = False
+        self.current_step_start_time = None
+        self.current_step_duration = 0
+        self.current_step_id = None
+        self.current_step_countdown_label = None
+        # 模态对话框期间暂停标记（减少UI竞争）
+        self._opening_modal = False
+
+        # ===== Tk 回调与关闭状态控制 =====
+        self._closing = False
+        self._update_after_id = None
+        self._log_flush_after_id = None
+        self._log_flush_scheduled = False
         
         # 界面设置
         self.setup_ui()
@@ -340,6 +354,14 @@ class PressureSensorUI:
     
     def show_device_config(self):
         """显示设备配置对话框"""
+        # 暂停热力图/数据更新，避免二级窗口时继续绘制
+        prev_min_interval = getattr(self, 'visualizer', None) and getattr(self.visualizer, 'min_render_interval', None)
+        self._opening_modal = True
+        try:
+            if prev_min_interval is not None:
+                self.visualizer.min_render_interval = max(0.2, prev_min_interval)
+        except Exception:
+            pass
         # 获取当前正在使用的端口，避免重复检测
         skip_ports = []
         
@@ -426,6 +448,13 @@ class PressureSensorUI:
             # 用户取消配置，显示警告但不退出程序
             if not self.device_configured:
                 messagebox.showinfo("提示", "未配置硬件设备\n\n您仍可以使用以下功能：\n• CSV数据分析\n• 报告生成\n• 患者档案管理")
+        # 恢复渲染与标记
+        try:
+            if prev_min_interval is not None:
+                self.visualizer.min_render_interval = prev_min_interval
+        except Exception:
+            pass
+        self._opening_modal = False
     
     def update_device_list(self):
         """更新设备选择列表"""
@@ -1358,33 +1387,33 @@ class PressureSensorUI:
             self._setup_styles()
             self.__class__._styles_configured = True
         
-        # 主框架 - 医院白色
+        # 主框架 - 医院白色（紧凑布局）
         main_frame = ttk.Frame(self.root, style='Hospital.TFrame')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         
-        # 顶部控制面板 - 医院风格
+        # 顶部控制面板 - 医院风格（紧凑布局）
         control_frame = ttk.LabelFrame(main_frame, text="🎛️ 控制面板", 
-                                     padding=15, style='Hospital.TLabelframe')
-        control_frame.pack(fill=tk.X, pady=(0, 15))
+                                     padding=8, style='Hospital.TLabelframe')
+        control_frame.pack(fill=tk.X, pady=(0, 8))
         
         # 第一行：设备和连接控制
         # 设备选择
-        ttk.Label(control_frame, text="设备:", style='Hospital.TLabel').grid(row=0, column=0, padx=(0, 8))
+        ttk.Label(control_frame, text="设备:", style='Hospital.TLabel').grid(row=0, column=0, padx=(0, 5))
         self.device_var = tk.StringVar()
         self.device_combo = ttk.Combobox(control_frame, textvariable=self.device_var, 
                                        width=15, state="readonly",
                                        font=('Microsoft YaHei UI', 10))
-        self.device_combo.grid(row=0, column=1, padx=(0, 15))
+        self.device_combo.grid(row=0, column=1, padx=(0, 10))
         self.device_combo.bind('<<ComboboxSelected>>', self.on_device_changed)
         
         # 设备配置按钮
         ttk.Button(control_frame, text="⚙️ 设备配置", 
                   command=self.show_device_config, 
-                  style='Hospital.TButton').grid(row=0, column=2, padx=(0, 25))
+                  style='Hospital.TButton').grid(row=0, column=2, padx=(0, 15))
         
         # 创建一个Frame用于右对齐患者信息
         right_frame = ttk.Frame(control_frame)
-        right_frame.grid(row=0, column=10, sticky='e', padx=(0, 10))
+        right_frame.grid(row=0, column=10, sticky='e', padx=(0, 5))
         control_frame.columnconfigure(10, weight=1)  # 让这一列占据剩余空间
         
         # 状态标签 - 医院配色
@@ -1433,7 +1462,7 @@ class PressureSensorUI:
         # 右侧：数据日志和统计 - 医院白色
         right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 0))
-        right_frame.config(width=550)  # 增加右侧面板宽度
+        right_frame.config(width=650)  # 增加右侧面板宽度以容纳检测会话区域
         
         # 统计信息面板 - 医院风格
         stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
@@ -1460,7 +1489,31 @@ class PressureSensorUI:
             label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # AI分析日志区域 - 占用整个空间
+        # 检测会话区域 - 嵌入式检测界面
+        self.detection_frame = ttk.LabelFrame(right_frame, text="检测会话", 
+                                            padding=10, style='Hospital.TLabelframe')
+        self.detection_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # 初始状态显示
+        self.detection_status_label = ttk.Label(self.detection_frame, 
+                                               text="📊 暂无进行中的检测", 
+                                               style='Hospital.TLabel',
+                                               font=('Microsoft YaHei UI', 10))
+        self.detection_status_label.pack(pady=20)
+        
+        # 检测内容容器 - 动态显示检测步骤
+        self.detection_content_frame = ttk.Frame(self.detection_frame, style='Hospital.TFrame')
+        self.detection_content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 检测会话相关变量
+        self.embedded_detection_active = False
+        self.current_detection_step = None
+        self.detection_progress_var = tk.IntVar(value=0)
+        self.detection_step_label = None
+        self.detection_progress_bar = None
+        self.detection_control_buttons = {}
+        
+        # AI分析日志区域 - 调整高度以适应新布局
         ai_log_frame = ttk.LabelFrame(right_frame, text="AI 分析日志", 
                                     padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
         ai_log_frame.pack(fill=tk.BOTH, expand=True)
@@ -1517,22 +1570,13 @@ class PressureSensorUI:
         """设置可视化模块"""
         array_info = self.data_processor.get_array_info()
         
-        # 使用增强的可视化器，支持2D/3D切换
-        try:
-            self.visualizer = EnhancedHeatmapVisualizer(
-                self.plot_frame, 
-                array_rows=array_info['rows'], 
-                array_cols=array_info['cols']
-            )
-            print(f"[UI] 已初始化增强可视化器 (支持2D/3D切换): {array_info['rows']}x{array_info['cols']}")
-        except Exception as e:
-            print(f"[UI] 增强可视化器初始化失败，回退到2D模式: {e}")
-            # 回退到原有的2D可视化器
-            self.visualizer = HeatmapVisualizer(
-                self.plot_frame, 
-                array_rows=array_info['rows'], 
-                array_cols=array_info['cols']
-            )
+        # 仅使用2D可视化器（移除3D）
+        self.visualizer = HeatmapVisualizer(
+            self.plot_frame, 
+            array_rows=array_info['rows'], 
+            array_cols=array_info['cols']
+        )
+        print(f"[UI] 已初始化热力图可视化器: {array_info['rows']}x{array_info['cols']}")
         
         # 延迟触发布局更新，确保窗口最大化完成后热力图获取正确尺寸
         def trigger_resize():
@@ -1690,6 +1734,16 @@ class PressureSensorUI:
         
     def update_data(self):
         """数据更新循环 - 从串口接口获取数据并处理"""
+        # 关闭流程中直接退出
+        if getattr(self, '_closing', False):
+            return
+        # 模态对话框期间放缓/暂停更新，避免与 tkwait 竞争
+        if getattr(self, '_opening_modal', False):
+            try:
+                self._update_after_id = self.root.after(150, self.update_data)
+            except Exception:
+                pass
+            return
         try:
             if self.is_running and self.serial_interface.is_connected():
                 # 使用批量获取，减少函数调用开销
@@ -1805,8 +1859,12 @@ class PressureSensorUI:
         except Exception as e:
             self.log_message(f"[ERROR] 更新数据时出错: {e}")
         
-        # 继续更新循环 (22ms ≈ 45 FPS，平衡性能和响应速度)
-        self.root.after(22, self.update_data)
+        # 继续更新循环 (优化为100ms ≈ 10 FPS，合理降低帧率)
+        try:
+            self._update_after_id = self.root.after(100, self.update_data)  # 合理降低帧率到10fps
+        except Exception:
+            # 关闭阶段可能已销毁root，静默忽略
+            pass
     
     def update_statistics_display(self, statistics):
         """更新统计信息显示（节流以提高性能）"""
@@ -1884,14 +1942,23 @@ class PressureSensorUI:
         self._log_queue.append(message)
         
         # 每100ms批量处理一次日志
-        if current_time - self._last_log_time >= 0.1:
+        if current_time - self._last_log_time >= 0.1 and not getattr(self, '_closing', False):
             self._last_log_time = current_time
-            # 批量处理队列中的日志
-            self.root.after(0, self._flush_log_queue)
+            # 批量处理队列中的日志（避免重复安排）
+            if not self._log_flush_scheduled:
+                try:
+                    self._log_flush_after_id = self.root.after(0, self._flush_log_queue)
+                    self._log_flush_scheduled = True
+                except Exception:
+                    pass
     
     def _flush_log_queue(self):
         """批量刷新日志队列"""
+        if getattr(self, '_closing', False):
+            return
         if not hasattr(self, '_log_queue') or not self._log_queue:
+            # 允许下一次安排
+            self._log_flush_scheduled = False
             return
         
         if hasattr(self, 'ai_log_text'):
@@ -1912,6 +1979,8 @@ class PressureSensorUI:
         
         # 清空队列
         self._log_queue.clear()
+        # 允许下一次安排
+        self._log_flush_scheduled = False
         
     def clear_log(self):
         """清除日志（保留兼容性）"""
@@ -3122,6 +3191,20 @@ class PressureSensorUI:
         """窗口关闭事件"""
         print("[DEBUG] on_closing被调用，程序即将退出")
         try:
+            # 标记关闭，阻断后续调度
+            self._closing = True
+
+            # 取消已安排的 after 回调，避免销毁后触发
+            try:
+                if self._update_after_id is not None:
+                    self.root.after_cancel(self._update_after_id)
+            except Exception:
+                pass
+            try:
+                if self._log_flush_after_id is not None:
+                    self.root.after_cancel(self._log_flush_after_id)
+            except Exception:
+                pass
             # 重置检测状态，避免影响下次启动
             self.detection_in_progress = False
             self.current_session = None
@@ -3166,6 +3249,15 @@ class PressureSensorUI:
     def show_patient_manager(self):
         """显示患者档案管理界面"""
         try:
+            # 在管理窗口期间暂停热力图/更新，避免二级窗口打开时继续渲染
+            prev_min_interval = getattr(self, 'visualizer', None) and getattr(self.visualizer, 'min_render_interval', None)
+            self._opening_modal = True
+            try:
+                if prev_min_interval is not None:
+                    self.visualizer.min_render_interval = max(0.2, prev_min_interval)
+            except Exception:
+                pass
+
             manager = PatientManagerDialog(self.root, title="患者档案管理", select_mode=False)
             # 如果用户在管理界面中选择了患者，则设置为当前患者
             if hasattr(manager, 'selected_patient') and manager.selected_patient:
@@ -3174,6 +3266,14 @@ class PressureSensorUI:
         except Exception as e:
             messagebox.showerror("错误", f"打开患者档案管理失败：{e}")
             print(f"[ERROR] 患者档案管理错误: {e}")
+        finally:
+            # 恢复渲染节奏并清除暂停标记
+            try:
+                if prev_min_interval is not None:
+                    self.visualizer.min_render_interval = prev_min_interval
+            except Exception:
+                pass
+            self._opening_modal = False
     
     def show_session_manager(self):
         """显示检测会话管理界面"""
@@ -3239,6 +3339,14 @@ class PressureSensorUI:
     
     def create_session_manager_dialog(self, sessions):
         """创建检测会话管理对话框"""
+        # 会话管理也视为二级窗口，暂停热力图
+        prev_min_interval = getattr(self, 'visualizer', None) and getattr(self.visualizer, 'min_render_interval', None)
+        self._opening_modal = True
+        try:
+            if prev_min_interval is not None:
+                self.visualizer.min_render_interval = max(0.2, prev_min_interval)
+        except Exception:
+            pass
         dialog = WindowManager.create_managed_window(self.root, WindowLevel.MANAGEMENT,
                                                    "检测会话管理 - 今日会话")
         dialog.grab_set()
@@ -3337,7 +3445,7 @@ class PressureSensorUI:
                     # 设置当前会话
                     self.current_session = {
                         'id': session['id'],
-                        'name': session['session_name'],
+                        'session_name': session['session_name'],
                         'patient_id': session['patient_id'],
                         'current_step': session['current_step'],
                         'total_steps': session['total_steps']
@@ -3563,13 +3671,33 @@ class PressureSensorUI:
                     context_menu.grab_release()
         
         session_tree.bind("<Button-3>", on_right_click)
+
+        # 对话框关闭时恢复渲染
+        def on_close():
+            try:
+                if prev_min_interval is not None:
+                    self.visualizer.min_render_interval = prev_min_interval
+            except Exception:
+                pass
+            self._opening_modal = False
+            dialog.destroy()
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
     
     def select_patient_for_detection(self):
         """为检测选择患者"""
         try:
             # 标记正在为检测选择患者，避免重复弹窗
             self._selecting_for_detection = True
-            
+
+            # 二级窗口期间暂停渲染
+            prev_min_interval = getattr(self, 'visualizer', None) and getattr(self.visualizer, 'min_render_interval', None)
+            self._opening_modal = True
+            try:
+                if prev_min_interval is not None:
+                    self.visualizer.min_render_interval = max(0.2, prev_min_interval)
+            except Exception:
+                pass
+
             selector = PatientManagerDialog(self.root, title="选择患者档案", select_mode=True)
             if selector.selected_patient:
                 self.current_patient = selector.selected_patient
@@ -3581,7 +3709,13 @@ class PressureSensorUI:
             print(f"[ERROR] 选择患者错误: {e}")
             return False
         finally:
-            # 清除标记
+            # 清除标记并恢复渲染节奏
+            try:
+                if prev_min_interval is not None:
+                    self.visualizer.min_render_interval = prev_min_interval
+            except Exception:
+                pass
+            self._opening_modal = False
             self._selecting_for_detection = False
     
     def create_new_patient_and_select(self):
@@ -3589,22 +3723,41 @@ class PressureSensorUI:
         try:
             from patient_manager_ui import PatientEditDialog
             
-            # 直接打开新建患者对话框
-            dialog = PatientEditDialog(self.root, title="新建患者档案")
-            
-            if dialog.result:
-                # 保存新患者到数据库
-                patient_id = db.add_patient(**dialog.result)
-                if patient_id > 0:
-                    # 获取新创建的患者信息
-                    new_patient = db.get_patient_by_id(patient_id)
-                    if new_patient:
-                        self.current_patient = new_patient
-                        self.update_patient_status()
-                        self.log_message(f"[OK] 新建患者成功：{self.current_patient['name']}")
-                        messagebox.showinfo("成功", f"患者档案创建成功！\n已自动选择患者：{self.current_patient['name']}")
-                else:
-                    messagebox.showerror("错误", "患者档案创建失败！")
+            def _open_dialog():
+                prev_min_interval = getattr(self.visualizer, 'min_render_interval', None)
+                try:
+                    # 标记进入模态期，放缓渲染
+                    self._opening_modal = True
+                    if prev_min_interval is not None:
+                        self.visualizer.min_render_interval = max(0.2, prev_min_interval)
+
+                    dialog = PatientEditDialog(self.root, title="新建患者档案")
+                    
+                    if dialog.result:
+                        patient_id = db.add_patient(**dialog.result)
+                        if patient_id > 0:
+                            new_patient = db.get_patient_by_id(patient_id)
+                            if new_patient:
+                                self.current_patient = new_patient
+                                self.update_patient_status()
+                                self.log_message(f"[OK] 新建患者成功：{self.current_patient['name']}")
+                                messagebox.showinfo("成功", f"患者档案创建成功！\n已自动选择患者：{self.current_patient['name']}")
+                        else:
+                            messagebox.showerror("错误", "患者档案创建失败！")
+                except Exception as e:
+                    messagebox.showerror("错误", f"新建患者失败：{e}")
+                    print(f"[ERROR] 新建患者错误: {e}")
+                finally:
+                    # 恢复渲染速率与标记
+                    try:
+                        if prev_min_interval is not None:
+                            self.visualizer.min_render_interval = prev_min_interval
+                    except Exception:
+                        pass
+                    self._opening_modal = False
+
+            # 空闲时打开，避免与高频 after 冲突
+            self.root.after_idle(_open_dialog)
         except Exception as e:
             messagebox.showerror("错误", f"新建患者失败：{e}")
             print(f"[ERROR] 新建患者错误: {e}")
@@ -3798,7 +3951,7 @@ class PressureSensorUI:
             if session_id > 0:
                 self.current_session = {
                     'id': session_id,
-                    'name': session_name,
+                    'session_name': session_name,
                     'patient_id': self.current_patient['id'],
                     'current_step': 1,  # 新建会话从第1步开始
                     'total_steps': 6
@@ -3866,7 +4019,7 @@ class PressureSensorUI:
             # 恢复会话状态
             self.current_session = {
                 'id': session['id'],
-                'name': session['session_name'],
+                'session_name': session['session_name'],
                 'patient_id': session['patient_id'] if 'patient_id' in session else self.current_patient['id'],
                 'current_step': session['current_step'],
                 'total_steps': session['total_steps']
@@ -4012,40 +4165,744 @@ class PressureSensorUI:
             print(f"[ERROR] 检查恢复检测失败: {e}")
     
     def show_detection_wizard(self):
-        """显示检测向导界面"""
+        """显示检测向导界面 - 使用嵌入式界面"""
         try:
             if not self.current_session or not self.current_patient:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return
             
-            # 减少调试输出
-            
-            # 初始化活动检测向导引用
-            self._active_detection_wizard = None
-            
-            # 创建检测向导（它会自动将自己注册为活动向导）
-            # 注意：传递self而不是self.root，这样检测向导可以访问主界面对象
-            wizard = DetectionWizardDialog(self, self.current_patient, self.current_session)
-            
-            # 减少调试输出
-            
-            # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
-            self.detection_in_progress = False
-            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
-            
-            # 清除活动检测向导引用
-            self._active_detection_wizard = None
-            
-            # 检查检测状态
-            self.check_detection_completion()
+            # 启用嵌入式检测界面
+            self.show_embedded_detection()
                 
         except Exception as e:
             messagebox.showerror("错误", f"显示检测向导失败：{e}")
-            print(f"[ERROR] 显示检测向导失败: {e}")
-            # 即使出错也要重置状态
+    
+    def show_embedded_detection(self):
+        """显示嵌入式检测界面"""
+        try:
+            # 只在首次创建时清除组件
+            if not hasattr(self, '_detection_widgets_created'):
+                # 清除检测内容区域
+                for widget in self.detection_content_frame.winfo_children():
+                    widget.destroy()
+                
+                # 隐藏初始状态标签
+                self.detection_status_label.pack_forget()
+                
+                # 创建固定的控件引用
+                self._create_detection_widgets()
+                self._detection_widgets_created = True
+            
+            # 设置检测活动状态
+            self.embedded_detection_active = True
+            
+            # 只更新内容，不重建组件
+            self._update_detection_content()
+                
+        except Exception as e:
+            print(f"显示嵌入式检测界面失败: {e}")
+            messagebox.showerror("错误", f"显示检测界面失败：{e}")
+    
+    def _create_detection_widgets(self):
+        """创建检测界面的固定控件（只创建一次）"""
+        # 患者信息显示（固定行数）
+        self._patient_info_frame = ttk.Frame(self.detection_content_frame, style='Hospital.TFrame')
+        self._patient_info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 第1行：患者姓名
+        self._patient_name_label = ttk.Label(self._patient_info_frame, text="👤 患者: ", 
+                 style='Hospital.TLabel', font=('Microsoft YaHei UI', 10, 'bold'))
+        self._patient_name_label.pack(anchor='w')
+        
+        # 第2行：会话名称
+        self._session_name_label = ttk.Label(self._patient_info_frame, text="📋 会话: ", 
+                 style='Hospital.TLabel')
+        self._session_name_label.pack(anchor='w')
+        
+        # 第3行：当前硬件
+        self._hardware_label = ttk.Label(self._patient_info_frame, text="🔧 硬件: ", 
+                 style='Hospital.TLabel')
+        self._hardware_label.pack(anchor='w')
+        
+        # 进度显示（固定2行）
+        self._progress_frame = ttk.Frame(self.detection_content_frame, style='Hospital.TFrame')
+        self._progress_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 第1行：进度文字
+        self._detection_step_label = ttk.Label(self._progress_frame, 
+                                             text="📊 进度: 0/6 步", 
+                                             style='Hospital.TLabel')
+        self._detection_step_label.pack(anchor='w', pady=(0, 5))
+        
+        # 第2行：进度条
+        self._detection_progress_bar = ttk.Progressbar(self._progress_frame, 
+                                                     variable=self.detection_progress_var,
+                                                     maximum=6, 
+                                                     style='Hospital.Horizontal.TProgressbar')
+        self._detection_progress_bar.pack(fill=tk.X, pady=(0, 5))
+        
+        # 当前步骤信息
+        self._current_step_frame = ttk.LabelFrame(self.detection_content_frame, 
+                                               text="当前检测步骤", 
+                                               padding=10, 
+                                               style='Hospital.TLabelframe')
+        self._current_step_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 步骤内容区域（动态内容的容器）
+        self._step_content_frame = ttk.Frame(self._current_step_frame, style='Hospital.TFrame')
+        self._step_content_frame.pack(fill=tk.X)
+        
+        # 创建固定的步骤显示控件（只创建一次）
+        self._create_step_display_widgets()
+    
+    def _update_detection_content(self):
+        """更新检测界面内容（不重建控件）"""
+        try:
+            # 获取会话信息
+            session_steps = db.get_session_steps(self.current_session['id'])
+            completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+            total_steps = self.current_session.get('total_steps', 6)
+            
+            # 更新患者信息
+            patient_name = self.current_patient.get('name', '') if self.current_patient else ''
+            session_name = self.current_session.get('session_name', '') if self.current_session else ''
+            current_hardware = self.get_current_step_hardware()
+            
+            self._patient_name_label.config(text=f"👤 患者: {patient_name}")
+            self._session_name_label.config(text=f"📋 会话: {session_name}")
+            self._hardware_label.config(text=f"🔧 硬件: {current_hardware}")
+            
+            # 更新进度
+            self._detection_step_label.config(text=f"📊 进度: {completed_steps}/{total_steps} 步")
+            self.detection_progress_var.set(completed_steps)
+            self._detection_progress_bar.config(maximum=total_steps)
+            
+            # 更新步骤内容（不重建控件）
+            self._update_step_content(session_steps, completed_steps)
+            
+        except Exception as e:
+            print(f"更新检测界面内容失败: {e}")
+    
+    def _create_step_display_widgets(self):
+        """创建步骤显示的固定控件（只创建一次）"""
+        # 步骤信息区域（固定3行）
+        self._step_info_frame = ttk.Frame(self._step_content_frame, style='Hospital.TFrame')
+        self._step_info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 第1行：步骤标题
+        self._step_title_label = ttk.Label(self._step_info_frame, 
+                     text="第 1 步: 加载中...", 
+                     style='Hospital.TLabel', 
+                     font=('Microsoft YaHei UI', 11, 'bold'))
+        self._step_title_label.pack(anchor='w')
+        
+        # 第2行：时长信息
+        self._step_duration_label = ttk.Label(self._step_info_frame, 
+                     text="⏱️ 时长: 0秒", 
+                     style='Hospital.TLabel')
+        self._step_duration_label.pack(anchor='w', pady=(2, 0))
+        
+        # 第3行：说明信息
+        self._step_description_label = ttk.Label(self._step_info_frame, 
+                     text="📝 说明: 加载中...", 
+                     style='Hospital.TLabel')
+        self._step_description_label.pack(anchor='w', pady=(2, 0))
+        
+        # 状态显示区域（固定行数布局）
+        # 第1行：倒计时或空行
+        self._countdown_frame = ttk.Frame(self._step_content_frame, style='Hospital.TFrame')
+        self._countdown_frame.pack(fill=tk.X, pady=(15, 5))
+        
+        self._countdown_left_label = ttk.Label(self._countdown_frame, text="", 
+                 style='Hospital.TLabel', 
+                 font=('Microsoft YaHei UI', 11))
+        self._countdown_left_label.pack(side=tk.LEFT)
+        
+        self._countdown_right_label = ttk.Label(self._countdown_frame, 
+                                        text="",
+                                        font=('Microsoft YaHei UI', 11, 'bold'),
+                                        foreground="#2196f3")
+        self._countdown_right_label.pack(side=tk.RIGHT)
+        
+        # 第2行：状态信息或空行
+        self._status_frame = ttk.Frame(self._step_content_frame, style='Hospital.TFrame')
+        self._status_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        self._status_label = ttk.Label(self._status_frame, text="", 
+                 style='Hospital.TLabel',
+                 font=('Microsoft YaHei UI', 10),
+                 foreground="#ff9800")
+        self._status_label.pack(anchor='w')
+        
+        # 第3行：按钮区域
+        self._button_frame = ttk.Frame(self._step_content_frame, style='Hospital.TFrame')
+        self._button_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # 左侧导航按钮区域
+        self._nav_frame = ttk.Frame(self._button_frame, style='Hospital.TFrame')
+        self._nav_frame.pack(side=tk.LEFT)
+        
+        # 上一步按钮
+        self._prev_btn = ttk.Button(self._nav_frame, 
+                                 text="◀️ 上一步", 
+                                 command=None,
+                                 style='Hospital.TButton')
+        self._prev_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # 下一步按钮
+        self._next_btn = ttk.Button(self._nav_frame, 
+                                 text="▶️ 下一步", 
+                                 command=None,
+                                 style='Hospital.TButton')
+        self._next_btn.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 右侧操作按钮区域
+        self._action_frame = ttk.Frame(self._button_frame, style='Hospital.TFrame')
+        self._action_frame.pack(side=tk.RIGHT)
+        
+        # 开始/完成按钮
+        self._action_btn = ttk.Button(self._action_frame, 
+                                   text="🚀 开始检测", 
+                                   command=None,
+                                   style='Success.TButton')
+        self._action_btn.pack()
+    
+    def _update_step_content(self, session_steps, completed_steps):
+        """更新步骤内容（只更新数据，不重建控件）"""
+        try:
+            # 获取检测步骤定义
+            detection_steps = [
+                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
+                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
+                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
+                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
+                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
+                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+            ]
+            
+            if completed_steps >= len(detection_steps):
+                # 所有步骤已完成
+                self._step_title_label.config(text="✅ 所有检测步骤已完成")
+                self._step_duration_label.config(text="")
+                self._step_description_label.config(text="")
+                
+                # 隐藏倒计时和状态
+                self._countdown_left_label.config(text="")
+                self._countdown_right_label.config(text="")
+                self._status_label.config(text="")
+                
+                # 隐藏导航按钮，显示完成按钮
+                self._prev_btn.pack_forget()
+                self._next_btn.pack_forget()
+                self._action_btn.config(text="🎉 完成检测", 
+                                      command=self.complete_embedded_detection)
+                return
+            
+            # 获取下一个步骤
+            current_step = detection_steps[completed_steps]
+            self.current_detection_step = current_step
+            
+            # 更新步骤信息
+            self._step_title_label.config(text=f"第 {current_step['number']} 步: {current_step['name']}")
+            self._step_duration_label.config(text=f"⏱️ 时长: {current_step['duration']}秒")
+            self._step_description_label.config(text=f"📝 说明: {current_step['description']}")
+            
+            # 更新状态显示
+            if hasattr(self, 'step_in_progress') and self.step_in_progress:
+                # 进行中：显示倒计时
+                self._countdown_left_label.config(text="⏰ 倒计时:")
+                
+                # 计算剩余时间
+                if hasattr(self, 'current_step_start_time') and hasattr(self, 'current_step_duration'):
+                    from datetime import datetime
+                    elapsed = (datetime.now() - self.current_step_start_time).seconds
+                    remaining = max(0, self.current_step_duration - elapsed)
+                    remaining_minutes = remaining // 60
+                    remaining_seconds = remaining % 60
+                    countdown_text = f"{remaining_minutes:02d}:{remaining_seconds:02d}"
+                else:
+                    countdown_text = f"{current_step['duration']//60:02d}:{current_step['duration']%60:02d}"
+                
+                self._countdown_right_label.config(text=countdown_text)
+                self.current_step_countdown_label = self._countdown_right_label  # 兼容性
+                
+                # 状态显示
+                self._status_label.config(text="🔄 检测进行中...")
+                
+                # 隐藏导航按钮，显示完成按钮
+                self._prev_btn.pack_forget()
+                self._next_btn.pack_forget()
+                self._action_btn.config(text="✅ 完成当前步骤", 
+                                      command=lambda: self.manual_complete_step())
+            else:
+                # 未开始：显示空行占位
+                self._countdown_left_label.config(text="")
+                self._countdown_right_label.config(text="")
+                self._status_label.config(text="")
+                
+                # 显示导航按钮
+                if completed_steps > 0:
+                    self._prev_btn.pack(side=tk.LEFT, padx=(0, 5))
+                    self._prev_btn.config(command=lambda: self.go_to_step(completed_steps - 1))
+                else:
+                    self._prev_btn.pack_forget()
+                
+                if completed_steps < len(detection_steps) - 1:
+                    self._next_btn.pack(side=tk.LEFT, padx=(5, 0))
+                    self._next_btn.config(command=lambda: self.go_to_step(completed_steps + 1))
+                else:
+                    self._next_btn.pack_forget()
+                
+                # 显示开始按钮
+                self._action_btn.config(text=f"🚀 开始第{current_step['number']}步", 
+                                      command=lambda: self.start_detection_step(current_step))
+            
+        except Exception as e:
+            print(f"更新步骤内容失败: {e}")
+            
+        except Exception as e:
+            print(f"显示嵌入式检测界面失败: {e}")
+            messagebox.showerror("错误", f"显示检测界面失败：{e}")
+    
+    
+    def start_detection_step(self, step_info):
+        """开始执行检测步骤"""
+        try:
+            print(f"开始执行步骤: {step_info['name']}")
+            
+            # 记录到数据库
+            step_id = db.create_detection_step(
+                self.current_session['id'],
+                step_info['number'],
+                step_info['name'],
+                step_info['duration']
+            )
+            
+            if step_id > 0:
+                # 直接在当前界面开始检测
+                self.start_step_detection_dialog(step_info, step_id)
+            else:
+                messagebox.showerror("错误", "无法创建检测步骤记录")
+            
+        except Exception as e:
+            print(f"执行检测步骤失败: {e}")
+            messagebox.showerror("错误", f"执行检测步骤失败：{e}")
+    
+    def start_step_detection_dialog(self, step_info, step_id):
+        """在当前界面开始检测步骤"""
+        try:
+            print(f"开始检测步骤: {step_info['name']}")
+            
+            # 检查硬件连接（关键逻辑）
+            print(f"[DEBUG] 步骤信息: {step_info}")  # 调试信息
+            if not self.check_hardware_connection(step_info):
+                device_type = step_info.get('device_type', '未知')
+                print(f"[ERROR] {device_type}设备未连接，无法开始检测")
+                messagebox.showerror("硬件错误", f"检测到{device_type}设备未连接，请检查硬件连接后重试。")
+                return
+            
+            # 记录步骤开始时间
+            from datetime import datetime
+            self.current_step_start_time = datetime.now()
+            self.current_step_duration = step_info['duration']
+            self.current_step_id = step_id
+            self.step_in_progress = True
+            
+            # 更新数据库状态
+            db.update_test_step_status(step_id, 'in_progress', start_time=self.current_step_start_time.isoformat())
+            
+            # 切换到当前热力图（在开始前切换）
+            print(f"[INFO] 开始{step_info['name']}检测，切换到{step_info['device_type']}设备")
+            self.switch_to_current_heatmap(step_info)
+            
+            # 刷新界面显示倒计时
+            self.refresh_embedded_detection()
+            
+            # 启动计时器
+            self.update_step_timer()
+            
+        except Exception as e:
+            print(f"启动检测步骤失败: {e}")
+            messagebox.showerror("错误", f"启动检测步骤失败：{e}")
+    
+    def switch_to_current_heatmap(self, step_info):
+        """切换到当前步骤对应的热力图"""
+        try:
+            device_type = step_info.get('device_type', '坐垫')
+            print(f"[INFO] 正在切换到{device_type}设备...")
+            
+            # 直接通过可视化器切换设备模式
+            if hasattr(self, 'visualizer') and self.visualizer:
+                # 更新可视化器的设备模式
+                if hasattr(self.visualizer, 'update_display_mode'):
+                    self.visualizer.update_display_mode(device_type)
+                    print(f"[INFO] ✓ 成功切换到{device_type}设备模式")
+                else:
+                    print(f"[WARNING] 可视化器不支持 update_display_mode 方法")
+                
+                # 更新数据处理器的设备类型
+                if hasattr(self, 'data_processor') and self.data_processor:
+                    if hasattr(self.data_processor, 'set_device_type'):
+                        self.data_processor.set_device_type(device_type)
+                        print(f"[INFO] ✓ 数据处理器已切换到{device_type}模式")
+                
+                # 更新热力图标题
+                if hasattr(self, 'plot_frame'):
+                    self.plot_frame.config(text=f"🔥 {device_type}热力图")
+                    
+            else:
+                print(f"[WARNING] 可视化器未初始化，无法切换设备")
+                
+        except Exception as e:
+            print(f"切换热力图失败: {e}")
+    
+    def switch_to_chair_device(self):
+        """切换到坐垫设备模式（废弃，由 switch_to_current_heatmap 统一处理）"""
+        print("[DEPRECATED] switch_to_chair_device 已废弃，使用 switch_to_current_heatmap")
+        return True
+    
+    def switch_to_floor_device(self, device_type):
+        """切换到脚垫/步道设备模式（废弃，由 switch_to_current_heatmap 统一处理）"""
+        print(f"[DEPRECATED] switch_to_floor_device 已废弃，使用 switch_to_current_heatmap")
+        return True
+    
+    def complete_detection_step(self, step_id):
+        """完成检测步骤"""
+        try:
+            # 更新步骤状态
+            from datetime import datetime
+            db.update_test_step_status(step_id, 'completed', end_time=datetime.now().isoformat())
+            print(f"步骤 {step_id} 已完成")
+            
+            # 更新会话进度
+            if self.current_session:
+                session_steps = db.get_session_steps(self.current_session['id'])
+                completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                total_steps = self.current_session.get('total_steps', 6)
+                
+                # 更新数据库中的会话进度
+                db.update_test_session_progress(self.current_session['id'], completed_steps)
+                
+                # 如果所有步骤都完成了，标记会话为完成
+                if completed_steps >= total_steps:
+                    db.update_test_session_progress(self.current_session['id'], completed_steps, 'completed')
+                    print(f"[INFO] 检测会话已完成，共完成 {completed_steps}/{total_steps} 步")
+            
+        except Exception as e:
+            print(f"完成检测步骤失败: {e}")
+    
+    def refresh_embedded_detection(self):
+        """刷新嵌入式检测界面"""
+        if self.embedded_detection_active and self.current_session:
+            self.show_embedded_detection()
+    
+    def pause_embedded_detection(self):
+        """暂停检测"""
+        # 隐藏嵌入式检测界面
+        self.hide_embedded_detection()
+        messagebox.showinfo("检测暂停", "检测已暂停，您可以随时恢复")
+    
+    def stop_embedded_detection(self):
+        """结束检测"""
+        result = messagebox.askyesno("确认结束", "确定要结束当前检测吗？\n未完成的数据将被保留。")
+        if result:
+            self.hide_embedded_detection()
             self.detection_in_progress = False
-            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
-            self._active_detection_wizard = None
+            self.start_detection_btn.config(text="🚀 快速检测", state="normal")
+    
+    def complete_embedded_detection(self):
+        """完成所有检测步骤"""
+        try:
+            # 更新会话状态为完成
+            total_steps = self.current_session.get('total_steps', 6)
+            db.update_test_session_progress(self.current_session['id'], total_steps, 'completed')
+            
+            self.hide_embedded_detection()
+            self.detection_in_progress = False
+            self.start_detection_btn.config(text="🚀 快速检测", state="normal")
+            
+            messagebox.showinfo("检测完成", f"患者 {self.current_patient['name']} 的检测已完成！\n您可以生成分析报告。")
+            
+            # 刷新患者列表以反映最新状态
+            self.refresh_patient_list()
+            
+        except Exception as e:
+            print(f"完成检测失败: {e}")
+            messagebox.showerror("错误", f"完成检测失败：{e}")
+    
+    def update_step_timer(self):
+        """更新步骤计时器"""
+        if not hasattr(self, 'step_in_progress') or not self.step_in_progress:
+            return
+        
+        try:
+            from datetime import datetime
+            
+            # 计算已用时间
+            elapsed = (datetime.now() - self.current_step_start_time).seconds
+            remaining = max(0, self.current_step_duration - elapsed)
+            
+            remaining_minutes = remaining // 60
+            remaining_seconds = remaining % 60
+            
+            # 更新倒计时显示
+            if hasattr(self, 'current_step_countdown_label'):
+                countdown_text = f"{remaining_minutes:02d}:{remaining_seconds:02d}"
+                self.current_step_countdown_label.config(text=countdown_text)
+                
+                # 根据剩余时间改变颜色（只在颜色需要变化时更新）
+                current_color = self.current_step_countdown_label.cget('foreground')
+                if remaining <= 10 and current_color != "#f44336":
+                    self.current_step_countdown_label.config(foreground="#f44336")  # 红色
+                elif remaining <= 30 and remaining > 10 and current_color != "#ff9800":
+                    self.current_step_countdown_label.config(foreground="#ff9800")  # 橙色
+                elif remaining > 30 and current_color != "#2196f3":
+                    self.current_step_countdown_label.config(foreground="#2196f3")  # 蓝色
+            
+            # 检查是否时间到了
+            if remaining <= 0:
+                # 自动完成步骤
+                self.auto_complete_step()
+                return
+        
+        except Exception as e:
+            print(f"更新步骤计时器失败: {e}")
+        
+        # 继续更新计时器（进一步优化时间间隔）
+        self.root.after(1000, self.update_step_timer)  # 恢复为1000ms，减少频繁更新
+    
+    def auto_complete_step(self):
+        """自动完成当前步骤"""
+        try:
+            if hasattr(self, 'current_step_id') and self.step_in_progress:
+                print(f"步骤时间到，自动完成步骤 {self.current_step_id}")
+                
+                # 标记步骤不再进行
+                self.step_in_progress = False
+                
+                # 参考原弹窗逻辑完成步骤
+                self.complete_step_with_full_logic(self.current_step_id)
+                
+        except Exception as e:
+            print(f"自动完成步骤失败: {e}")
+    
+    def complete_step_with_full_logic(self, step_id):
+        """使用完整逻辑完成步骤（参考原弹窗）"""
+        try:
+            from datetime import datetime
+            
+            if not hasattr(self, 'current_step_start_time'):
+                print("[WARNING] 步骤开始时间未记录")
+                self.current_step_start_time = datetime.now()
+            
+            end_time = datetime.now()
+            
+            # 计算用时
+            if self.current_step_start_time:
+                duration_seconds = (end_time - self.current_step_start_time).seconds
+                duration_text = f"检测完成，用时：{duration_seconds}秒"
+            else:
+                duration_text = "检测完成"
+            
+            # 更新数据库步骤状态（参考原弹窗逻辑）
+            db.update_test_step_status(
+                step_id, 
+                'completed', 
+                # data_file_path=self.data_file_path,  # 暂时不创建文件
+                end_time=end_time.isoformat(),
+                notes=duration_text
+            )
+            
+            print(f"步骤 {step_id} 已完成: {duration_text}")
+            
+            # 更新会话进度
+            if self.current_session:
+                session_steps = db.get_session_steps(self.current_session['id'])
+                completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                total_steps = self.current_session.get('total_steps', 6)
+                
+                # 更新数据库中的会话进度
+                db.update_test_session_progress(self.current_session['id'], completed_steps)
+                
+                # 如果所有步骤都完成了，标记会话为完成
+                if completed_steps >= total_steps:
+                    db.update_test_session_progress(self.current_session['id'], completed_steps, 'completed')
+                    print(f"[INFO] 检测会话已完成，共完成 {completed_steps}/{total_steps} 步")
+            
+            # 延迟1秒后刷新界面显示下一步
+            self.root.after(2000, self.refresh_embedded_detection)  # 从1000ms改为2000ms，减少不必要的刷新
+            
+        except Exception as e:
+            print(f"完成检测步骤失败: {e}")
+    
+    def go_to_step(self, step_index):
+        """跳转到指定步骤"""
+        try:
+            # 获取检测步骤定义
+            detection_steps = [
+                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
+                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
+                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
+                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
+                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
+                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+            ]
+            
+            if 0 <= step_index < len(detection_steps):
+                print(f"导航到第 {step_index + 1} 步: {detection_steps[step_index]['name']}")
+                
+                # 停止当前计时器
+                if hasattr(self, 'step_in_progress'):
+                    self.step_in_progress = False
+                
+                # 刷新界面显示指定步骤
+                self.refresh_embedded_detection()
+                
+            else:
+                print(f"无效的步骤索引: {step_index}")
+                
+        except Exception as e:
+            print(f"跳转步骤失败: {e}")
+    
+    def manual_complete_step(self):
+        """手动完成当前步骤"""
+        try:
+            if hasattr(self, 'current_step_id') and self.step_in_progress:
+                print(f"手动完成步骤 {self.current_step_id}")
+                
+                # 标记步骤不再进行
+                self.step_in_progress = False
+                
+                # 使用完整逻辑完成步骤
+                self.complete_step_with_full_logic(self.current_step_id)
+                
+            else:
+                print("没有正在进行的步骤")
+                
+        except Exception as e:
+            print(f"手动完成步骤失败: {e}")
+    
+    def get_current_step_hardware(self):
+        """获取当前步骤使用的硬件"""
+        try:
+            # 获取检测步骤定义
+            detection_steps = [
+                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
+                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
+                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
+                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
+                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
+                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+            ]
+            
+            if self.current_session:
+                session_steps = db.get_session_steps(self.current_session['id'])
+                completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                
+                if completed_steps < len(detection_steps):
+                    current_step = detection_steps[completed_steps]
+                    return current_step['device_type']
+                else:
+                    return "检测已完成"
+            
+            return "未开始"
+            
+        except Exception as e:
+            print(f"获取当前硬件失败: {e}")
+            return "未知"
+    
+    def check_hardware_connection(self, step_info):
+        """检查当前步骤所需的硬件连接"""
+        try:
+            device_type = step_info.get('device_type', '坐垫')
+            print(f"[INFO] 正在检查{device_type}设备连接...")
+            
+            # 这里应该是实际的硬件检测逻辑
+            # 可以检查串口连接、设备响应、传感器数据等
+            
+            if device_type == "坐垫":
+                # 检查坐垫设备
+                hardware_connected = self.check_chair_device()
+            elif device_type == "脚垫":
+                # 检查脚垫设备
+                hardware_connected = self.check_floor_device() 
+            elif device_type == "步道":
+                # 检查步道设备
+                hardware_connected = self.check_walkway_device()
+            else:
+                print(f"[WARNING] 未知设备类型: {device_type}")
+                hardware_connected = False
+            
+            if hardware_connected:
+                print(f"[INFO] ✓ {device_type}设备连接正常")
+                return True
+            else:
+                print(f"[ERROR] ✗ {device_type}设备连接失败")
+                return False
+                
+        except Exception as e:
+            print(f"硬件检查异常: {e}")
+            return False
+    
+    def check_chair_device(self):
+        """检查坐垫设备连接"""
+        try:
+            # 检查坐垫设备的实际逻辑
+            # 例如：检查对应的串口是否打开，是否有数据等
+            if hasattr(self, 'serial_interface') and self.serial_interface:
+                # 检查串口连接状态
+                if self.serial_interface.is_connected():
+                    # 可以发送测试命令检查设备响应
+                    return True
+            
+            # 如果没有串口接口或连接失败
+            print("[WARNING] 坐垫设备检查：串口未连接")
+            # 开发阶段：暂时返回True，实际部署时改为False
+            return True  # TODO: 实际部署时需要真实检测
+            
+        except Exception as e:
+            print(f"检查坐垫设备失败: {e}")
+            return False
+    
+    def check_floor_device(self):
+        """检查脚垫设备连接"""
+        try:
+            # 检查脚垫设备的实际逻辑
+            if hasattr(self, 'serial_interface') and self.serial_interface:
+                if self.serial_interface.is_connected():
+                    return True
+            
+            print("[WARNING] 脚垫设备检查：串口未连接")
+            return True  # TODO: 实际部署时需要真实检测
+            
+        except Exception as e:
+            print(f"检查脚垫设备失败: {e}")
+            return False
+    
+    def check_walkway_device(self):
+        """检查步道设备连接"""
+        try:
+            # 检查步道设备的实际逻辑
+            if hasattr(self, 'serial_interface') and self.serial_interface:
+                if self.serial_interface.is_connected():
+                    return True
+            
+            print("[WARNING] 步道设备检查：串口未连接") 
+            return True  # TODO: 实际部署时需要真实检测
+            
+        except Exception as e:
+            print(f"检查步道设备失败: {e}")
+            return False
+    
+    def hide_embedded_detection(self):
+        """隐藏嵌入式检测界面"""
+        # 清除检测内容
+        for widget in self.detection_content_frame.winfo_children():
+            widget.destroy()
+        
+        # 重新显示初始状态
+        self.detection_status_label.pack(pady=20)
+        self.embedded_detection_active = False
     
     def check_detection_completion(self):
         """检查检测完成状态"""

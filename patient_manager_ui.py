@@ -409,10 +409,26 @@ class PatientManagerDialog:
         """新建患者"""
         dialog = PatientEditDialog(self.dialog, title="新建患者档案")
         if dialog.result:
+            # 新建成功后清空搜索，确保能看到新记录
+            try:
+                self.search_var.set("")
+            except Exception:
+                pass
             patient_id = db.add_patient(**dialog.result)
             if patient_id > 0:
                 messagebox.showinfo("成功", f"患者档案创建成功！\n患者ID: {patient_id}")
                 self.refresh_patient_list()
+                # 在列表中选中新建的患者并滚动到可见
+                try:
+                    for item_id in self.patient_tree.get_children():
+                        tags = self.patient_tree.item(item_id).get('tags', ())
+                        if tags and int(tags[0]) == int(patient_id):
+                            self.patient_tree.selection_set(item_id)
+                            self.patient_tree.focus(item_id)
+                            self.patient_tree.see(item_id)
+                            break
+                except Exception:
+                    pass
                 
                 # 任何时候新建患者后都自动选择该患者
                 new_patient = db.get_patient_by_id(patient_id)
@@ -631,8 +647,14 @@ class PatientEditDialog:
     
     def update_layout(self, event=None):
         """根据窗口尺寸动态调整字体、间距和控件高度"""
-        width = max(self.dialog.winfo_width(), 300)  # 防止过小
-        height = max(self.dialog.winfo_height(), 350)  # 防止过小
+        # 柔性防护：窗口可能在关闭过程中触发该回调
+        try:
+            if not self.dialog or not self.dialog.winfo_exists():
+                return
+            width = max(self.dialog.winfo_width(), 300)  # 防止过小
+            height = max(self.dialog.winfo_height(), 350)  # 防止过小
+        except Exception:
+            return
         
         # 计算缩放因子，基于基准分辨率 400x500
         scale_factor = min(width / 400, height / 500, 1.5)

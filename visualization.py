@@ -6,6 +6,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import threading
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.colors as colors
@@ -25,6 +26,10 @@ class HeatmapVisualizer:
         self.array_rows = array_rows
         self.array_cols = array_cols
         
+        # 线程/生命周期控制
+        self._closing = False
+        self._scheduled_after_id = None
+        
         # 高质量渲染参数
         self.enable_high_quality = True  # 启用高质量渲染
         self.upscale_factor = 4          # 升采样倍数（32x32 -> 128x128）
@@ -37,15 +42,44 @@ class HeatmapVisualizer:
         
         # 性能优化参数
         self.frame_skip_counter = 0
-        self.frame_skip_threshold = 2  # 每3帧渲染1帧
+        # 提高跳帧阈值，进一步降低主线程负载
+        self.frame_skip_threshold = 3  # 每4帧渲染1帧
         self.last_render_time = 0
-        self.min_render_interval = 0.033  # 最小渲染间隔33ms (30fps)
+        # 降帧：将最小渲染间隔从 ~30FPS 调整为 ~10FPS
+        self.min_render_interval = 0.1  # 最小渲染间隔100ms (10fps)
         
         # 创建强对比度颜色映射
         self.setup_colormap()
         
         # 创建matplotlib图形
         self.setup_figure()
+        
+    def cleanup(self):
+        """安全清理，避免销毁后仍有绘制回调触发"""
+        self._closing = True
+        try:
+            if self._scheduled_after_id is not None:
+                self.parent_frame.after_cancel(self._scheduled_after_id)
+        except Exception:
+            pass
+        # 兼容：若未来加入结果检查循环，预留取消句柄
+        if hasattr(self, '_check_after_id') and self._check_after_id:
+            try:
+                self.parent_frame.after_cancel(self._check_after_id)
+            except Exception:
+                pass
+        try:
+            if hasattr(self, 'canvas') and self.canvas:
+                widget = self.canvas.get_tk_widget()
+                if widget:
+                    widget.pack_forget()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'fig') and self.fig:
+                plt.close(self.fig)
+        except Exception:
+            pass
         
     def setup_colormap(self):
         """设置医学专用热力图颜色映射 - 256级医院精度"""
@@ -243,8 +277,17 @@ class HeatmapVisualizer:
     #     self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
         
     def update_data(self, matrix_2d, statistics=None):
-        """更新显示数据 - 带帧跳跃优化"""
+        """更新显示数据 - 带帧跳跃优化（保证在主线程执行UI操作）"""
         try:
+            if self._closing:
+                return
+            # 如果当前不在主线程，切回主线程执行
+            if threading.current_thread() is not threading.main_thread():
+                try:
+                    self._scheduled_after_id = self.parent_frame.after(0, lambda: self.update_data(matrix_2d, statistics))
+                except Exception:
+                    pass
+                return
             # 检查数据有效性
             if matrix_2d is None or matrix_2d.size == 0:
                 return
@@ -296,7 +339,11 @@ class HeatmapVisualizer:
                 # self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
             
             # 使用快速重绘，只更新数据区域
-            self.canvas.draw_idle()  # 使用idle绘制，减少频繁重绘
+            try:
+                self.canvas.draw_idle()  # 使用idle绘制，减少频繁重绘
+            except Exception:
+                # 在销毁或关闭阶段可能抛出异常，忽略
+                pass
             
         except Exception as e:
             pass
