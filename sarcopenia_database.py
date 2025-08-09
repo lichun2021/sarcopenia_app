@@ -494,6 +494,34 @@ class SarcopeniaDatabase:
         finally:
             conn.close()
     
+    def create_detection_step(self, session_id: int, step_number: int, step_name: str, 
+                             duration: int = None, device_type: str = "坐垫") -> int:
+        """创建检测步骤记录"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            current_time = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO test_steps 
+                (session_id, step_number, step_name, device_type, duration, status, start_time)
+                VALUES (?, ?, ?, ?, ?, 'in_progress', ?)
+            ''', (session_id, step_number, step_name, device_type, duration, current_time))
+            
+            step_id = cursor.lastrowid
+            conn.commit()
+            
+            print(f"[INFO] 创建检测步骤: {step_name} (ID: {step_id})")
+            return step_id
+            
+        except Exception as e:
+            print(f"[ERROR] 创建检测步骤失败: {e}")
+            conn.rollback()
+            return 0
+        finally:
+            conn.close()
+    
     def update_test_step_status(self, step_id: int, status: str, data_file_path: str = None, 
                                start_time: str = None, end_time: str = None, notes: str = None) -> bool:
         """更新检测步骤状态"""

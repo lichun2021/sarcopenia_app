@@ -544,13 +544,14 @@ class PressureSensorUI:
                 if device_info:
                     # 显示端口信息
                     com_ports = device_info.get('com_ports', 1)
-                    if com_ports > 1:
-                        ports = device_info.get('ports', [])
-                        port_display = f"端口: {', '.join(ports)} ({com_ports}个)"
-                    else:
-                        port = device_info.get('port') or device_info.get('ports', ['未知'])[0]
-                        port_display = f"端口: {port}"
-                    self.port_info_label.config(text=port_display)
+                    # 端口信息将直接显示在状态标签中，不需要单独的端口标签
+                    # if com_ports > 1:
+                    #     ports = device_info.get('ports', [])
+                    #     port_display = f"端口: {', '.join(ports)} ({com_ports}个)"
+                    # else:
+                    #     port = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+                    #     port_display = f"端口: {port}"
+                    # 注释掉单独的端口标签更新
                     
                     # 自动根据设备类型配置数组大小
                     self.auto_config_array_size(device_info['array_size'])
@@ -597,8 +598,8 @@ class PressureSensorUI:
                     
                     self.log_message(f"[OK] 已切换到设备: {device_info['icon']} {device_info['name']} ({port_display})")
                     
-                    # 延迟自动连接设备，给端口释放时间
-                    self.root.after(1000, self.auto_connect_device)  # 等待1秒后连接
+                    # 立即自动连接设备（解决问题1：切换设备时立即连接）
+                    self.root.after(100, self.auto_connect_device)  # 快速连接
                     
                 break
     
@@ -628,14 +629,28 @@ class PressureSensorUI:
         except:
             pass
     
+    def update_detection_button_state(self, enabled=True, text="🚀 快速检测"):
+        """更新检测按钮状态（解决问题2：设备连接失败时禁用按钮）"""
+        try:
+            if hasattr(self, 'start_detection_btn'):
+                self.start_detection_btn.config(
+                    state="normal" if enabled else "disabled",
+                    text=text
+                )
+        except Exception as e:
+            print(f"[DEBUG] 更新检测按钮状态失败: {e}")
+    
     def auto_connect_device(self):
         """自动连接当前设备"""
         if not self.device_configured or not self.serial_interface:
+            # 禁用检测按钮
+            self.update_detection_button_state(False, "❌ 设备未配置")
             return
             
         try:
             device_info = self.device_manager.get_current_device_info()
             if not device_info:
+                self.update_detection_button_state(False, "❌ 设备信息错误")
                 return
                 
             # 显示设备端口信息
@@ -653,9 +668,21 @@ class PressureSensorUI:
                 self.last_data_time = time.time()
                 self.device_lost_warned = False  # 重置警告状态
                 
-                # 更新UI状态
-                self.status_label.config(text="🟢 已连接", foreground="green")
+                # 获取端口信息
+                com_ports = device_info.get('com_ports', 1)
+                if com_ports > 1:
+                    ports = device_info.get('ports', [])
+                    port_display = f"({', '.join(ports)})"
+                else:
+                    port = device_info.get('port') or device_info.get('ports', ['未知'])[0]
+                    port_display = f"({port})"
+                
+                # 更新UI状态 - 包含端口信息
+                self.status_label.config(text=f"🟢 已连接 {port_display}", foreground="green")
                 self.log_message(f"[OK] 自动连接成功: {device_info['icon']} {device_info['name']}")
+                
+                # 启用检测按钮（解决问题2：连接成功时启用按钮）
+                self.update_detection_button_state(True, "🚀 快速检测")
                 
                 # 连接成功后仍允许设备切换
                 if self.device_configured:
@@ -664,10 +691,14 @@ class PressureSensorUI:
             else:
                 self.status_label.config(text="[ERROR] 连接失败", foreground="red")
                 self.log_message(f"[ERROR] 自动连接失败: {device_info['icon']} {device_info['name']}")
+                # 禁用检测按钮（解决问题2：连接失败时禁用按钮）
+                self.update_detection_button_state(False, "❌ 连接失败")
                 
         except Exception as e:
             self.status_label.config(text="[ERROR] 连接错误", foreground="red")
             self.log_message(f"[ERROR] 自动连接错误: {e}")
+            # 禁用检测按钮（解决问题2：连接错误时禁用按钮）
+            self.update_detection_button_state(False, "❌ 连接错误")
     
     def start_connection_monitor(self):
         """启动连接监控"""
@@ -1416,22 +1447,17 @@ class PressureSensorUI:
         right_frame.grid(row=0, column=10, sticky='e', padx=(0, 5))
         control_frame.columnconfigure(10, weight=1)  # 让这一列占据剩余空间
         
-        # 状态标签 - 医院配色
+        # 状态标签 - 医院配色（最右边）包含端口信息
         self.status_label = tk.Label(right_frame, text="⚙️ 未选择患者", 
                                    foreground="#ff6b35", bg='#ffffff',
                                    font=('Microsoft YaHei UI', 10, 'bold'))
         self.status_label.pack(side='right')
         
-        # 端口信息显示
-        self.port_info_label = tk.Label(control_frame, text="端口: 未知",
-                                      bg='#ffffff', fg='#6c757d',
-                                      font=('Microsoft YaHei UI', 9))
-        self.port_info_label.grid(row=0, column=4, padx=(0, 15))
-        
-        # 快速检测按钮 - 在第一行右边
-        self.start_detection_btn = ttk.Button(control_frame, text="🚀 快速检测", 
+        # 快速检测按钮 - 在第一行右边（初始状态禁用）
+        self.start_detection_btn = ttk.Button(control_frame, text="❌ 设备未连接", 
                                             command=self.start_detection_process,
-                                            style='Success.TButton')
+                                            style='Success.TButton',
+                                            state='disabled')
         self.start_detection_btn.grid(row=0, column=5, padx=(0, 15), sticky='e')
         
         # 生成报告按钮 - 在快速检测按钮旁边
@@ -1721,6 +1747,9 @@ class PressureSensorUI:
             self.status_label.config(text="⚫ 未连接", foreground="red")
             self.log_message("[INFO] 连接已断开")
             
+            # 禁用检测按钮（解决问题2：断开连接时禁用按钮）
+            self.update_detection_button_state(False, "❌ 设备未连接")
+            
             # 重新启用设备选择
             if self.device_configured:
                 self.device_combo.config(state="readonly")
@@ -1820,6 +1849,19 @@ class PressureSensorUI:
                                 self._wizard_error_count += 1
                                 if self._wizard_error_count % 100 == 0:  # 每100次错误才记录一次
                                     self.log_ai_message(f"[WARNING] 向导数据写入错误: {e}")
+                        
+                        # 主UI检测步骤数据记录（新增）
+                        elif getattr(self, '_recording_data', False):
+                            # 如果主UI正在记录数据（而不是向导）
+                            try:
+                                self.write_csv_data_row(processed_data)
+                            except Exception as e:
+                                # 减少错误日志频率
+                                if not hasattr(self, '_main_csv_error_count'):
+                                    self._main_csv_error_count = 0
+                                self._main_csv_error_count += 1
+                                if self._main_csv_error_count % 100 == 0:  # 每100次错误才记录一次
+                                    print(f"[WARNING] 主UI数据写入错误: {e}")
                         
                         # 显示丢弃的帧数（如果有）- 已禁用日志
                         dropped_frames = len(frame_data_list) - 1
@@ -3211,11 +3253,7 @@ class PressureSensorUI:
             self._selecting_for_detection = False
             
             # 重置按钮状态
-            if hasattr(self, 'start_detection_btn'):
-                try:
-                    self.start_detection_btn.config(text="🚀 开始检测", state="normal")
-                except:
-                    pass
+            self.update_detection_button_state(True, "🚀 快速检测")
             
             # 停止肌少症分析服务
             if hasattr(self, 'sarcneuro_panel') and self.sarcneuro_panel:
@@ -3701,6 +3739,11 @@ class PressureSensorUI:
             selector = PatientManagerDialog(self.root, title="选择患者档案", select_mode=True)
             if selector.selected_patient:
                 self.current_patient = selector.selected_patient
+                # 重置检测步骤导航索引
+                self.current_step_index = 0
+                # 清除之前的会话信息
+                if hasattr(self, 'current_session'):
+                    self.current_session = None
                 self.update_patient_status()
                 return True
             return False
@@ -3788,6 +3831,11 @@ class PressureSensorUI:
             if not self.device_configured:
                 messagebox.showwarning("设备未配置", "请先配置检测设备后再开始检测！")
                 self.show_device_config()
+                return
+                
+            # 检查设备连接状态（解决问题2：确保设备已连接才能检测）
+            if not self.is_running or not (self.serial_interface and self.serial_interface.is_connected()):
+                messagebox.showwarning("设备未连接", "设备未连接或连接失败，请检查设备连接后重试！")
                 return
             
             # 检查是否选择了患者
@@ -4376,38 +4424,36 @@ class PressureSensorUI:
         try:
             # 获取检测步骤定义
             detection_steps = [
-                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
-                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
-                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
-                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
-                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
-                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+                {"number": 1, "name": "静坐检测", "duration": 10, "device_type": "坐垫", "description": "请患者安静坐在传感器上10秒"},
+                {"number": 2, "name": "起坐测试", "duration": 30, "device_type": "坐垫", "description": "请患者进行5次起坐动作"},
+                {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
+                {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
+                {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
+                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
             ]
             
-            if completed_steps >= len(detection_steps):
-                # 所有步骤已完成
-                self._step_title_label.config(text="✅ 所有检测步骤已完成")
-                self._step_duration_label.config(text="")
-                self._step_description_label.config(text="")
-                
-                # 隐藏倒计时和状态
-                self._countdown_left_label.config(text="")
-                self._countdown_right_label.config(text="")
-                self._status_label.config(text="")
-                
-                # 隐藏导航按钮，显示完成按钮
-                self._prev_btn.pack_forget()
-                self._next_btn.pack_forget()
-                self._action_btn.config(text="🎉 完成检测", 
-                                      command=self.complete_embedded_detection)
-                return
+            # 初始化当前步骤索引（支持导航）
+            if not hasattr(self, 'current_step_index'):
+                # 默认显示第一个未完成的步骤
+                self.current_step_index = completed_steps
             
-            # 获取下一个步骤
-            current_step = detection_steps[completed_steps]
+            # 确保索引在有效范围内
+            self.current_step_index = max(0, min(self.current_step_index, len(detection_steps) - 1))
+            
+            # 获取当前要显示的步骤
+            current_step = detection_steps[self.current_step_index]
             self.current_detection_step = current_step
             
+            # 查找该步骤的状态
+            step_status = 'pending'
+            for db_step in session_steps:
+                if db_step['step_number'] == current_step['number']:
+                    step_status = db_step['status']
+                    break
+            
             # 更新步骤信息
-            self._step_title_label.config(text=f"第 {current_step['number']} 步: {current_step['name']}")
+            status_icon = "✅" if step_status == 'completed' else "⏳" if step_status == 'in_progress' else "⭕"
+            self._step_title_label.config(text=f"{status_icon} 第 {current_step['number']} 步: {current_step['name']}")
             self._step_duration_label.config(text=f"⏱️ 时长: {current_step['duration']}秒")
             self._step_description_label.config(text=f"📝 说明: {current_step['description']}")
             
@@ -4444,49 +4490,190 @@ class PressureSensorUI:
                 self._countdown_right_label.config(text="")
                 self._status_label.config(text="")
                 
-                # 显示导航按钮
-                if completed_steps > 0:
+                # 显示导航按钮（修正导航逻辑）
+                if self.current_step_index > 0:
                     self._prev_btn.pack(side=tk.LEFT, padx=(0, 5))
-                    self._prev_btn.config(command=lambda: self.go_to_step(completed_steps - 1))
+                    self._prev_btn.config(command=self.prev_detection_step)
                 else:
                     self._prev_btn.pack_forget()
                 
-                if completed_steps < len(detection_steps) - 1:
-                    self._next_btn.pack(side=tk.LEFT, padx=(5, 0))
-                    self._next_btn.config(command=lambda: self.go_to_step(completed_steps + 1))
+                # 下一步按钮：只有当前步骤已完成时才显示和启用
+                if self.current_step_index < len(detection_steps) - 1:
+                    if step_status == 'completed':
+                        # 当前步骤已完成，可以进入下一步
+                        self._next_btn.pack(side=tk.LEFT, padx=(5, 0))
+                        self._next_btn.config(command=self.next_detection_step, state="normal")
+                    else:
+                        # 当前步骤未完成，不显示下一步按钮
+                        self._next_btn.pack_forget()
                 else:
                     self._next_btn.pack_forget()
                 
-                # 显示开始按钮
-                self._action_btn.config(text=f"🚀 开始第{current_step['number']}步", 
-                                      command=lambda: self.start_detection_step(current_step))
+                # 根据步骤状态显示不同的按钮
+                if step_status == 'completed':
+                    # 已完成，显示重新测试按钮
+                    self._action_btn.config(text=f"🔄 重新测试第{current_step['number']}步", 
+                                          command=lambda: self.start_detection_step(current_step))
+                else:
+                    # 未完成，显示开始按钮
+                    self._action_btn.config(text=f"🚀 开始第{current_step['number']}步", 
+                                          command=lambda: self.start_detection_step(current_step))
             
         except Exception as e:
             print(f"更新步骤内容失败: {e}")
+    
+    def prev_detection_step(self):
+        """导航到上一个检测步骤"""
+        try:
+            if hasattr(self, 'current_step_index') and self.current_step_index > 0:
+                self.current_step_index -= 1
+                self._update_detection_content()
+        except Exception as e:
+            print(f"导航到上一步失败: {e}")
+    
+    def next_detection_step(self):
+        """导航到下一个检测步骤（只允许已完成步骤的下一步）"""
+        try:
+            # 检查当前步骤是否已完成
+            if not self.current_session:
+                print("[DEBUG] 没有活跃的检测会话，无法导航")
+                return
+                
+            # 获取会话步骤
+            session_steps = db.get_session_steps(self.current_session['id'])
+            if not session_steps:
+                print("[DEBUG] 未找到会话步骤")
+                return
+                
+            # 检查当前步骤是否已完成
+            current_step_number = self.current_step_index + 1  # 步骤编号从1开始
+            current_step_record = next((step for step in session_steps if step['step_number'] == current_step_number), None)
+            
+            if not current_step_record or current_step_record['status'] != 'completed':
+                # 当前步骤未完成，不允许进入下一步
+                messagebox.showinfo("提示", f"请先完成第{current_step_number}步检测，然后才能进入下一步。")
+                return
+            
+            # 当前步骤已完成，可以进入下一步
+            detection_steps = [
+                {"number": 1, "name": "静坐检测", "duration": 10, "device_type": "坐垫"},
+                {"number": 2, "name": "起坐测试", "duration": 30, "device_type": "坐垫"},
+                {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫"},
+                {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫"},
+                {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫"},
+                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道"}
+            ]
+            
+            if hasattr(self, 'current_step_index') and self.current_step_index < len(detection_steps) - 1:
+                self.current_step_index += 1
+                self._update_detection_content()
+        except Exception as e:
+            print(f"导航到下一步失败: {e}")
+    
+    def auto_next_detection_step(self):
+        """自动导航到下一步并刷新界面"""
+        try:
+            # 增加步骤索引
+            if hasattr(self, 'current_step_index'):
+                self.current_step_index += 1
+            else:
+                # 如果没有索引，获取当前完成的步骤数作为索引
+                if self.current_session:
+                    session_steps = db.get_session_steps(self.current_session['id'])
+                    completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
+                    self.current_step_index = completed_steps
+            
+            # 刷新界面显示下一步
+            self.refresh_embedded_detection()
+            
+            print(f"[INFO] 已自动导航到第 {self.current_step_index + 1} 步")
             
         except Exception as e:
-            print(f"显示嵌入式检测界面失败: {e}")
-            messagebox.showerror("错误", f"显示检测界面失败：{e}")
+            print(f"自动导航到下一步失败: {e}")
+            # 失败时仍然刷新界面
+            self.refresh_embedded_detection()
     
+    def prompt_generate_report(self):
+        """提示用户生成报告"""
+        try:
+            # 刷新界面以显示完成状态
+            self.refresh_embedded_detection()
+            
+            # 询问是否生成报告
+            if self.current_patient and self.current_session:
+                response = messagebox.askyesno(
+                    "检测完成", 
+                    f"🎉 恭喜！患者 {self.current_patient['name']} 的所有检测步骤已完成！\n\n"
+                    f"是否立即生成AI分析报告？"
+                )
+                
+                if response:
+                    # 生成报告
+                    print(f"[INFO] 用户选择生成报告")
+                    self.generate_report_for_session(self.current_session['id'])
+                    # 报告生成后，清空检测窗口并恢复按钮状态
+                    self.complete_embedded_detection()
+                else:
+                    print(f"[INFO] 用户选择稍后生成报告")
+                    messagebox.showinfo("提示", 
+                        "您可以随时通过以下方式生成报告：\n"
+                        "1. 点击主界面的'生成报告'按钮\n"
+                        "2. 在患者管理中选择该会话并生成报告")
+                    # 即使不生成报告，也要清空检测窗口并恢复按钮状态
+                    self.complete_embedded_detection()
+        
+        except Exception as e:
+            print(f"提示生成报告失败: {e}")
+            messagebox.showerror("错误", f"处理完成状态失败：{e}")
     
     def start_detection_step(self, step_info):
         """开始执行检测步骤"""
         try:
             print(f"开始执行步骤: {step_info['name']}")
             
-            # 记录到数据库
-            step_id = db.create_detection_step(
-                self.current_session['id'],
-                step_info['number'],
-                step_info['name'],
-                step_info['duration']
-            )
+            # 检查并切换到所需设备
+            device_type = step_info.get('device_type', '坐垫')
+            print(f"[INFO] 检测步骤需要{device_type}设备")
             
-            if step_id > 0:
+            # 通过主线程的设备管理器检查设备是否存在
+            if not self.check_device_exists_in_manager(device_type):
+                messagebox.showerror(
+                    "设备不可用", 
+                    f"检测步骤需要【{device_type}】设备，但该设备不在主界面的设备列表中。\n\n"
+                    f"请先在设备管理中配置{device_type}设备。"
+                )
+                return
+            
+            # 切换到所需设备
+            if not self.switch_main_ui_device(device_type):
+                messagebox.showwarning(
+                    "设备切换失败",
+                    f"无法自动切换到{device_type}设备。\n\n"
+                    f"请手动在主界面选择{device_type}设备后重试。"
+                )
+                return
+            
+            print(f"[INFO] ✓ 已切换到{device_type}设备")
+            
+            # 从数据库查找现有的步骤记录（步骤在创建session时已预创建）
+            session_steps = db.get_session_steps(self.current_session['id'])
+            step_id = None
+            for step in session_steps:
+                if step['step_number'] == step_info['number']:
+                    step_id = step['id']
+                    break
+            
+            if step_id:
+                # 更新步骤状态为进行中
+                db.update_test_step_status(
+                    step_id, 
+                    'in_progress', 
+                    start_time=datetime.now().isoformat()
+                )
                 # 直接在当前界面开始检测
                 self.start_step_detection_dialog(step_info, step_id)
             else:
-                messagebox.showerror("错误", "无法创建检测步骤记录")
+                messagebox.showerror("错误", f"未找到步骤{step_info['number']}的记录")
             
         except Exception as e:
             print(f"执行检测步骤失败: {e}")
@@ -4497,13 +4684,21 @@ class PressureSensorUI:
         try:
             print(f"开始检测步骤: {step_info['name']}")
             
-            # 检查硬件连接（关键逻辑）
-            print(f"[DEBUG] 步骤信息: {step_info}")  # 调试信息
-            if not self.check_hardware_connection(step_info):
-                device_type = step_info.get('device_type', '未知')
-                print(f"[ERROR] {device_type}设备未连接，无法开始检测")
-                messagebox.showerror("硬件错误", f"检测到{device_type}设备未连接，请检查硬件连接后重试。")
+            # 切换到所需设备并开始检测
+            device_type = step_info.get('device_type', '坐垫')
+            print(f"[INFO] 开始检测步骤: {step_info['name']}，需要{device_type}设备")
+            
+            # 通过主线程的设备管理器确认设备可用
+            if not self.check_device_exists_in_manager(device_type):
+                messagebox.showerror("设备不可用", f"{device_type}设备未配置，无法开始检测")
                 return
+                
+            # 切换设备（利用主程序的设备管理）
+            if not self.switch_main_ui_device(device_type):
+                messagebox.showwarning("设备切换失败", f"请手动切换到{device_type}设备")
+                return
+                
+            print(f"[INFO] ✓ 已切换到{device_type}设备，开始检测")
             
             # 记录步骤开始时间
             from datetime import datetime
@@ -4514,6 +4709,12 @@ class PressureSensorUI:
             
             # 更新数据库状态
             db.update_test_step_status(step_id, 'in_progress', start_time=self.current_step_start_time.isoformat())
+            
+            # 创建CSV数据文件（关键）
+            self.create_step_data_file(step_info)
+            
+            # 启用数据记录（关键）
+            self._recording_data = True
             
             # 切换到当前热力图（在开始前切换）
             print(f"[INFO] 开始{step_info['name']}检测，切换到{step_info['device_type']}设备")
@@ -4535,14 +4736,9 @@ class PressureSensorUI:
             device_type = step_info.get('device_type', '坐垫')
             print(f"[INFO] 正在切换到{device_type}设备...")
             
-            # 直接通过可视化器切换设备模式
+            # 切换设备显示（可视化器会自动适应数据格式）
             if hasattr(self, 'visualizer') and self.visualizer:
-                # 更新可视化器的设备模式
-                if hasattr(self.visualizer, 'update_display_mode'):
-                    self.visualizer.update_display_mode(device_type)
-                    print(f"[INFO] ✓ 成功切换到{device_type}设备模式")
-                else:
-                    print(f"[WARNING] 可视化器不支持 update_display_mode 方法")
+                print(f"[INFO] ✓ 可视化器已准备显示{device_type}设备数据")
                 
                 # 更新数据处理器的设备类型
                 if hasattr(self, 'data_processor') and self.data_processor:
@@ -4595,6 +4791,160 @@ class PressureSensorUI:
         except Exception as e:
             print(f"完成检测步骤失败: {e}")
     
+    def create_step_data_file(self, step_info):
+        """创建当前步骤的CSV数据文件"""
+        try:
+            import csv
+            import os
+            from datetime import datetime
+            
+            # 创建按日期组织的数据目录
+            today = datetime.now().strftime("%Y-%m-%d")
+            data_dir = os.path.join("tmp", today, "detection_data")
+            os.makedirs(data_dir, exist_ok=True)
+            
+            # 生成文件名 - 使用患者姓名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            patient_name = self.current_patient['name'] if self.current_patient else "未知患者"
+            step_number = step_info.get('number', 1)
+            step_name = step_info.get('name', '未知步骤')
+            filename = f"{patient_name}-第{step_number}步-{step_name}-{timestamp}.csv"
+            self.current_data_file = os.path.join(data_dir, filename)
+            
+            # 创建CSV文件并写入正确的头格式
+            with open(self.current_data_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # 写入CSV头：time,max,timestamp,area,press,data
+                writer.writerow(['time', 'max', 'timestamp', 'area', 'press', 'data'])
+            
+            # 初始化CSV相关变量
+            self._csv_start_time = datetime.now()
+            
+            print(f"[INFO] 创建数据文件: {filename}")
+            
+        except Exception as e:
+            print(f"[ERROR] 创建数据文件失败: {e}")
+            self.current_data_file = None
+    
+    def write_csv_data_row(self, processed_data):
+        """写入CSV数据行"""
+        try:
+            # 只有在记录状态且有数据文件时才写入
+            if not getattr(self, '_recording_data', False):
+                return
+            if not hasattr(self, 'current_data_file') or not self.current_data_file:
+                return
+            
+            import csv
+            import json
+            from datetime import datetime
+            
+            # 计算经过时间
+            if hasattr(self, '_csv_start_time'):
+                elapsed_time = (datetime.now() - self._csv_start_time).total_seconds()
+            else:
+                elapsed_time = 0
+            
+            # 提取数据
+            stats = processed_data['statistics']
+            matrix_data = processed_data['matrix_2d']
+            frame_info = processed_data['original_frame']
+            
+            max_value = stats['max_value']
+            # 格式化timestamp为 2025/6/17 14:43:28:219 格式
+            now = datetime.now()
+            timestamp = now.strftime("%Y/%m/%d %H:%M:%S") + f":{now.microsecond//1000:03d}"
+            
+            # 计算接触面积
+            area = stats.get('contact_area', 0)
+            
+            # 计算总压力
+            press = stats.get('sum_value', 0)
+            
+            # 转换矩阵数据为JSON字符串
+            data_list = matrix_data.flatten().tolist()
+            data_str = json.dumps(data_list)
+            
+            # 写入CSV行
+            with open(self.current_data_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([elapsed_time, max_value, timestamp, area, press, data_str])
+                
+        except Exception as e:
+            print(f"[ERROR] 写入CSV数据失败: {e}")
+    
+    def check_device_configured(self, device_type):
+        """检查指定设备类型是否已配置"""
+        try:
+            # 检查设备管理器中的设备配置
+            if hasattr(self, 'device_manager') and self.device_manager:
+                device_manager = self.device_manager
+                
+                # 设备类型映射到配置键
+                device_type_mapping = {
+                    '坐垫': 'cushion',
+                    '脚垫': 'footpad', 
+                    '步道': 'walkway_dual'
+                }
+                
+                required_device_key = device_type_mapping.get(device_type)
+                if required_device_key and required_device_key in device_manager.devices:
+                    return True, device_type
+                else:
+                    return False, device_type
+            
+            return False, device_type
+            
+        except Exception as e:
+            print(f"[ERROR] 检查设备配置失败: {e}")
+            return False, device_type
+    
+    def switch_main_ui_device(self, device_type):
+        """切换主界面的设备选择到指定类型"""
+        try:
+            if not hasattr(self, 'device_manager') or not self.device_manager:
+                return False
+            
+            device_manager = self.device_manager
+            
+            # 设备类型映射到配置键
+            device_type_mapping = {
+                '坐垫': 'cushion',
+                '脚垫': 'footpad', 
+                '步道': 'walkway_dual'
+            }
+            
+            required_device_key = device_type_mapping.get(device_type)
+            if not required_device_key or required_device_key not in device_manager.devices:
+                return False
+            
+            # 获取设备信息并设置到主界面的下拉框
+            device_config = device_manager.devices[required_device_key]
+            device_display = f"{device_config['icon']} {device_config['name']}"
+            
+            # 设置主界面设备选择
+            if hasattr(self, 'device_combo'):
+                try:
+                    # 找到对应的选项并设置
+                    values = self.device_combo['values']
+                    for i, value in enumerate(values):
+                        if device_config['name'] in value:
+                            self.device_combo.current(i)
+                            # 更新设备变量
+                            self.device_var.set(value)
+                            # 触发设备切换（模拟选择事件）
+                            self.on_device_changed(None)
+                            print(f"[INFO] ✓ 已自动切换到{device_type}设备: {device_config['name']}")
+                            return True
+                except Exception as e:
+                    print(f"[ERROR] 设备下拉框切换失败: {e}")
+                    
+            return False
+            
+        except Exception as e:
+            print(f"[ERROR] 切换主界面设备失败: {e}")
+            return False
+    
     def refresh_embedded_detection(self):
         """刷新嵌入式检测界面"""
         if self.embedded_detection_active and self.current_session:
@@ -4628,7 +4978,7 @@ class PressureSensorUI:
             messagebox.showinfo("检测完成", f"患者 {self.current_patient['name']} 的检测已完成！\n您可以生成分析报告。")
             
             # 刷新患者列表以反映最新状态
-            self.refresh_patient_list()
+            self.notify_patient_list_refresh()
             
         except Exception as e:
             print(f"完成检测失败: {e}")
@@ -4709,15 +5059,30 @@ class PressureSensorUI:
                 duration_text = "检测完成"
             
             # 更新数据库步骤状态（参考原弹窗逻辑）
+            # 获取当前数据文件路径
+            data_file_path = None
+            if hasattr(self, 'current_data_file') and self.current_data_file:
+                data_file_path = self.current_data_file
+                print(f"[INFO] 保存数据文件路径: {data_file_path}")
+            
             db.update_test_step_status(
                 step_id, 
                 'completed', 
-                # data_file_path=self.data_file_path,  # 暂时不创建文件
+                data_file_path=data_file_path,  # 保存CSV文件路径
                 end_time=end_time.isoformat(),
                 notes=duration_text
             )
             
             print(f"步骤 {step_id} 已完成: {duration_text}")
+            
+            # 停止数据记录（关键）
+            self._recording_data = False
+            
+            # 停用相关状态标记
+            self.step_in_progress = False
+            self.current_step_start_time = None
+            self.current_step_duration = None
+            self.current_step_id = None
             
             # 更新会话进度
             if self.current_session:
@@ -4732,9 +5097,21 @@ class PressureSensorUI:
                 if completed_steps >= total_steps:
                     db.update_test_session_progress(self.current_session['id'], completed_steps, 'completed')
                     print(f"[INFO] 检测会话已完成，共完成 {completed_steps}/{total_steps} 步")
+                    
+                    # 重置检测状态
+                    self.detection_in_progress = False
+                    self.start_detection_btn.config(text="🚀 快速检测", state="normal")
             
-            # 延迟1秒后刷新界面显示下一步
-            self.root.after(2000, self.refresh_embedded_detection)  # 从1000ms改为2000ms，减少不必要的刷新
+            # 延迟后自动导航到下一步或显示报告生成选项
+            if completed_steps < total_steps:
+                print(f"[INFO] 步骤完成，自动导航到下一步")
+                # 延迟500ms后自动跳转，让用户看到完成状态
+                self.root.after(500, self.auto_next_detection_step)
+            else:
+                # 所有步骤完成，显示生成报告提示
+                print(f"[INFO] 所有检测步骤已完成，准备生成报告")
+                # 延迟后自动询问是否生成报告
+                self.root.after(1000, self.prompt_generate_report)
             
         except Exception as e:
             print(f"完成检测步骤失败: {e}")
@@ -4744,12 +5121,12 @@ class PressureSensorUI:
         try:
             # 获取检测步骤定义
             detection_steps = [
-                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
-                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
-                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
-                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
-                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
-                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+                {"number": 1, "name": "静坐检测", "duration": 10, "device_type": "坐垫", "description": "请患者安静坐在传感器上10秒"},
+                {"number": 2, "name": "起坐测试", "duration": 30, "device_type": "坐垫", "description": "请患者进行5次起坐动作"},
+                {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
+                {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
+                {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
+                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
             ]
             
             if 0 <= step_index < len(detection_steps):
@@ -4791,12 +5168,12 @@ class PressureSensorUI:
         try:
             # 获取检测步骤定义
             detection_steps = [
-                {"number": 1, "name": "坐位静息", "duration": 30, "device_type": "坐垫", "description": "请患者安静坐在传感器上30秒"},
-                {"number": 2, "name": "站立平衡", "duration": 30, "device_type": "脚垫", "description": "请患者站立保持平衡30秒"},
-                {"number": 3, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（左脚）"},
-                {"number": 4, "name": "单脚站立", "duration": 15, "device_type": "脚垫", "description": "请患者单脚站立15秒（右脚）"},
-                {"number": 5, "name": "深蹲测试", "duration": 45, "device_type": "脚垫", "description": "请患者进行3次深蹲动作"},
-                {"number": 6, "name": "步行测试", "duration": 60, "device_type": "步道", "description": "请患者在传感器上正常步行"}
+                {"number": 1, "name": "静坐检测", "duration": 10, "device_type": "坐垫", "description": "请患者安静坐在传感器上10秒"},
+                {"number": 2, "name": "起坐测试", "duration": 30, "device_type": "坐垫", "description": "请患者进行5次起坐动作"},
+                {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
+                {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
+                {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
+                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
             ]
             
             if self.current_session:
@@ -4815,87 +5192,36 @@ class PressureSensorUI:
             print(f"获取当前硬件失败: {e}")
             return "未知"
     
-    def check_hardware_connection(self, step_info):
-        """检查当前步骤所需的硬件连接"""
+    def check_device_exists_in_manager(self, device_type):
+        """通过主线程的设备管理器检查设备是否存在"""
         try:
-            device_type = step_info.get('device_type', '坐垫')
-            print(f"[INFO] 正在检查{device_type}设备连接...")
+            if not hasattr(self, 'device_manager') or not self.device_manager:
+                print(f"[ERROR] 设备管理器不存在")
+                return False
             
-            # 这里应该是实际的硬件检测逻辑
-            # 可以检查串口连接、设备响应、传感器数据等
+            # 设备类型映射到配置键
+            device_type_mapping = {
+                '坐垫': 'cushion',
+                '脚垫': 'footpad', 
+                '步道': 'walkway_dual'
+            }
             
-            if device_type == "坐垫":
-                # 检查坐垫设备
-                hardware_connected = self.check_chair_device()
-            elif device_type == "脚垫":
-                # 检查脚垫设备
-                hardware_connected = self.check_floor_device() 
-            elif device_type == "步道":
-                # 检查步道设备
-                hardware_connected = self.check_walkway_device()
-            else:
-                print(f"[WARNING] 未知设备类型: {device_type}")
-                hardware_connected = False
+            required_device_key = device_type_mapping.get(device_type)
+            if not required_device_key:
+                print(f"[ERROR] 未知设备类型: {device_type}")
+                return False
             
-            if hardware_connected:
-                print(f"[INFO] ✓ {device_type}设备连接正常")
+            # 检查设备是否在设备管理器中
+            if required_device_key in self.device_manager.devices:
+                device_info = self.device_manager.devices[required_device_key]
+                print(f"[INFO] ✓ 找到{device_type}设备: {device_info.get('name', '未知')}")
                 return True
             else:
-                print(f"[ERROR] ✗ {device_type}设备连接失败")
+                print(f"[ERROR] ✗ {device_type}设备未在设备管理器中配置")
                 return False
                 
         except Exception as e:
-            print(f"硬件检查异常: {e}")
-            return False
-    
-    def check_chair_device(self):
-        """检查坐垫设备连接"""
-        try:
-            # 检查坐垫设备的实际逻辑
-            # 例如：检查对应的串口是否打开，是否有数据等
-            if hasattr(self, 'serial_interface') and self.serial_interface:
-                # 检查串口连接状态
-                if self.serial_interface.is_connected():
-                    # 可以发送测试命令检查设备响应
-                    return True
-            
-            # 如果没有串口接口或连接失败
-            print("[WARNING] 坐垫设备检查：串口未连接")
-            # 开发阶段：暂时返回True，实际部署时改为False
-            return True  # TODO: 实际部署时需要真实检测
-            
-        except Exception as e:
-            print(f"检查坐垫设备失败: {e}")
-            return False
-    
-    def check_floor_device(self):
-        """检查脚垫设备连接"""
-        try:
-            # 检查脚垫设备的实际逻辑
-            if hasattr(self, 'serial_interface') and self.serial_interface:
-                if self.serial_interface.is_connected():
-                    return True
-            
-            print("[WARNING] 脚垫设备检查：串口未连接")
-            return True  # TODO: 实际部署时需要真实检测
-            
-        except Exception as e:
-            print(f"检查脚垫设备失败: {e}")
-            return False
-    
-    def check_walkway_device(self):
-        """检查步道设备连接"""
-        try:
-            # 检查步道设备的实际逻辑
-            if hasattr(self, 'serial_interface') and self.serial_interface:
-                if self.serial_interface.is_connected():
-                    return True
-            
-            print("[WARNING] 步道设备检查：串口未连接") 
-            return True  # TODO: 实际部署时需要真实检测
-            
-        except Exception as e:
-            print(f"检查步道设备失败: {e}")
+            print(f"[ERROR] 检查设备存在性失败: {e}")
             return False
     
     def hide_embedded_detection(self):
