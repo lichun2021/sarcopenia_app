@@ -369,15 +369,29 @@ class SerialInterface:
                             transformed_data = self.jq_processor.jqbed_transform(data_array)
                             # 将1024字节数据重塑为32x32矩阵
                             matrix_32x32 = transformed_data.reshape(32, 32)
+                            
+                            # 步道设备需要逆时针旋转90度
+                            if self.device_type in ["walkway", "dual_1024", "triple_1024"]:
+                                matrix_32x32 = np.rot90(matrix_32x32)
+                                jq_transform_results.append(f"设备{device_id}: JQ转化+旋转90°成功")
+                            else:
+                                jq_transform_results.append(f"设备{device_id}: JQ转化成功")
+                            
                             device_matrices.append(matrix_32x32)
-                            jq_transform_results.append(f"设备{device_id}: JQ转化成功")
                             
                         except Exception as e:
                             # JQ转换失败仍然使用原始数据，但记录错误
                             data_array = np.frombuffer(raw_data, dtype=np.uint8)
                             matrix_32x32 = data_array.reshape(32, 32)
+                            
+                            # 步道设备即使JQ失败也要旋转
+                            if self.device_type in ["walkway", "dual_1024", "triple_1024"]:
+                                matrix_32x32 = np.rot90(matrix_32x32)
+                                jq_transform_results.append(f"设备{device_id}: JQ转化失败,但旋转90°({str(e)[:20]})")
+                            else:
+                                jq_transform_results.append(f"设备{device_id}: JQ转化失败({str(e)[:30]})")
+                            
                             device_matrices.append(matrix_32x32)
-                            jq_transform_results.append(f"设备{device_id}: JQ转化失败({str(e)[:30]})")
                     
                     # 水平合并矩阵（左右拼接）
                     combined_matrix = np.hstack(device_matrices)  # 32x64 or 32x96

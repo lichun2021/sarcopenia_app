@@ -83,7 +83,7 @@ class DataProcessor:
     
     def process_walkway_data(self, raw_data):
         """
-        处理32x96步道数据：3个1024字节帧，每个先进行JQ变换，然后合并
+        处理32x96步道数据：3个1024字节帧，每个先进行JQ变换，然后逆时针旋转90度，最后合并
         """
         try:
             # 确保数据是numpy数组
@@ -112,12 +112,18 @@ class DataProcessor:
             matrix2 = transformed_seg2.reshape(32, 32)
             matrix3 = transformed_seg3.reshape(32, 32)
             
+            # 对每个32x32矩阵进行逆时针旋转90度
+            # numpy的rot90函数默认就是逆时针旋转
+            matrix1 = np.rot90(matrix1)
+            matrix2 = np.rot90(matrix2)
+            matrix3 = np.rot90(matrix3)
+            
             # 按照端口1、2的固定顺序合并成32x96
             matrices = [matrix1, matrix2, matrix3]
             ordered_matrices = [matrices[i] for i in self.walkway_segment_order]
             combined_matrix = np.hstack(ordered_matrices)
             
-            return combined_matrix.ravel(), f"32x96 walkway processed (3x1024->JQ->combined)"
+            return combined_matrix.ravel(), f"32x96 walkway processed (3x1024->JQ->rotate90->combined)"
             
         except Exception as e:
             # 降级处理：直接使用原始数据
