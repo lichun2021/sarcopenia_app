@@ -3728,6 +3728,8 @@ class PressureSensorUI:
                 try:
                     # 标记进入模态期，放缓渲染
                     self._opening_modal = True
+                    if hasattr(self.visualizer, 'set_ui_busy_state'):
+                        self.visualizer.set_ui_busy_state(True)  # 智能渲染控制
                     if prev_min_interval is not None:
                         self.visualizer.min_render_interval = max(0.2, prev_min_interval)
 
@@ -3750,6 +3752,8 @@ class PressureSensorUI:
                 finally:
                     # 恢复渲染速率与标记
                     try:
+                        if hasattr(self.visualizer, 'set_ui_busy_state'):
+                            self.visualizer.set_ui_busy_state(False)  # 恢复正常渲染
                         if prev_min_interval is not None:
                             self.visualizer.min_render_interval = prev_min_interval
                     except Exception:

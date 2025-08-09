@@ -30,23 +30,29 @@ class HeatmapVisualizer:
         self._closing = False
         self._scheduled_after_id = None
         
-        # 高质量渲染参数
-        self.enable_high_quality = True  # 启用高质量渲染
-        self.upscale_factor = 4          # 升采样倍数（32x32 -> 128x128）
-        self.gaussian_sigma = 1.2        # 高斯平滑参数
-        self.interpolation_order = 3     # 双三次插值（order=3）
+        # 智能渲染参数 - 平衡质量和性能
+        self.enable_high_quality = True   # 保持高质量渲染
+        self.upscale_factor = 3           # 适中的升采样倍数（32x32 -> 96x96）
+        self.gaussian_sigma = 1.0         # 适中的高斯平滑参数
+        self.interpolation_order = 2      # 双二次插值（order=2，比三次快但比线性好）
         
-        # 平滑处理参数 - 用于快速模式
-        self.enable_smoothing = False    # 快速模式的简单平滑
-        self.smooth_sigma = 0.5          # 快速模式的sigma值
+        # 平滑处理参数 - 用于快速模式（已禁用以提升性能）
+        self.enable_smoothing = False    # 禁用所有平滑处理以提升性能
+        self.smooth_sigma = 0.5          # 快速模式的sigma值（已禁用）
         
-        # 性能优化参数
+        # 智能性能控制 - 根据UI状态动态调整渲染策略
         self.frame_skip_counter = 0
-        # 提高跳帧阈值，进一步降低主线程负载
-        self.frame_skip_threshold = 3  # 每4帧渲染1帧
+        self.frame_skip_threshold = 2    # 适中的跳帧（每3帧渲染1帧）
         self.last_render_time = 0
-        # 降帧：将最小渲染间隔从 ~30FPS 调整为 ~10FPS
-        self.min_render_interval = 0.1  # 最小渲染间隔100ms (10fps)
+        self.min_render_interval = 0.15  # 适中的渲染间隔150ms (~6-7fps)
+        
+        # 智能渲染控制
+        self._ui_busy = False            # UI忙碌状态标记
+        self._high_load_counter = 0      # 高负载计数器
+        
+        # 局部重绘优化
+        self._background_cache = None    # 背景缓存
+        self._use_blit_optimization = True  # 启用blit优化
         
         # 创建强对比度颜色映射
         self.setup_colormap()
@@ -269,6 +275,11 @@ class HeatmapVisualizer:
         # 嵌入到tkinter
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.parent_frame)
         self.canvas.draw()
+        
+        # 缓存背景以启用blit优化
+        if self._use_blit_optimization:
+            self._cache_background()
+        
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
         
     # def update_title(self):
@@ -292,14 +303,24 @@ class HeatmapVisualizer:
             if matrix_2d is None or matrix_2d.size == 0:
                 return
             
-            # 帧跳跃优化：控制渲染频率
+            # 智能帧跳跃优化：根据UI状态动态调整渲染频率
             import time
             current_time = time.time()
             
+            # 动态调整渲染间隔
+            render_start = time.time()
+            
             # 如果距离上次渲染时间太短，跳过此帧
-            if current_time - self.last_render_time < self.min_render_interval:
+            effective_interval = self.min_render_interval
+            if hasattr(self, '_ui_busy') and self._ui_busy:
+                effective_interval *= 2  # UI忙碌时降低渲染频率
+            
+            if current_time - self.last_render_time < effective_interval:
                 self.frame_skip_counter += 1
-                if self.frame_skip_counter < self.frame_skip_threshold:
+                threshold = self.frame_skip_threshold
+                if hasattr(self, '_high_load_counter') and self._high_load_counter > 5:
+                    threshold *= 2  # 高负载时增加跳帧
+                if self.frame_skip_counter < threshold:
                     return
             
             # 重置计数器并记录渲染时间
@@ -338,16 +359,62 @@ class HeatmapVisualizer:
                 # title += f'Max:{max_mmhg:.1f} Min:{min_mmhg:.1f} Avg:{avg_mmhg:.1f}mmHg'
                 # self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
             
-            # 使用快速重绘，只更新数据区域
+            # 使用超快速重绘，只更新热力图数据，不重绘背景
             try:
-                self.canvas.draw_idle()  # 使用idle绘制，减少频繁重绘
+                self._fast_redraw_heatmap_only()  # 只重绘热力图数据
+                
+                # 性能监控：检测渲染时间
+                render_time = time.time() - render_start
+                if render_time > 0.05:  # 如果渲染超过50ms
+                    if hasattr(self, '_high_load_counter'):
+                        self._high_load_counter += 1
+                else:
+                    if hasattr(self, '_high_load_counter'):
+                        self._high_load_counter = max(0, self._high_load_counter - 1)
+                        
             except Exception:
                 # 在销毁或关闭阶段可能抛出异常，忽略
                 pass
             
         except Exception as e:
             pass
+    
+    def _cache_background(self):
+        """缓存背景（坐标轴、颜色条等静态元素）"""
+        try:
+            self.canvas.draw()
+            self._background_cache = self.canvas.copy_from_bbox(self.ax.bbox)
+        except Exception:
+            # 如果缓存失败，禁用blit优化
+            self._use_blit_optimization = False
+    
+    def _fast_redraw_heatmap_only(self):
+        """快速重绘：只更新热力图数据，不重绘背景"""
+        if not self._use_blit_optimization or self._background_cache is None:
+            # 回退到普通重绘
+            self.canvas.draw_idle()
+            return
             
+        try:
+            # 恢复背景
+            self.canvas.restore_region(self._background_cache)
+            # 只重绘热力图
+            self.ax.draw_artist(self.im)
+            # 刷新显示
+            self.canvas.blit(self.ax.bbox)
+        except Exception:
+            # 如果blit失败，回退到普通重绘
+            self.canvas.draw_idle()
+    
+    def set_ui_busy_state(self, is_busy):
+        """设置UI忙碌状态，用于动态调整渲染频率"""
+        self._ui_busy = is_busy
+        if is_busy:
+            # UI忙碌时，临时增加跳帧阈值
+            self.frame_skip_threshold = max(self.frame_skip_threshold, 4)
+        else:
+            # UI空闲时，恢复正常跳帧
+            self.frame_skip_threshold = 2
     def set_array_size(self, rows, cols):
         """设置新的阵列大小"""
         if rows != self.array_rows or cols != self.array_cols:
@@ -454,8 +521,10 @@ class HeatmapVisualizer:
                     except:
                         pass
             
-            # 重绘画布
+            # 重绘画布并重新缓存背景
             self.canvas.draw()
+            if self._use_blit_optimization:
+                self._cache_background()
             
     def get_figure(self):
         """获取matplotlib图形对象"""
