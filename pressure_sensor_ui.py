@@ -1433,7 +1433,7 @@ class PressureSensorUI:
         # 右侧：数据日志和统计 - 医院白色
         right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 0))
-        right_frame.config(width=650)  # 增加右侧面板宽度以容纳检测会话区域
+        right_frame.config(width=550)  # 增加右侧面板宽度
         
         # 统计信息面板 - 医院风格
         stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
@@ -1460,31 +1460,7 @@ class PressureSensorUI:
             label.grid(row=row, column=col+1, sticky="w", padx=(0, 25))
             self.stats_labels[key] = label
         
-        # 检测会话区域 - 嵌入式检测界面
-        self.detection_frame = ttk.LabelFrame(right_frame, text="检测会话", 
-                                            padding=10, style='Hospital.TLabelframe')
-        self.detection_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # 初始状态显示
-        self.detection_status_label = ttk.Label(self.detection_frame, 
-                                               text="📊 暂无进行中的检测", 
-                                               style='Hospital.TLabel',
-                                               font=('Microsoft YaHei UI', 10))
-        self.detection_status_label.pack(pady=20)
-        
-        # 检测内容容器 - 动态显示检测步骤
-        self.detection_content_frame = ttk.Frame(self.detection_frame, style='Hospital.TFrame')
-        self.detection_content_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 检测会话相关变量
-        self.embedded_detection_active = False
-        self.current_detection_step = None
-        self.detection_progress_var = tk.IntVar(value=0)
-        self.detection_step_label = None
-        self.detection_progress_bar = None
-        self.detection_control_buttons = {}
-        
-        # AI分析日志区域 - 调整高度以适应新布局
+        # AI分析日志区域 - 占用整个空间
         ai_log_frame = ttk.LabelFrame(right_frame, text="AI 分析日志", 
                                     padding=(10, 5, 10, 5), style='Hospital.TLabelframe')
         ai_log_frame.pack(fill=tk.BOTH, expand=True)
@@ -3361,7 +3337,7 @@ class PressureSensorUI:
                     # 设置当前会话
                     self.current_session = {
                         'id': session['id'],
-                        'session_name': session['session_name'],
+                        'name': session['session_name'],
                         'patient_id': session['patient_id'],
                         'current_step': session['current_step'],
                         'total_steps': session['total_steps']
@@ -3822,7 +3798,7 @@ class PressureSensorUI:
             if session_id > 0:
                 self.current_session = {
                     'id': session_id,
-                    'session_name': session_name,
+                    'name': session_name,
                     'patient_id': self.current_patient['id'],
                     'current_step': 1,  # 新建会话从第1步开始
                     'total_steps': 6
@@ -3890,7 +3866,7 @@ class PressureSensorUI:
             # 恢复会话状态
             self.current_session = {
                 'id': session['id'],
-                'session_name': session['session_name'],
+                'name': session['session_name'],
                 'patient_id': session['patient_id'] if 'patient_id' in session else self.current_patient['id'],
                 'current_step': session['current_step'],
                 'total_steps': session['total_steps']
@@ -4036,233 +4012,40 @@ class PressureSensorUI:
             print(f"[ERROR] 检查恢复检测失败: {e}")
     
     def show_detection_wizard(self):
-        """显示检测向导界面 - 使用嵌入式界面"""
+        """显示检测向导界面"""
         try:
             if not self.current_session or not self.current_patient:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return
             
-            # 启用嵌入式检测界面
-            self.show_embedded_detection()
+            # 减少调试输出
+            
+            # 初始化活动检测向导引用
+            self._active_detection_wizard = None
+            
+            # 创建检测向导（它会自动将自己注册为活动向导）
+            # 注意：传递self而不是self.root，这样检测向导可以访问主界面对象
+            wizard = DetectionWizardDialog(self, self.current_patient, self.current_session)
+            
+            # 减少调试输出
+            
+            # 检测向导关闭后，无论如何都要重置状态，确保用户可以重新开始
+            self.detection_in_progress = False
+            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            
+            # 清除活动检测向导引用
+            self._active_detection_wizard = None
+            
+            # 检查检测状态
+            self.check_detection_completion()
                 
         except Exception as e:
             messagebox.showerror("错误", f"显示检测向导失败：{e}")
-    
-    def show_embedded_detection(self):
-        """显示嵌入式检测界面"""
-        try:
-            # 清除检测内容区域
-            for widget in self.detection_content_frame.winfo_children():
-                widget.destroy()
-            
-            # 隐藏初始状态标签
-            self.detection_status_label.pack_forget()
-            
-            # 设置检测活动状态
-            self.embedded_detection_active = True
-            
-            # 获取会话信息
-            session_steps = db.get_session_steps(self.current_session['id'])
-            completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
-            total_steps = self.current_session.get('total_steps', 6)
-            
-            # 创建检测界面
-            # 患者信息显示
-            patient_info_frame = ttk.Frame(self.detection_content_frame, style='Hospital.TFrame')
-            patient_info_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            ttk.Label(patient_info_frame, text=f"👤 患者: {self.current_patient['name']}", 
-                     style='Hospital.TLabel', font=('Microsoft YaHei UI', 10, 'bold')).pack(anchor='w')
-            ttk.Label(patient_info_frame, text=f"📋 会话: {self.current_session['session_name']}", 
-                     style='Hospital.TLabel').pack(anchor='w')
-            
-            # 进度显示
-            progress_frame = ttk.Frame(self.detection_content_frame, style='Hospital.TFrame')
-            progress_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            self.detection_step_label = ttk.Label(progress_frame, 
-                                                 text=f"📊 进度: {completed_steps}/{total_steps} 步", 
-                                                 style='Hospital.TLabel')
-            self.detection_step_label.pack(anchor='w', pady=(0, 5))
-            
-            self.detection_progress_bar = ttk.Progressbar(progress_frame, 
-                                                         variable=self.detection_progress_var,
-                                                         maximum=total_steps, 
-                                                         style='Hospital.Horizontal.TProgressbar')
-            self.detection_progress_bar.pack(fill=tk.X, pady=(0, 10))
-            self.detection_progress_var.set(completed_steps)
-            
-            # 当前步骤信息
-            current_step_frame = ttk.LabelFrame(self.detection_content_frame, 
-                                               text="当前检测步骤", 
-                                               padding=10, 
-                                               style='Hospital.TLabelframe')
-            current_step_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            # 显示下一个未完成步骤
-            self.show_next_detection_step(current_step_frame, session_steps, completed_steps)
-            
-            # 控制按钮
-            control_frame = ttk.Frame(self.detection_content_frame, style='Hospital.TFrame')
-            control_frame.pack(fill=tk.X, pady=(10, 0))
-            
-            self.detection_control_buttons['pause'] = ttk.Button(control_frame, 
-                                                                text="⏸️ 暂停", 
-                                                                command=self.pause_embedded_detection,
-                                                                style='Hospital.TButton')
-            self.detection_control_buttons['pause'].pack(side=tk.LEFT, padx=(0, 10))
-            
-            self.detection_control_buttons['stop'] = ttk.Button(control_frame, 
-                                                               text="⏹️ 结束", 
-                                                               command=self.stop_embedded_detection,
-                                                               style='Hospital.TButton')
-            self.detection_control_buttons['stop'].pack(side=tk.RIGHT)
-            
-        except Exception as e:
-            print(f"显示嵌入式检测界面失败: {e}")
-            messagebox.showerror("错误", f"显示检测界面失败：{e}")
-    
-    def show_next_detection_step(self, parent_frame, session_steps, completed_steps):
-        """显示下一个检测步骤"""
-        try:
-            # 获取检测步骤定义
-            detection_steps = [
-                {"number": 1, "name": "坐位静息", "duration": 30, "description": "请患者安静坐在传感器上30秒"},
-                {"number": 2, "name": "站立平衡", "duration": 30, "description": "请患者站立保持平衡30秒"},
-                {"number": 3, "name": "单脚站立", "duration": 15, "description": "请患者单脚站立15秒（左脚）"},
-                {"number": 4, "name": "单脚站立", "duration": 15, "description": "请患者单脚站立15秒（右脚）"},
-                {"number": 5, "name": "深蹲测试", "duration": 45, "description": "请患者进行3次深蹲动作"},
-                {"number": 6, "name": "步行测试", "duration": 60, "description": "请患者在传感器上正常步行"}
-            ]
-            
-            if completed_steps >= len(detection_steps):
-                # 所有步骤已完成
-                ttk.Label(parent_frame, text="✅ 所有检测步骤已完成", 
-                         style='Hospital.TLabel', 
-                         font=('Microsoft YaHei UI', 12, 'bold')).pack(pady=20)
-                
-                complete_btn = ttk.Button(parent_frame, text="🎉 完成检测", 
-                                         command=self.complete_embedded_detection,
-                                         style='Success.TButton')
-                complete_btn.pack(pady=10)
-                return
-            
-            # 获取下一个步骤
-            current_step = detection_steps[completed_steps]
-            self.current_detection_step = current_step
-            
-            # 显示步骤信息
-            step_info_frame = ttk.Frame(parent_frame, style='Hospital.TFrame')
-            step_info_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            ttk.Label(step_info_frame, 
-                     text=f"第 {current_step['number']} 步: {current_step['name']}", 
-                     style='Hospital.TLabel', 
-                     font=('Microsoft YaHei UI', 11, 'bold')).pack(anchor='w')
-            
-            ttk.Label(step_info_frame, 
-                     text=f"⏱️ 时长: {current_step['duration']}秒", 
-                     style='Hospital.TLabel').pack(anchor='w', pady=(2, 0))
-            
-            ttk.Label(step_info_frame, 
-                     text=f"📝 说明: {current_step['description']}", 
-                     style='Hospital.TLabel').pack(anchor='w', pady=(2, 0))
-            
-            # 开始步骤按钮
-            start_step_btn = ttk.Button(parent_frame, 
-                                       text=f"▶️ 开始第{current_step['number']}步", 
-                                       command=lambda: self.start_detection_step(current_step),
-                                       style='Success.TButton')
-            start_step_btn.pack(pady=(10, 0))
-            
-        except Exception as e:
-            print(f"显示检测步骤失败: {e}")
-    
-    def start_detection_step(self, step_info):
-        """开始执行检测步骤"""
-        try:
-            # 这里可以调用原有的DetectionStepDialog的逻辑
-            # 但是以嵌入式方式显示，不弹出对话框
-            print(f"开始执行步骤: {step_info['name']}")
-            
-            # 更新进度
-            completed_steps = self.detection_progress_var.get()
-            self.detection_progress_var.set(completed_steps + 1)
-            self.detection_step_label.config(text=f"📊 进度: {completed_steps + 1}/{self.current_session.get('total_steps', 6)} 步")
-            
-            # 记录到数据库
-            step_id = db.create_detection_step(
-                self.current_session['id'],
-                step_info['number'],
-                step_info['name'],
-                step_info['duration']
-            )
-            
-            # 模拟步骤完成（实际应该等待数据采集完成）
-            self.root.after(2000, lambda: self.complete_detection_step(step_id))
-            
-            # 刷新界面显示下一步骤
-            self.root.after(2000, self.refresh_embedded_detection)
-            
-        except Exception as e:
-            print(f"执行检测步骤失败: {e}")
-            messagebox.showerror("错误", f"执行检测步骤失败：{e}")
-    
-    def complete_detection_step(self, step_id):
-        """完成检测步骤"""
-        try:
-            # 更新步骤状态
-            db.update_detection_step_status(step_id, 'completed')
-            print(f"步骤 {step_id} 已完成")
-            
-        except Exception as e:
-            print(f"完成检测步骤失败: {e}")
-    
-    def refresh_embedded_detection(self):
-        """刷新嵌入式检测界面"""
-        if self.embedded_detection_active and self.current_session:
-            self.show_embedded_detection()
-    
-    def pause_embedded_detection(self):
-        """暂停检测"""
-        # 隐藏嵌入式检测界面
-        self.hide_embedded_detection()
-        messagebox.showinfo("检测暂停", "检测已暂停，您可以随时恢复")
-    
-    def stop_embedded_detection(self):
-        """结束检测"""
-        result = messagebox.askyesno("确认结束", "确定要结束当前检测吗？\n未完成的数据将被保留。")
-        if result:
-            self.hide_embedded_detection()
+            print(f"[ERROR] 显示检测向导失败: {e}")
+            # 即使出错也要重置状态
             self.detection_in_progress = False
-            self.start_detection_btn.config(text="🚀 快速检测", state="normal")
-    
-    def complete_embedded_detection(self):
-        """完成所有检测步骤"""
-        try:
-            # 更新会话状态为完成
-            total_steps = self.current_session.get('total_steps', 6)
-            db.update_test_session_progress(self.current_session['id'], total_steps, 'completed')
-            
-            self.hide_embedded_detection()
-            self.detection_in_progress = False
-            self.start_detection_btn.config(text="🚀 快速检测", state="normal")
-            
-            messagebox.showinfo("检测完成", f"患者 {self.current_patient['name']} 的检测已完成！\n您可以生成分析报告。")
-            
-        except Exception as e:
-            print(f"完成检测失败: {e}")
-            messagebox.showerror("错误", f"完成检测失败：{e}")
-    
-    def hide_embedded_detection(self):
-        """隐藏嵌入式检测界面"""
-        # 清除检测内容
-        for widget in self.detection_content_frame.winfo_children():
-            widget.destroy()
-        
-        # 重新显示初始状态
-        self.detection_status_label.pack(pady=20)
-        self.embedded_detection_active = False
+            self.start_detection_btn.config(text="🚀 开始检测", state="normal")
+            self._active_detection_wizard = None
     
     def check_detection_completion(self):
         """检查检测完成状态"""
