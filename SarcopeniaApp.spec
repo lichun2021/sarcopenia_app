@@ -8,6 +8,7 @@ a = Analysis(
     datas=[
         ('gemsage', 'gemsage'), 
         ('config.ini', '.'),
+        ('icon.ico', '.'),
         ('GEMSAGE_MODIFICATIONS.md', '.')
     ],
     hiddenimports=[
@@ -62,6 +63,7 @@ a = Analysis(
         
         # GemSage modules
         'gemsage', 'gemsage.core_calculator', 'gemsage.full_medical_report_generator','gemsage.enhanced_report_generator',
+        'gemsage.generate_complete_report_final',
         'gemsage.multi_file_workflow', 'gemsage.ai_assessment_engine',
         'gemsage.comprehensive_diagnosis', 'gemsage.adaptive_cop_analyzer',
         'gemsage.progressive_cop_analyzer', 'gemsage.ground_reaction_force_analysis',
@@ -97,4 +99,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='icon.ico',
 )

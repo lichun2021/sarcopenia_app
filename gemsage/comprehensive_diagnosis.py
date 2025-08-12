@@ -120,7 +120,7 @@ def diagnose_csv_file(csv_path):
     
     # 4. 完整分析
     print("\n执行完整分析...")
-    full_result = analyzer.comprehensive_analysis(csv_path)
+    full_result = analyzer.comprehensive_analysis_final(csv_path)
     
     print("\n完整分析结果摘要:")
     if 'error' in full_result:

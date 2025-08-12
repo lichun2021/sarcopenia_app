@@ -16,7 +16,7 @@ def merge_csvs_to_one_json(csv_files):
     
     # 1. 分析每个CSV
     for csv_file in csv_files:
-        result = analyzer.comprehensive_analysis(csv_file)
+        result = analyzer.comprehensive_analysis_final(csv_file)
         if result:
             all_results.append(result)
     

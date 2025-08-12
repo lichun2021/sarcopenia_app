@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class MockPressureAnalysisCore:
     """模拟压力分析核心类"""
     
-    def comprehensive_analysis(self, csv_path):
+    def comprehensive_analysis_final(self, csv_path):
         """模拟综合分析"""
         return {
             'overall_score': 85.0,

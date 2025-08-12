@@ -31,7 +31,7 @@ def analyze_multiple_files(csv_files, output_dir="analysis_results"):
         print(f"\n📊 分析文件 {i}/{len(csv_files)}: {os.path.basename(csv_file)}")
         
         try:
-            result = analyzer.comprehensive_analysis(csv_file)
+            result = analyzer.comprehensive_analysis_final(csv_file)
             if result:
                 # 添加文件信息
                 result['source_file'] = csv_file

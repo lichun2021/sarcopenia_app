@@ -10,9 +10,21 @@ from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
 import time
 import os
+import sys
 import json
 import sqlite3
 from datetime import datetime
+
+# 资源路径解析函数（PyInstaller兼容）
+def resource_path(relative_path):
+    """获取资源文件的绝对路径，兼容PyInstaller打包"""
+    try:
+        # PyInstaller创建的临时文件夹
+        base_path = sys._MEIPASS
+    except Exception:
+        # 开发环境
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # 导入自定义模块
 from serial_interface import SerialInterface

@@ -1478,17 +1478,117 @@ class FullMedicalReportGenerator:
             left_double_support = phases_data.get('left_double_support', 19.0)
             right_double_support = phases_data.get('right_double_support', 19.0)
             
-            # 使用占位符替换方式 - 2位小数格式化
-            template_content = template_content.replace('{{LEFT_STRIDE_SPEED}}', f'{left_stride_speed:.2f}')
-            template_content = template_content.replace('{{RIGHT_STRIDE_SPEED}}', f'{right_stride_speed:.2f}')
-            template_content = template_content.replace('{{LEFT_SWING_SPEED}}', f'{left_swing_speed:.2f}')
-            template_content = template_content.replace('{{RIGHT_SWING_SPEED}}', f'{right_swing_speed:.2f}')
-            template_content = template_content.replace('{{LEFT_STANCE_PHASE}}', f'{left_stance_phase:.2f}')
-            template_content = template_content.replace('{{RIGHT_STANCE_PHASE}}', f'{right_stance_phase:.2f}')
-            template_content = template_content.replace('{{LEFT_SWING_PHASE}}', f'{left_swing_phase:.2f}')
-            template_content = template_content.replace('{{RIGHT_SWING_PHASE}}', f'{right_swing_phase:.2f}')
-            template_content = template_content.replace('{{LEFT_DOUBLE_SUPPORT}}', f'{left_double_support:.2f}')
-            template_content = template_content.replace('{{RIGHT_DOUBLE_SUPPORT}}', f'{right_double_support:.2f}')
+            # 使用简单的字符串替换方法 - 2位小数格式化
+            # 先找到表格的位置，然后按顺序替换空的<td></td>
+            
+            # 替换跨步速度的值
+            if '<td rowspan="2">跨步速度</td>' in template_content:
+                # 找到跨步速度行，替换左侧值
+                idx = template_content.find('<td rowspan="2">跨步速度</td>')
+                if idx != -1:
+                    # 找到左侧的空单元格
+                    search_area = template_content[idx:idx+200]
+                    left_pattern = '<td>左</td>\n                    <td></td>'
+                    if left_pattern in search_area:
+                        template_content = template_content.replace(
+                            left_pattern,
+                            f'<td>左</td>\n                    <td>{left_stride_speed:.2f}</td>',
+                            1
+                        )
+                    # 找到右侧的空单元格
+                    right_pattern = '<td>右</td>\n                    <td></td>'
+                    search_area = template_content[idx:idx+400]
+                    if right_pattern in search_area:
+                        # 只替换跨步速度部分的右侧值
+                        parts = template_content.split('<td rowspan="2">跨步速度</td>')
+                        if len(parts) > 1:
+                            part_after = parts[1]
+                            part_after = part_after.replace(right_pattern, 
+                                f'<td>右</td>\n                    <td>{right_stride_speed:.2f}</td>', 1)
+                            template_content = parts[0] + '<td rowspan="2">跨步速度</td>' + part_after
+            
+            # 替换摆动速度的值
+            if '<td rowspan="2">摆动速度</td>' in template_content:
+                idx = template_content.find('<td rowspan="2">摆动速度</td>')
+                if idx != -1:
+                    parts = template_content.split('<td rowspan="2">摆动速度</td>')
+                    if len(parts) > 1:
+                        part_after = parts[1]
+                        # 替换摆动速度的左右值
+                        part_after = part_after.replace(
+                            '<td>左</td>\n                    <td></td>',
+                            f'<td>左</td>\n                    <td>{left_swing_speed:.2f}</td>',
+                            1
+                        )
+                        part_after = part_after.replace(
+                            '<td>右</td>\n                    <td></td>',
+                            f'<td>右</td>\n                    <td>{right_swing_speed:.2f}</td>',
+                            1
+                        )
+                        template_content = parts[0] + '<td rowspan="2">摆动速度</td>' + part_after
+            
+            # 替换站立相的值
+            if '<td rowspan="2">站立相</td>' in template_content:
+                idx = template_content.find('<td rowspan="2">站立相</td>')
+                if idx != -1:
+                    parts = template_content.split('<td rowspan="2">站立相</td>')
+                    if len(parts) > 1:
+                        part_after = parts[1]
+                        part_after = part_after.replace(
+                            '<td>左</td>\n                    <td></td>',
+                            f'<td>左</td>\n                    <td>{left_stance_phase:.2f}</td>',
+                            1
+                        )
+                        part_after = part_after.replace(
+                            '<td>右</td>\n                    <td></td>',
+                            f'<td>右</td>\n                    <td>{right_stance_phase:.2f}</td>',
+                            1
+                        )
+                        template_content = parts[0] + '<td rowspan="2">站立相</td>' + part_after
+            
+            # 替换摆动相的值
+            if '<td rowspan="2">摆动相</td>' in template_content:
+                idx = template_content.find('<td rowspan="2">摆动相</td>')
+                if idx != -1:
+                    parts = template_content.split('<td rowspan="2">摆动相</td>')
+                    if len(parts) > 1:
+                        part_after = parts[1]
+                        part_after = part_after.replace(
+                            '<td>左</td>\n                    <td></td>',
+                            f'<td>左</td>\n                    <td>{left_swing_phase:.2f}</td>',
+                            1
+                        )
+                        part_after = part_after.replace(
+                            '<td>右</td>\n                    <td></td>',
+                            f'<td>右</td>\n                    <td>{right_swing_phase:.2f}</td>',
+                            1
+                        )
+                        template_content = parts[0] + '<td rowspan="2">摆动相</td>' + part_after
+            
+            # 替换双支撑相的值
+            if '<td rowspan="2">双支撑相</td>' in template_content:
+                idx = template_content.find('<td rowspan="2">双支撑相</td>')
+                if idx != -1:
+                    parts = template_content.split('<td rowspan="2">双支撑相</td>')
+                    if len(parts) > 1:
+                        part_after = parts[1]
+                        part_after = part_after.replace(
+                            '<td>左</td>\n                    <td></td>',
+                            f'<td>左</td>\n                    <td>{left_double_support:.2f}</td>',
+                            1
+                        )
+                        part_after = part_after.replace(
+                            '<td>右</td>\n                    <td></td>',
+                            f'<td>右</td>\n                    <td>{right_double_support:.2f}</td>',
+                            1
+                        )
+                        template_content = parts[0] + '<td rowspan="2">双支撑相</td>' + part_after
+            
+            print(f"🔄 已填充步态参数: 跨步速度(左={left_stride_speed:.2f}, 右={right_stride_speed:.2f})")
+            print(f"🔄 已填充步态参数: 摆动速度(左={left_swing_speed:.2f}, 右={right_swing_speed:.2f})")
+            print(f"🔄 已填充步态参数: 站立相(左={left_stance_phase:.2f}, 右={right_stance_phase:.2f})")
+            print(f"🔄 已填充步态参数: 摆动相(左={left_swing_phase:.2f}, 右={right_swing_phase:.2f})")
+            print(f"🔄 已填充步态参数: 双支撑相(左={left_double_support:.2f}, 右={right_double_support:.2f})")
             
             # 替换步数数据（如果模板中有的话）
             if '总步数' in template_content:
