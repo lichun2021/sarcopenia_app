@@ -1,0 +1,12 @@
+# 足部压力分析系统 - 最小依赖（仅报告生成）
+# Python >= 3.8
+
+# 必需依赖（报告生成）
+numpy>=1.19.0
+pandas>=1.2.0
+matplotlib>=3.3.0
+jinja2>=3.0.0
+
+# Windows用户额外建议
+# 如果遇到中文显示问题，可能需要：
+# pip install matplotlib --upgrade

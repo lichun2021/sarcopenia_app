@@ -23,7 +23,13 @@ class ChartGenerator:
         # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
         plt.rcParams['axes.unicode_minus'] = False
-        
+        # 平滑函数可选依赖
+        try:
+            from scipy.ndimage import gaussian_filter as _gf  # type: ignore
+            self._gaussian_filter = _gf
+        except Exception:
+            self._gaussian_filter = None
+    
     def generate_gait_charts(self, data: Dict[str, Any]) -> Dict[str, str]:
         """生成步态分析图表"""
         charts = {}
@@ -47,90 +53,192 @@ class ChartGenerator:
         
         return charts
     
-    def generate_cop_trajectory(self, cop_data: Optional[List[Tuple[float, float]]] = None) -> str:
-        """生成COP轨迹图"""
+    def generate_cop_trajectory(self, cop_data: Optional[List[Tuple[float, float]]] = None,
+                                unit: str = 'm', heel_toe: Optional[Dict[str, List[Tuple[float, float]]]] = None,
+                                title: str = '压力中心(COP)轨迹分析') -> str:
+        """生成COP轨迹图
+        - cop_data: [(x, y)] 坐标，默认单位米
+        - unit: 'm' | 'cm' 指图中显示单位
+        - heel_toe: { 'hs': [(x,y)], 'to': [(x,y)] }
+        """
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        if cop_data is None:
+        if cop_data is None or len(cop_data) == 0:
             # 生成示例COP轨迹数据
             t = np.linspace(0, 4*np.pi, 100)
-            x = 10 * np.sin(t) + np.random.normal(0, 2, 100)
-            y = 5 * np.cos(2*t) + np.random.normal(0, 1, 100)
-            cop_data = list(zip(x, y))
+            x = 0.1 * np.sin(t) + np.random.normal(0, 0.02, 100)
+            y = 0.05 * np.cos(2*t) + np.random.normal(0, 0.01, 100)
         else:
-            x = [point[0] for point in cop_data]
-            y = [point[1] for point in cop_data]
+            arr = np.asarray(cop_data, dtype=float)
+            x = arr[:, 0]
+            y = arr[:, 1]
         
-        # 绘制COP轨迹
-        ax.plot(x, y, 'b-', linewidth=2, alpha=0.7, label='COP轨迹')
-        ax.scatter(x[0], y[0], c='green', s=100, marker='o', label='起始点', zorder=5)
-        ax.scatter(x[-1], y[-1], c='red', s=100, marker='s', label='结束点', zorder=5)
+        # 单位换算
+        factor = 1.0
+        label_x = '左右位移'
+        label_y = '前后位移'
+        if unit == 'cm':
+            factor = 100.0
+            unit_label = '(cm)'
+        else:
+            unit_label = '(m)'
+        x = x * factor
+        y = y * factor
         
-        # 添加95%置信椭圆
-        mean_x, mean_y = np.mean(x), np.mean(y)
-        cov = np.cov(x, y)
-        eigenvalues, eigenvectors = np.linalg.eig(cov)
-        angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-        width, height = 2 * np.sqrt(5.991 * eigenvalues)  # 95%置信区间
+        # 轨迹与标记
+        ax.plot(x, y, 'b-', linewidth=2, alpha=0.85, label='COP轨迹')
+        if len(x) > 0:
+            ax.scatter(x[0], y[0], c='green', s=80, marker='o', label='起始点', zorder=5)
+            ax.scatter(x[-1], y[-1], c='red', s=80, marker='s', label='结束点', zorder=5)
+        if heel_toe:
+            if 'hs' in heel_toe and heel_toe['hs']:
+                hs = np.asarray(heel_toe['hs'], dtype=float) * factor
+                ax.scatter(hs[:, 0], hs[:, 1], c='#ff7f0e', s=50, marker='^', label='HS', zorder=6)
+            if 'to' in heel_toe and heel_toe['to']:
+                to = np.asarray(heel_toe['to'], dtype=float) * factor
+                ax.scatter(to[:, 0], to[:, 1], c='#9467bd', s=50, marker='v', label='TO', zorder=6)
         
-        ellipse = patches.Ellipse((mean_x, mean_y), width, height, 
-                                 angle=angle, linewidth=2, 
-                                 fill=False, edgecolor='red', 
-                                 linestyle='--', label='95%置信椭圆')
-        ax.add_patch(ellipse)
+        # 95%置信椭圆与重心
+        metrics_text = ''
+        if len(x) >= 5:
+            mean_x, mean_y = np.mean(x), np.mean(y)
+            cov = np.cov(x, y)
+            eigenvalues, eigenvectors = np.linalg.eig(cov)
+            angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+            width, height = 2 * np.sqrt(5.991 * eigenvalues)  # 95%置信区间
+            ellipse = patches.Ellipse((mean_x, mean_y), width, height, 
+                                     angle=angle, linewidth=2, 
+                                     fill=False, edgecolor='red', 
+                                     linestyle='--', label='95%置信椭圆')
+            ax.add_patch(ellipse)
+            ax.scatter(mean_x, mean_y, c='black', s=80, marker='+', label='重心', zorder=5)
+            # 计算路径长度与AP/ML范围
+            path_len = float(np.sum(np.sqrt(np.diff(x)**2 + np.diff(y)**2)))
+            ap_range = float(np.max(y) - np.min(y))
+            ml_range = float(np.max(x) - np.min(x))
+            metrics_text = f'路径: {path_len:.1f}{unit}\nAP范围: {ap_range:.1f}{unit}\nML范围: {ml_range:.1f}{unit}'
+            ax.text(0.02, 0.98, metrics_text, transform=ax.transAxes, fontsize=10,
+                    va='top', ha='left', bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
         
-        # 添加中心点
-        ax.scatter(mean_x, mean_y, c='black', s=100, marker='+', label='重心', zorder=5)
-        
-        # 设置图表样式
-        ax.set_xlabel('左右位移 (mm)', fontsize=12)
-        ax.set_ylabel('前后位移 (mm)', fontsize=12)
-        ax.set_title('压力中心(COP)轨迹分析', fontsize=14, fontweight='bold')
+        # 坐标设置
+        ax.set_xlabel(f'{label_x} {unit_label}', fontsize=12)
+        ax.set_ylabel(f'{label_y} {unit_label}', fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.legend(loc='upper right')
         ax.set_aspect('equal', adjustable='box')
-        
-        # 添加背景颜色区域
         ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
         ax.axvline(x=0, color='k', linestyle='-', linewidth=0.5)
         
-        # 转换为base64
+        # 比例尺（10cm 或 0.1m）
+        try:
+            scale_len = 10.0 if unit == 'cm' else 0.1
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            x0 = xmax - (xmax - xmin) * 0.25
+            y0 = ymin + (ymax - ymin) * 0.08
+            ax.plot([x0, x0 + scale_len], [y0, y0], color='k', lw=3)
+            ax.text(x0 + scale_len / 2, y0, f'{int(scale_len)}{unit}', ha='center', va='bottom')
+        except Exception:
+            pass
+        
         return self._fig_to_base64(fig)
     
-    def generate_pressure_heatmap(self, pressure_matrix: Optional[np.ndarray] = None) -> str:
-        """生成压力热力图"""
+    def generate_pressure_heatmap(self, pressure_matrix: Optional[np.ndarray] = None,
+                                  x_scale_cm: Optional[float] = None,
+                                  y_scale_cm: Optional[float] = None,
+                                  title: str = '足底压力分布热力图') -> str:
+        """生成压力热力图
+        - pressure_matrix: 2D 数组；如果为 None，则使用示例脚印
+        - x_scale_cm/y_scale_cm: 每格对应的物理尺寸（厘米），用于轴刻度
+        """
         fig, ax = plt.subplots(figsize=(8, 6))
         
         if pressure_matrix is None:
             # 生成示例压力数据（模拟脚印）
             pressure_matrix = np.zeros((32, 64))
-            # 左脚
             for i in range(10, 22):
                 for j in range(5, 25):
                     dist = np.sqrt((i-16)**2 + (j-15)**2)
                     if dist < 8:
                         pressure_matrix[i, j] = 100 * np.exp(-dist/4)
-            # 右脚
             for i in range(10, 22):
                 for j in range(39, 59):
                     dist = np.sqrt((i-16)**2 + (j-49)**2)
                     if dist < 8:
                         pressure_matrix[i, j] = 100 * np.exp(-dist/4)
+        else:
+            pressure_matrix = np.asarray(pressure_matrix, dtype=float)
         
-        # 绘制热力图
-        im = ax.imshow(pressure_matrix, cmap='hot', interpolation='bilinear', aspect='auto')
+        # 数据预处理：非负、平滑、阈值裁剪，避免“只有两个点”的视觉问题
+        mat = np.nan_to_num(pressure_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        vmax = float(np.max(mat)) if mat.size > 0 else 0.0
+        if self._gaussian_filter is not None and vmax > 0:
+            try:
+                # sigma 依据尺寸自适应
+                sigma = max(0.8, min(mat.shape) / 20.0)
+                mat = self._gaussian_filter(mat, sigma=sigma)
+                vmax = float(np.max(mat))
+            except Exception:
+                pass
+        # 低值去噪，去掉<10%max 的背景
+        if vmax > 0:
+            thresh = 0.10 * vmax
+            mat = np.where(mat >= thresh, mat, 0.0)
         
-        # 添加颜色条
+        # 物理坐标映射
+        h, w = mat.shape
+        extent = None
+        if x_scale_cm and y_scale_cm:
+            extent = [0.0, w * x_scale_cm, 0.0, h * y_scale_cm]
+        
+        # 绘制热力图（origin=lower 使坐标系直观）
+        im = ax.imshow(mat, cmap='hot', interpolation='bilinear', aspect='equal', origin='lower', extent=extent)
         cbar = plt.colorbar(im, ax=ax)
-        cbar.set_label('压力值 (N)', rotation=270, labelpad=15)
+        cbar.set_label('压力值', rotation=270, labelpad=15)
         
-        # 设置标题和标签
-        ax.set_title('足底压力分布热力图', fontsize=14, fontweight='bold')
-        ax.set_xlabel('横向位置 (传感器单元)', fontsize=12)
-        ax.set_ylabel('纵向位置 (传感器单元)', fontsize=12)
+        # 叠加等高线，呈现脚形轮廓（基于百分位）
+        try:
+            vmax = float(np.nanmax(mat))
+            if vmax > 0:
+                levels = [vmax * r for r in (0.3, 0.5, 0.7, 0.9)]
+                cs = ax.contour(mat if extent is None else None, levels=levels,
+                                colors=['#ffffff', '#00bcd4', '#2962ff', '#2e7d32'], linewidths=[1.0,1.2,1.4,1.4],
+                                origin='lower', extent=extent)
+                try:
+                    ax.clabel(cs, inline=True, fontsize=8, fmt='%.0f')
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
-        # 添加网格
-        ax.grid(False)
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        
+        if x_scale_cm and y_scale_cm:
+            xticks = np.linspace(0, extent[1], 5)
+            yticks = np.linspace(0, extent[3], 5)
+            ax.set_xticks(xticks)
+            ax.set_yticks(yticks)
+            ax.set_xticklabels([f'{t:.0f}' for t in xticks])
+            ax.set_yticklabels([f'{t:.0f}' for t in yticks])
+            ax.set_xlabel('横向位置 (cm)')
+            ax.set_ylabel('纵向位置 (cm)')
+        else:
+            ax.set_xlabel('横向位置 (传感器单元)')
+            ax.set_ylabel('纵向位置 (传感器单元)')
+        
+        # 方向指示（假设x为前进方向）
+        try:
+            if extent is None:
+                ax.annotate('前进方向', xy=(0.85, 0.1), xytext=(0.7, 0.1), textcoords='axes fraction',
+                            arrowprops=dict(arrowstyle='->', lw=1.5), fontsize=10)
+            else:
+                xr = extent[1]
+                yr = extent[3]
+                ax.annotate('前进方向', xy=(0.85*xr, 0.1*yr), xytext=(0.7*xr, 0.1*yr),
+                            arrowprops=dict(arrowstyle='->', lw=1.5), fontsize=10)
+        except Exception:
+            pass
         
         return self._fig_to_base64(fig)
     
@@ -141,11 +249,8 @@ class ChartGenerator:
         x = list(range(1, len(velocities) + 1))
         ax.plot(x, velocities, 'b-o', linewidth=2, markersize=8)
         
-        # 添加平均线
         avg_velocity = np.mean(velocities)
         ax.axhline(y=avg_velocity, color='r', linestyle='--', label=f'平均: {avg_velocity:.2f} m/s')
-        
-        # 添加正常范围
         ax.axhspan(1.0, 1.4, alpha=0.2, color='green', label='正常范围')
         
         ax.set_xlabel('测试次数', fontsize=12)
@@ -166,13 +271,11 @@ class ChartGenerator:
         
         bars = ax.bar(categories, values, color=colors, width=0.6)
         
-        # 添加数值标签
         for bar, val in zip(bars, values):
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
                    f'{val:.3f}m', ha='center', va='bottom', fontsize=12)
         
-        # 添加对称性指标
         symmetry = min(left, right) / max(left, right) * 100 if max(left, right) > 0 else 0
         ax.text(0.5, max(values) * 0.5, f'对称性: {symmetry:.1f}%', 
                transform=ax.transData, ha='center', fontsize=11,
@@ -198,14 +301,11 @@ class ChartGenerator:
                                           autopct='', explode=explode,
                                           shadow=True, startangle=90)
         
-        # 美化文字
         for text in texts:
             text.set_fontsize(12)
             text.set_fontweight('bold')
         
         ax.set_title('步态周期分析', fontsize=14, fontweight='bold', pad=20)
-        
-        # 添加正常范围说明
         normal_text = '正常范围:\n支撑相: 58-62%\n摆动相: 38-42%'
         ax.text(1.3, 0, normal_text, transform=ax.transData,
                fontsize=10, verticalalignment='center',

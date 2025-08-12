@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -18,7 +17,10 @@
             line-height: 1.5;
             color: #333;
             background: white;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
+        
+        @page { size: A4; margin: 14mm; }
         
         .report-container {
             max-width: 1000px;
@@ -339,136 +341,6 @@
             font-weight: 500;
         }
         
-        /* 🔥 智能化建议新增样式 */
-        .smart-advice-indicator {
-            text-align: center;
-            margin-bottom: 25px;
-            padding: 10px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 20px;
-            color: white;
-        }
-        
-        .advice-status {
-            font-weight: 500;
-            font-size: 14px;
-        }
-        
-        .risk-assessment {
-            background: #fff7e6;
-            border: 2px solid #ffd591;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .risk-assessment .recommendation-title {
-            color: #d48806;
-        }
-        
-        .risk-list .risk-item {
-            background: #fffbf0;
-            padding: 8px 12px;
-            border-left: 4px solid #faad14;
-            margin-bottom: 8px;
-            border-radius: 4px;
-        }
-        
-        .medical-recommendations {
-            background: #f6ffed;
-            border: 2px solid #b7eb8f;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .medical-recommendations .recommendation-title {
-            color: #389e0d;
-        }
-        
-        .medical-rec-item {
-            background: #f9fff9;
-            padding: 8px 12px;
-            border-left: 4px solid #52c41a;
-            margin-bottom: 8px;
-            border-radius: 4px;
-        }
-        
-        .exercise-plan {
-            background: #e6f7ff;
-            border: 2px solid #91d5ff;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .exercise-plan .recommendation-title {
-            color: #096dd9;
-        }
-        
-        .exercise-item {
-            background: #f0f9ff;
-            padding: 8px 12px;
-            border-left: 4px solid #1890ff;
-            margin-bottom: 8px;
-            border-radius: 4px;
-        }
-        
-        .lifestyle {
-            background: #f9f0ff;
-            border: 2px solid #d3adf7;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .lifestyle .recommendation-title {
-            color: #722ed1;
-        }
-        
-        .lifestyle-item {
-            background: #faf4ff;
-            padding: 8px 12px;
-            border-left: 4px solid #9254de;
-            margin-bottom: 8px;
-            border-radius: 4px;
-        }
-        
-        .follow-up {
-            background: #fff1f0;
-            border: 2px solid #ffa39e;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .follow-up .recommendation-title {
-            color: #cf1322;
-        }
-        
-        .followup-item {
-            background: #fff8f8;
-            padding: 8px 12px;
-            border-left: 4px solid #ff4d4f;
-            margin-bottom: 8px;
-            border-radius: 4px;
-        }
-        
-        .advice-footer {
-            margin-top: 30px;
-            padding: 20px;
-            background: #f0f2f5;
-            border-radius: 8px;
-            border-left: 4px solid #1890ff;
-        }
-        
-        .advice-note {
-            margin: 0;
-            color: #666;
-            font-size: 13px;
-            line-height: 1.6;
-        }
-        
         /* 足底压力分析 */
         .foot-pressure-section {
             margin: 40px 0;
@@ -699,123 +571,110 @@
                 <tr>
                     <td>步速</td>
                     <td>-</td>
-                    <td>1.015</td>
+                    <td>{{ walking_speed }}</td>
                     <td>[0.85, 1.40]</td>
                     <td>m/s</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步长</td>
                     <td>左</td>
-                    <td>55.1</td>
+                    <td>{{ left_step_length }}</td>
                     <td rowspan="2">[50.0, 65.0]</td>
                     <td rowspan="2">cm</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>60.9</td>
+                    <td>{{ right_step_length }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步幅</td>
                     <td>左</td>
-                    <td>110.2</td>
+                    <td>{{ left_stride_length }}</td>
                     <td rowspan="2">[100.00, 130.00]</td>
                     <td rowspan="2">cm</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>121.8</td>
+                    <td>{{ right_stride_length }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步频</td>
                     <td>左</td>
-                    <td>102.9</td>
+                    <td>{{ left_cadence }}</td>
                     <td rowspan="2">[103, 123]</td>
                     <td rowspan="2">steps/min</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>107.1</td>
+                    <td>{{ right_cadence }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">跨步速度</td>
                     <td>左</td>
-                    <td>{{LEFT_STRIDE_SPEED}}</td>
+                    <td>{{ left_stride_speed }}</td>
                     <td rowspan="2">[1.53, 3.08]</td>
                     <td rowspan="2">m/s</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>{{RIGHT_STRIDE_SPEED}}</td>
+                    <td>{{ right_stride_speed }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">摆动速度</td>
                     <td>左</td>
-                    <td>{{LEFT_SWING_SPEED}}</td>
+                    <td>{{ left_swing_speed }}</td>
                     <td rowspan="2">[2.13, 4.90]</td>
                     <td rowspan="2">m/s</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>{{RIGHT_SWING_SPEED}}</td>
+                    <td>{{ right_swing_speed }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">站立相</td>
                     <td>左</td>
-                    <td>{{LEFT_STANCE_PHASE}}</td>
+                    <td>{{ left_stance_phase }}</td>
                     <td rowspan="2">[60.00, 68.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>{{RIGHT_STANCE_PHASE}}</td>
+                    <td>{{ right_stance_phase }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">摆动相</td>
                     <td>左</td>
-                    <td>{{LEFT_SWING_PHASE}}</td>
+                    <td>{{ left_swing_phase }}</td>
                     <td rowspan="2">[32.00, 40.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>{{RIGHT_SWING_PHASE}}</td>
+                    <td>{{ right_swing_phase }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">双支撑相</td>
                     <td>左</td>
-                    <td>{{LEFT_DOUBLE_SUPPORT}}</td>
+                    <td>{{ left_double_support }}</td>
                     <td rowspan="2">[18.00, 22.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>{{RIGHT_DOUBLE_SUPPORT}}</td>
+                    <td>{{ right_double_support }}</td>
                 </tr>
-                <tr>
-                    <td rowspan="2">步高</td>
-                    <td>左</td>
-                    <td>11.9</td>
-                    <td rowspan="2">[6.0, 12.0]</td>
-                    <td rowspan="2">cm</td>
-                </tr>
-                <tr>
-                    <td>右</td>
-                    <td>12.4</td>
-                </tr>
+                
                 <tr>
                     <td>步宽</td>
                     <td>-</td>
-                    <td>0.12</td>
-                    <td>[0.09, 0.15]</td>
-                    <td>m</td>
+                    <td>{{ step_width }}</td>
+                    <td>[9.00, 15.00]</td>
+                    <td>cm</td>
                 </tr>
                 <tr>
                     <td>转身时间</td>
                     <td>-</td>
-                    <td class="abnormal">
-                        2
-                        <span class="arrow-up">↑</span>
-                    </td>
+                    <td>{{ turn_time }}</td>
                     <td>[0.50, 1.00]</td>
                     <td>s</td>
                 </tr>
@@ -826,9 +685,9 @@
         <div class="conclusion-section">
             <div class="conclusion-title">评估结论：</div>
             <div class="conclusion-content">
-                <p><strong>步速：</strong>步速1.015 m/s，未见异常。</p>
+                <p><strong>步速：</strong>步速{{ walking_speed }} m/s，未见异常。</p>
                 
-                <p><strong>转身时间：</strong>转身时间2秒，超出正常范围。</p>
+                <p><strong>转身时间：</strong>转身时间{{ turn_time }}秒，超出正常范围。</p>
                 
                 <p><strong>总体评价：</strong>综合评估显示低风险。9项测试完成。</p>
             </div>
@@ -855,7 +714,6 @@
         </div>
         
         
-        
         <!-- COP轨迹分析 -->
         <div class="cop-section">
             <h3 class="section-title">压力中心(COP)轨迹分析</h3>
@@ -865,75 +723,26 @@
                     <div class="cop-chart">COP轨迹图</div>
                     <div class="cop-metrics">
                         <div class="metric-item">
-                            <div class="metric-label">COP轨迹面积:</div>
-                            <div class="metric-value">42.5 cm²</div>
+                            <div class="metric-label">总位移:</div>
+                            <div class="metric-value">156.8 mm</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">轨迹总长度:</div>
-                            <div class="metric-value">165.8 cm</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">前后摆动范围:</div>
-                            <div class="metric-value">4.8 cm</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">左右摆动范围:</div>
-                            <div class="metric-value">3.2 cm</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">轨迹复杂度:</div>
-                            <div class="metric-value">6.2/10</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">稳定性指数:</div>
-                            <div class="metric-value">78.0%</div>
+                            <div class="metric-label">摆动面积:</div>
+                            <div class="metric-value">45.2 mm²</div>
                         </div>
                     </div>
                 </div>
                 <div class="cop-item">
-                    <div class="cop-title">COP分析状态评估</div>
-                    <div class="cop-chart">
-                        <div class="status-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px;">
-                            <div class="status-item" style="display: flex; justify-content: space-between; padding: 10px; background: #f0f9ff; border-left: 4px solid #1e90ff; border-radius: 4px;">
-                                <span class="status-label" style="color: #666; font-weight: 500;">轨迹面积:</span>
-                                <span class="status-value" style="color: #1e90ff; font-weight: 600;">
-                                    正常
-                                </span>
-                            </div>
-                            <div class="status-item" style="display: flex; justify-content: space-between; padding: 10px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
-                                <span class="status-label" style="color: #666; font-weight: 500;">轨迹长度:</span>
-                                <span class="status-value" style="color: #ef4444; font-weight: 600;">
-                                    异常
-                                </span>
-                            </div>
-                            <div class="status-item" style="display: flex; justify-content: space-between; padding: 10px; background: #f0f9ff; border-left: 4px solid #1e90ff; border-radius: 4px;">
-                                <span class="status-label" style="color: #666; font-weight: 500;">前后摆动:</span>
-                                <span class="status-value" style="color: #1e90ff; font-weight: 600;">
-                                    正常
-                                </span>
-                            </div>
-                            <div class="status-item" style="display: flex; justify-content: space-between; padding: 10px; background: #f0f9ff; border-left: 4px solid #1e90ff; border-radius: 4px;">
-                                <span class="status-label" style="color: #666; font-weight: 500;">左右摆动:</span>
-                                <span class="status-value" style="color: #1e90ff; font-weight: 600;">
-                                    正常
-                                </span>
-                            </div>
-                            <div class="status-item" style="display: flex; justify-content: space-between; padding: 10px; background: #fff7ed; border-left: 4px solid #f59e0b; border-radius: 4px; grid-column: 1 / -1;">
-                                <span class="status-label" style="color: #666; font-weight: 500;">稳定性指数:</span>
-                                <span class="status-value" style="color: #f59e0b; font-weight: 600;">
-                                    良好
-                                </span>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="cop-title">右脚 COP 轨迹</div>
+                    <div class="cop-chart">COP轨迹图</div>
                     <div class="cop-metrics">
-                        <div class="reference-note">
-                            <strong>参考范围：</strong><br>
-                            • 轨迹面积：< 50 cm² (正常)<br>
-                            • 轨迹长度：15-40 cm (正常)<br>
-                            • 前后范围：2-6 cm (正常)<br>
-                            • 左右范围：1-4 cm (正常)<br>
-                            • 稳定性指数：≥80% (优秀)，60-79% (良好)
+                        <div class="metric-item">
+                            <div class="metric-label">总位移:</div>
+                            <div class="metric-value">162.3 mm</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">摆动面积:</div>
+                            <div class="metric-value">48.7 mm²</div>
                         </div>
                     </div>
                 </div>
@@ -944,89 +753,50 @@
         </div>
         
         
-        
-        <!-- 🔥 智能化个性化医学建议 -->
+        <!-- 专业医学建议 -->
         <div class="recommendations-section">
-            <h3 class="section-title">🧠 智能化个性化医学建议</h3>
-            <div class="smart-advice-indicator">
-                <span class="advice-status">{{ '✨ 基于您的实际步态数据智能生成' if smart_recommendations_available else '📝 标准医学建议' }}</span>
+            <h3 class="section-title">专业医学建议</h3>
+            
+            <div class="recommendation-category">
+                <h4 class="recommendation-title">康复训练建议：</h4>
+                <ul class="recommendation-list">
+                    <li><strong>平衡功能训练：</strong>建议进行单腿站立、平衡垫训练等，每日2-3次，每次15-20分钟，以改善本体感觉和动态平衡能力。</li>
+                    <li><strong>肌力强化训练：</strong>重点加强下肢肌群（特别是右下肢）力量训练，包括股四头肌、臀肌和小腿肌群的渐进性抗阻训练。</li>
+                    <li><strong>步态矫正训练：</strong>在专业治疗师指导下进行步态模式重建，重点改善右下肢支撑期功能和左右协调性。</li>
+                    <li><strong>功能性活动训练：</strong>结合日常生活动作，如起坐、上下楼梯等功能性训练，提高实用性运动能力。</li>
+                </ul>
             </div>
             
-            {% if personalized_advice %}
-                {% if personalized_advice.risk_assessment and personalized_advice.risk_assessment|length > 0 %}
-                <div class="recommendation-category risk-assessment">
-                    <h4 class="recommendation-title">🔍 风险评估：</h4>
-                    <ul class="recommendation-list risk-list">
-                        {% for risk in personalized_advice.risk_assessment %}
-                        <li class="risk-item">⚠️ {{ risk }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                
-                {% if personalized_advice.recommendations and personalized_advice.recommendations|length > 0 %}
-                <div class="recommendation-category medical-recommendations">
-                    <h4 class="recommendation-title">💊 个性化医学建议：</h4>
-                    <ul class="recommendation-list">
-                        {% for rec in personalized_advice.recommendations %}
-                        <li class="medical-rec-item">🎯 {{ rec }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                
-                {% if personalized_advice.exercise_plan and personalized_advice.exercise_plan|length > 0 %}
-                <div class="recommendation-category exercise-plan">
-                    <h4 class="recommendation-title">💪 专属运动计划：</h4>
-                    <ul class="recommendation-list exercise-list">
-                        {% for exercise in personalized_advice.exercise_plan %}
-                        <li class="exercise-item">🏃‍♂️ {{ exercise }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                
-                {% if personalized_advice.lifestyle and personalized_advice.lifestyle|length > 0 %}
-                <div class="recommendation-category lifestyle">
-                    <h4 class="recommendation-title">🌱 生活方式指导：</h4>
-                    <ul class="recommendation-list lifestyle-list">
-                        {% for lifestyle in personalized_advice.lifestyle %}
-                        <li class="lifestyle-item">🏠 {{ lifestyle }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                
-                {% if personalized_advice.follow_up and personalized_advice.follow_up|length > 0 %}
-                <div class="recommendation-category follow-up">
-                    <h4 class="recommendation-title">📅 随访计划：</h4>
-                    <ul class="recommendation-list followup-list">
-                        {% for followup in personalized_advice.follow_up %}
-                        <li class="followup-item">📋 {{ followup }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-            {% else %}
-                <!-- 备用固定建议 -->
-                <div class="recommendation-category">
-                    <h4 class="recommendation-title">基础医学建议：</h4>
-                    <ul class="recommendation-list">
-                        <li>建议保持规律运动，每周至少150分钟中等强度活动</li>
-                        <li>注意饮食均衡，充足蛋白质和维生素摄入</li>
-                        <li>定期进行健康检查和步态评估</li>
-                        <li>如有异常症状，及时就医咨询</li>
-                    </ul>
-                </div>
-            {% endif %}
+            <div class="recommendation-category">
+                <h4 class="recommendation-title">预防措施：</h4>
+                <ul class="recommendation-list">
+                    <li><strong>跌倒风险管理：</strong>家庭环境改造，移除障碍物，增加扶手和照明，使用防滑设施。</li>
+                    <li><strong>辅助器具评估：</strong>根据功能状况考虑使用适当的助行器具，确保行走安全。</li>
+                    <li><strong>定期监测：</strong>建议3-6个月复查步态分析，动态评估康复效果和功能改善程度。</li>
+                    <li><strong>营养支持：</strong>保证充足的蛋白质摄入和维生素D补充，维护肌肉和骨骼健康。</li>
+                </ul>
+            </div>
             
-            <div class="advice-footer">
-                <p class="advice-note">
-                    <strong>重要提示：</strong>以上建议基于您的个人步态分析数据生成，仅供参考。具体治疗方案请咨询专业医师。
-                </p>
+            <div class="recommendation-category">
+                <h4 class="recommendation-title">生活方式指导：</h4>
+                <ul class="recommendation-list">
+                    <li><strong>规律运动：</strong>在康复训练基础上，逐步增加有氧运动，如游泳、太极拳等低冲击性活动。</li>
+                    <li><strong>足部护理：</strong>选择合适的鞋具，保持足部清洁，定期检查足部皮肤状况。</li>
+                    <li><strong>活动循序渐进：</strong>避免突然增加活动强度，遵循渐进性原则，预防运动损伤。</li>
+                    <li><strong>心理健康：</strong>保持积极心态，必要时寻求心理支持，提高康复依从性。</li>
+                </ul>
+            </div>
+            
+            <div class="recommendation-category">
+                <h4 class="recommendation-title">医疗随访：</h4>
+                <ul class="recommendation-list">
+                    <li><strong>康复科随访：</strong>2-4周后复诊，评估康复训练效果，调整治疗方案。</li>
+                    <li><strong>神经科评估：</strong>如步态异常持续，建议神经科专科评估，排除神经系统疾病。</li>
+                    <li><strong>骨科会诊：</strong>必要时骨科评估下肢结构和关节功能，排除器质性病变。</li>
+                    <li><strong>营养科指导：</strong>针对肌少症风险，制定个体化营养干预方案。</li>
+                </ul>
             </div>
         </div>
-        
         
         
         <!-- 足底压力分析 -->
@@ -1130,4 +900,4 @@
         </div>
     </div>
 </body>
-</html>
+</html> 
