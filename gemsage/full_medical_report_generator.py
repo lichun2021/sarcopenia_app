@@ -732,8 +732,9 @@ class FullMedicalReportGenerator:
                     print(f"   ✅ 步速趋势图生成成功")
                 
                 if gait_data.get('left_foot') and gait_data.get('right_foot'):
-                    left_length = gait_data['left_foot'].get('average_step_length', 0.6) * 100
-                    right_length = gait_data['right_foot'].get('average_step_length', 0.6) * 100
+                    # average_step_length已经是cm单位，average_step_length_m是米单位
+                    left_length = gait_data['left_foot'].get('average_step_length_m', 0.6)  # 米单位
+                    right_length = gait_data['right_foot'].get('average_step_length_m', 0.6)  # 米单位
                     charts['stride_chart'] = chart_gen._create_stride_comparison(left_length, right_length)
                     print(f"   ✅ 步幅对比图生成成功")
                 
@@ -759,7 +760,11 @@ class FullMedicalReportGenerator:
                 if snapshot is not None:
                     arr = np.asarray(snapshot, dtype=float)
                     h, w = arr.shape
-                    mid = w // 2
+                    # 使用算法提供的ML分界线，如果没有则使用中线
+                    ml_boundary = report_data.get('ml_boundary', w // 2)
+                    mid = int(ml_boundary)
+                    # 确保分界线在有效范围内
+                    mid = max(1, min(w - 1, mid))
                     left_mat = arr[:, :mid]
                     right_mat = arr[:, mid:]
                     charts['pressure_heatmap_left'] = chart_gen.generate_pressure_heatmap(
@@ -775,8 +780,8 @@ class FullMedicalReportGenerator:
                         title='右脚压力分布热力图'
                     )
                 else:
-                    charts['pressure_heatmap_left'] = chart_gen.generate_pressure_heatmap()
-                    charts['pressure_heatmap_right'] = charts['pressure_heatmap_left']
+                    charts['pressure_heatmap_left'] = chart_gen.generate_pressure_heatmap(title='左脚压力分布热力图')
+                    charts['pressure_heatmap_right'] = chart_gen.generate_pressure_heatmap(title='右脚压力分布热力图')
                 print(f"   ✅ COP与热力图生成成功（真实数据优先）")
                 
                 print(f"🎨 图表生成完成，共{len(charts)}个图表")
@@ -820,11 +825,33 @@ class FullMedicalReportGenerator:
             ('热力图显示区域', f'<img src="{charts.get("pressure_heatmap_left", "")}" style="width:100%;height:200px;object-fit:contain;" alt="压力热力图" />')
         ]
         
-        # 简化替换逻辑
-        template_content = template_content.replace(
-            '<div class="chart-placeholder">图表加载中...</div>',
-            f'<img src="{charts.get("velocity_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="图表" />'
-        )
+        # 按顺序替换三个图表占位符
+        # 查找所有占位符的位置
+        placeholder = '<div class="chart-placeholder">图表加载中...</div>'
+        
+        # 第一个占位符：步速图表
+        if placeholder in template_content:
+            template_content = template_content.replace(
+                placeholder,
+                f'<img src="{charts.get("velocity_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步速趋势图" />',
+                1  # 只替换第一个
+            )
+        
+        # 第二个占位符：步幅图表
+        if placeholder in template_content:
+            template_content = template_content.replace(
+                placeholder,
+                f'<img src="{charts.get("stride_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步幅对比图" />',
+                1  # 只替换第一个（现在是第二个）
+            )
+        
+        # 第三个占位符：步态周期图表
+        if placeholder in template_content:
+            template_content = template_content.replace(
+                placeholder,
+                f'<img src="{charts.get("gait_cycle_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步态周期图" />',
+                1  # 只替换第一个（现在是第三个）
+            )
         
         template_content = template_content.replace(
             'COP轨迹图',

@@ -1146,6 +1146,80 @@ AI智能评估结果:
         
         return status
     
+    def _clean_problematic_images(self, html_content: str) -> str:
+        """清理HTML中有问题的base64图片数据"""
+        import re
+        import base64
+        
+        try:
+            logger.info("开始清理HTML中的图片数据...")
+            
+            # 查找所有base64图片
+            img_pattern = r'<img[^>]+src="data:image/[^"]*"[^>]*>'
+            imgs = re.findall(img_pattern, html_content)
+            
+            logger.info(f"找到 {len(imgs)} 个图片标签")
+            
+            replaced_count = 0
+            for i, img_tag in enumerate(imgs):
+                try:
+                    # 提取base64数据部分
+                    src_match = re.search(r'src="data:image/[^;]+;base64,([^"]+)"', img_tag)
+                    if src_match:
+                        base64_data = src_match.group(1)
+                        logger.info(f"处理图片 {i+1}: base64数据长度 {len(base64_data)}")
+                        
+                        # 尝试解码验证base64数据
+                        try:
+                            decoded_data = base64.b64decode(base64_data)
+                            logger.info(f"图片 {i+1}: 解码后数据长度 {len(decoded_data)}")
+                            
+                            # 简单验证：检查是否是有效的图片头部
+                            if len(decoded_data) < 10:
+                                raise ValueError("图片数据太短")
+                            
+                            # 检查是否包含常见图片格式头部
+                            valid_headers = [
+                                b'\x89PNG',  # PNG
+                                b'\xff\xd8\xff',  # JPEG  
+                                b'GIF8',  # GIF
+                                b'<svg',  # SVG
+                            ]
+                            
+                            # 显示前20个字节用于调试
+                            header_bytes = decoded_data[:20]
+                            logger.info(f"图片 {i+1}: 头部字节 {header_bytes}")
+                            
+                            is_valid = any(decoded_data.startswith(header) for header in valid_headers)
+                            if not is_valid:
+                                logger.warning(f"图片 {i+1}: 发现无效的图片数据，将替换为占位符")
+                                raise ValueError("无效的图片格式")
+                            else:
+                                logger.info(f"图片 {i+1}: 验证通过")
+                                
+                        except Exception as e:
+                            # 如果base64解码失败或数据无效，替换为占位符
+                            logger.warning(f"图片 {i+1}: 清理有问题的图片数据: {e}")
+                            placeholder = self._create_placeholder_svg()
+                            html_content = html_content.replace(img_tag, placeholder)
+                            replaced_count += 1
+                            
+                except Exception as e:
+                    logger.warning(f"处理图片标签 {i+1} 时出错: {e}")
+                    continue
+            
+            logger.info(f"图片清理完成: 替换了 {replaced_count} 个有问题的图片")
+            return html_content
+            
+        except Exception as e:
+            logger.warning(f"清理图片数据时出错: {e}，返回原始HTML")
+            return html_content
+    
+    def _create_placeholder_svg(self) -> str:
+        """创建占位符SVG图片"""
+        placeholder_svg = '''<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjVmNWY1IiBzdHJva2U9IiNjY2MiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7lm77ooajotJ/ovb3kuK0uLi48L3RleHQ+PC9zdmc+" style="width:100%;height:200px;object-fit:contain;" alt="图表加载失败" />'''
+        return placeholder_svg
+    
     def convert_html_to_pdf(self, html_content: str, output_path: str = None) -> str:
         """将HTML内容转换为PDF文件"""
         try:
@@ -1165,12 +1239,14 @@ AI智能评估结果:
                 temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
                 os.close(temp_fd)
             
-            # 为HTML添加最小的字体声明（只在内存中修改）
-            # 在HTML的<head>中插入字体CSS
+            # 处理HTML内容，清理有问题的图片和添加字体声明
             import re
             
+            # 先清理有问题的base64图片数据
+            modified_html = self._clean_problematic_images(html_content)
+            
             # 查找</head>标签的位置
-            head_end = html_content.find('</head>')
+            head_end = modified_html.find('</head>')
             if head_end > 0:
                 # 插入字体样式
                 font_style = """
@@ -1180,12 +1256,12 @@ AI智能评估结果:
                 </style>
                 """
                 # 在</head>之前插入样式
-                modified_html = html_content[:head_end] + font_style + html_content[head_end:]
+                modified_html = modified_html[:head_end] + font_style + modified_html[head_end:]
             else:
                 # 如果没有head标签，尝试在<html>后面添加
-                html_start = html_content.find('<html')
+                html_start = modified_html.find('<html')
                 if html_start >= 0:
-                    html_tag_end = html_content.find('>', html_start)
+                    html_tag_end = modified_html.find('>', html_start)
                     if html_tag_end > 0:
                         font_style = """
                         <head>
@@ -1195,11 +1271,7 @@ AI智能评估结果:
                         </style>
                         </head>
                         """
-                        modified_html = html_content[:html_tag_end+1] + font_style + html_content[html_tag_end+1:]
-                    else:
-                        modified_html = html_content
-                else:
-                    modified_html = html_content
+                        modified_html = modified_html[:html_tag_end+1] + font_style + modified_html[html_tag_end+1:]
             
             # 创建PDF
             with open(output_path, "wb") as result_file:

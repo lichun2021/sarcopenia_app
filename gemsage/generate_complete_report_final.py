@@ -70,8 +70,8 @@ def generate_report_with_final_algorithm(csv_file_path):
             'turn_time': 1.0,
             
             'left_foot': {
-                'average_step_length': left_step_length_m * 100,  # cm单位
-                'average_step_length_m': left_step_length_m,  # 米单位供速度计算
+                'average_step_length': float(left_step_length_m * 100),  # cm单位
+                'average_step_length_m': float(left_step_length_m),  # 米单位供速度计算
                 'cadence': left_cadence,
                 'stance_phase': gait_params.get('left_stance_phase', stance_phase),
                 'swing_phase': 100 - gait_params.get('left_stance_phase', stance_phase),
@@ -82,8 +82,8 @@ def generate_report_with_final_algorithm(csv_file_path):
                 'swing_speed_mps': left_foot_data.get('swing_speed_mps', 0.0),
             },
             'right_foot': {
-                'average_step_length': right_step_length_m * 100,  # cm单位  
-                'average_step_length_m': right_step_length_m,  # 米单位供速度计算
+                'average_step_length': float(right_step_length_m * 100),  # cm单位  
+                'average_step_length_m': float(right_step_length_m),  # 米单位供速度计算
                 'cadence': right_cadence,
                 'stance_phase': gait_params.get('right_stance_phase', stance_phase),
                 'swing_phase': 100 - gait_params.get('right_stance_phase', stance_phase),
@@ -192,13 +192,18 @@ def generate_report_with_final_algorithm(csv_file_path):
     return output_path
 
 if __name__ == "__main__":
-    # 使用步道测试文件
-    test_file = "/Users/xidada/algorithms/数据/2025-08-09 2/detection_data/曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
+    # 支持命令行参数或使用默认文件
+    if len(sys.argv) > 1:
+        test_file = sys.argv[1]
+    else:
+        # 默认测试文件
+        test_file = "/Users/xidada/algorithms/数据/2025-08-09 2/detection_data/曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
     
     if Path(test_file).exists():
         report_path = generate_report_with_final_algorithm(test_file)
         if report_path:
-            # 自动打开报告
-            os.system(f"open {report_path}")
+            print(f"✅ 报告已生成: {report_path}")
+            # 自动打开报告（仅在Mac上）
+            # os.system(f"open {report_path}")
     else:
         print(f"❌ 测试文件不存在: {test_file}")

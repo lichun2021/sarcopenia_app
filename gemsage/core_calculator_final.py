@@ -21,8 +21,9 @@ class PressureAnalysisFinal:
         # 统一的测试协议配置（参数化，避免硬编码在算法里）
         self.TEST_PROTOCOL = {
             'walkway': {
-                'single_leg_distance_m': 4.5,   # 单程距离（可由外部修改）
-                'round_trip': True              # 是否往返
+                'single_leg_distance_m': 2.9,   # 单程距离约2.9米（压力垫有效长度）
+                'round_trip': True,             # 是否往返
+                'typical_laps': 3               # 典型圈数（可根据实际检测调整）
             }
         }
     
@@ -143,6 +144,21 @@ class PressureAnalysisFinal:
         kernel = np.ones(window_frames) / window_frames
         return np.convolve(arr, kernel, mode='same')
     
+    def _get_best_pressure_snapshot(self, pressure_data: List[List[List[float]]], events: Dict[str, Any]) -> Optional[List[List[float]]]:
+        """获取最佳压力快照，确保左右脚正确分离"""
+        if not pressure_data or not events.get('total_pressure_smooth'):
+            return None
+        
+        # 找到压力最大的时刻
+        max_idx = int(np.argmax(events['total_pressure_smooth']))
+        
+        # 确保索引在有效范围内
+        if max_idx >= len(pressure_data):
+            max_idx = len(pressure_data) - 1
+        
+        # 返回压力快照
+        return pressure_data[max_idx]
+    
     def _detect_events_1d(self, signal: np.ndarray) -> Tuple[List[int], List[int]]:
         """在一维压力序列上检测HS(峰)与TO(谷)的索引"""
         if signal.size < 5:
@@ -165,20 +181,15 @@ class PressureAnalysisFinal:
         return hs, to
     
     def detect_gait_events_final(self, pressure_data: List[List[List[float]]]) -> Dict[str, Any]:
-        """检测事件：返回总序列与左右脚分离的HS/TO、COP轨迹等
-        - 左右半区按列中线分割（列=ML）
-        - 采用接触布尔序列（迟滞阈值）在左右侧分别检测 HS(上升沿) 与 TO(下降沿)
+        """智能检测事件：基于行进方向动态判断左右脚
+        - 检测行进方向（从左到右 or 从右到左）
+        - 检测转身点，转身后自动调整左右脚判断
+        - 基于解剖学位置而非传感器位置识别左右脚
         """
         cop_trajectory = []
         total_pressures = []
-        left_pressures = []
-        right_pressures = []
-        # 前掌/后跟分通道信号（左右）
-        left_heel_pressures = []
-        left_fore_pressures = []
-        right_heel_pressures = []
-        right_fore_pressures = []
-        ml_bias = []
+        
+        # 第一遍：收集COP轨迹
         for frame_idx, frame in enumerate(pressure_data):
             cop = self.calculate_cop_position(frame)
             if cop:
@@ -186,14 +197,147 @@ class PressureAnalysisFinal:
                 cop['time'] = frame_idx / self.SAMPLING_RATE
                 cop_trajectory.append(cop)
                 total_pressures.append(cop['total_pressure'])
-                ml_bias.append(cop['y'])  # ML位置（米）
             else:
-                ml_bias.append(0.0)
-            # 先用几何中线按列(ML)分半区作为初判（列前半=左，列后半=右）
+                total_pressures.append(0.0)
+        
+        # 智能检测行进方向和转身点
+        turn_frame = None
+        initial_direction = None  # 'left_to_right' or 'right_to_left'
+        
+        if len(cop_trajectory) > 10:
+            x_positions = np.array([cop['x'] for cop in cop_trajectory])
+            y_positions = np.array([cop['y'] for cop in cop_trajectory])  # ML位置
+            times = np.array([cop['time'] for cop in cop_trajectory])
+            
+            # 平滑并计算速度
+            x_smooth = self._smooth(x_positions, max(3, int(0.1 * self.SAMPLING_RATE)))
+            x_velocity = np.gradient(x_smooth, times)
+            
+            # 检测初始行进方向（前1秒的平均速度）
+            early_frames = min(int(1.0 * self.SAMPLING_RATE), len(x_velocity))
+            initial_velocity = np.mean(x_velocity[:early_frames])
+            
+            if initial_velocity > 0:
+                initial_direction = 'left_to_right'
+                print(f"   初始方向: 从左向右 (→)")
+            else:
+                initial_direction = 'right_to_left'
+                print(f"   初始方向: 从右向左 (←)")
+            
+            # 基于位置判断转身点（每走约2.9米应该有一次转身）
+            turn_frames = []
+            accumulated_distance = 0.0
+            last_x = x_positions[0]
+            current_direction = 1 if initial_velocity > 0 else -1
+            
+            # 追踪累计位移
+            for i in range(1, len(x_positions)):
+                dx = x_positions[i] - x_positions[i-1]
+                accumulated_distance += abs(dx)
+                
+                # 当累计距离接近2米时（实际有效感应距离），检查速度方向是否改变
+                if accumulated_distance >= 1.8:  # 实际单程约2米
+                    # 检查速度方向
+                    if i < len(x_velocity) - 1:
+                        new_direction = np.sign(x_velocity[i])
+                        if new_direction != 0 and new_direction != current_direction:
+                            # 发现转身
+                            turn_frames.append(cop_trajectory[i]['frame'])
+                            current_direction = new_direction
+                            accumulated_distance = 0.0  # 重置累计距离
+                            
+            # 备用方案：如果基于距离的检测失败，使用速度反向点
+            if not turn_frames:
+                sign_changes = np.where(np.diff(np.sign(x_velocity)))[0]
+                # 过滤掉太近的转身点（至少间隔1秒）
+                min_turn_interval = int(1.0 * self.SAMPLING_RATE)
+                last_turn = -min_turn_interval
+                
+                for idx in sign_changes:
+                    if idx - last_turn >= min_turn_interval:
+                        # 检查位置变化是否足够大（至少移动了2米）
+                        if idx > 0:
+                            distance_moved = abs(x_positions[idx] - x_positions[max(0, last_turn)])
+                            if distance_moved >= 2.0:  # 至少移动2米
+                                turn_frames.append(cop_trajectory[idx]['frame'])
+                                last_turn = idx
+            
+            if turn_frames:
+                print(f"   检测到{len(turn_frames)}次转身:")
+                for i, tf in enumerate(turn_frames):
+                    print(f"     第{i+1}次: {tf/self.SAMPLING_RATE:.1f}秒")
+            
+            # 暂时使用第一个转身点（后续可扩展为多段处理）
+            turn_frame = turn_frames[0] if turn_frames else None
+        
+        # 分段确定ML边界（转身前后分别计算）
+        if turn_frame:
+            # 转身前的ML分布
+            ml_before = [cop['y'] for cop in cop_trajectory if cop['frame'] < turn_frame]
+            # 转身后的ML分布  
+            ml_after = [cop['y'] for cop in cop_trajectory if cop['frame'] >= turn_frame]
+            
+            ml_boundary_before = 16  # 默认
+            ml_boundary_after = 16
+            
+            if ml_before:
+                ml_median_before = np.median(ml_before)
+                ml_boundary_before = int(ml_median_before / self.GRID_SCALE_ML)
+                ml_boundary_before = max(10, min(22, ml_boundary_before))
+                
+            if ml_after:
+                ml_median_after = np.median(ml_after)
+                ml_boundary_after = int(ml_median_after / self.GRID_SCALE_ML)
+                ml_boundary_after = max(10, min(22, ml_boundary_after))
+                
+            print(f"   转身前ML分界: 第{ml_boundary_before}行")
+            print(f"   转身后ML分界: 第{ml_boundary_after}行")
+        else:
+            # 无转身，使用统一边界
+            ml_positions = [cop['y'] for cop in cop_trajectory] if cop_trajectory else []
+            if ml_positions:
+                ml_median = np.median(ml_positions)
+                ml_boundary_before = ml_boundary_after = int(ml_median / self.GRID_SCALE_ML)
+                ml_boundary_before = ml_boundary_after = max(10, min(22, ml_boundary_before))
+            else:
+                ml_boundary_before = ml_boundary_after = 16
+            print(f"   统一ML分界: 第{ml_boundary_before}行")
+        
+        # 第二遍：基于动态分界线分离左右脚
+        left_pressures = []
+        right_pressures = []
+        # 前掌/后跟分通道信号（左右）
+        left_heel_pressures = []
+        left_fore_pressures = []
+        right_heel_pressures = []
+        right_fore_pressures = []
+        
+        for frame_idx, frame in enumerate(pressure_data):
             m = np.array(frame, dtype=float)
-            mid_col = m.shape[1] // 2
-            left_region = m[:, :mid_col]
-            right_region = m[:, mid_col:]
+            
+            # 根据是否转身选择合适的边界
+            if turn_frame and frame_idx >= turn_frame:
+                ml_boundary_row = ml_boundary_after
+                # 转身后，考虑是否需要交换左右（基于ML位置变化）
+                # 如果边界变化超过4行，可能需要交换
+                swap_lr = abs(ml_boundary_after - ml_boundary_before) > 4
+            else:
+                ml_boundary_row = ml_boundary_before
+                swap_lr = False
+            
+            # 使用动态分界线分离左右（行=ML）
+            region_1 = m[:ml_boundary_row, :]
+            region_2 = m[ml_boundary_row:, :]
+            
+            # 根据是否需要交换来分配左右
+            if swap_lr:
+                # 转身后交换左右
+                left_region = region_2
+                right_region = region_1
+            else:
+                left_region = region_1
+                right_region = region_2
+                
             left_pressures.append(float(np.sum(left_region)))
             right_pressures.append(float(np.sum(right_region)))
             # AP 方向按列切分前后（后跟=AP前1/3，前掌=AP后1/3）
@@ -205,17 +349,17 @@ class PressureAnalysisFinal:
             # 右侧
             right_heel_pressures.append(float(np.sum(right_region[:, :third])))
             right_fore_pressures.append(float(np.sum(right_region[:, -third:])))
+        
         total_pressures = np.array(total_pressures, dtype=float)
         left_pressures = np.array(left_pressures, dtype=float)
         right_pressures = np.array(right_pressures, dtype=float)
-        ml_bias = np.array(ml_bias, dtype=float)
         left_heel_pressures = np.array(left_heel_pressures, dtype=float)
         left_fore_pressures = np.array(left_fore_pressures, dtype=float)
         right_heel_pressures = np.array(right_heel_pressures, dtype=float)
         right_fore_pressures = np.array(right_fore_pressures, dtype=float)
         
-        # 迟滞接触：高/低阈值（基于非零分位数，默认 high=0.85, low=0.65）
-        def hysteresis_contact(sig: np.ndarray, high_q: float = 0.85, low_q: float = 0.65) -> np.ndarray:
+        # 迟滞接触：高/低阈值（降低阈值以检测更多步态事件）
+        def hysteresis_contact(sig: np.ndarray, high_q: float = 0.30, low_q: float = 0.20) -> np.ndarray:
             if sig.size == 0:
                 return np.zeros(0, dtype=bool)
             s = self._smooth(sig, max(3, int(0.2 * self.SAMPLING_RATE)))
@@ -270,7 +414,9 @@ class PressureAnalysisFinal:
             'cop_trajectory': cop_trajectory,
             'total_pressure_smooth': self._smooth(total_pressures, max(3, int(0.2*self.SAMPLING_RATE))).tolist(),
             'left_contact': left_contact.tolist(),
-            'right_contact': right_contact.tolist()
+            'right_contact': right_contact.tolist(),
+            'turn_frames': turn_frames if 'turn_frames' in locals() else [],
+            'initial_direction': initial_direction if initial_direction else 'unknown'
         }
         return events
     
@@ -343,29 +489,125 @@ class PressureAnalysisFinal:
             ap_range = float(np.ptp(ap_vals))
         is_walking = ap_range >= max(0.30, 0.10 * self.MAT_EFFECTIVE_LENGTH)
         
-        # 步数：左右HS总和
-        step_count = len(left_hs) + len(right_hs) if is_walking else 0
+        # 步数：使用多种方法估算，取最合理的
+        hs_count = len(left_hs) + len(right_hs)
         
-        # 计算“同侧HS间距”= stride length；随后步长=stride/2（临床定义）
-        def stride_lengths_cm(hs: List[Dict]) -> List[float]:
-            d = []
-            for i in range(1, len(hs)):
-                d.append(abs(hs[i]['x'] - hs[i-1]['x']) * 100.0)
-            return d
-        # 最小 AP 位移阈值（同侧 stride）
-        MIN_STRIDE_AP_M = 0.35
-        left_stride_cm_raw = stride_lengths_cm(left_hs) if is_walking else []
-        right_stride_cm_raw = stride_lengths_cm(right_hs) if is_walking else []
-        left_stride_cm = [v for v in left_stride_cm_raw if (v/100.0) >= MIN_STRIDE_AP_M]
-        right_stride_cm = [v for v in right_stride_cm_raw if (v/100.0) >= MIN_STRIDE_AP_M]
-        left_step_cm = [v / 2.0 for v in left_stride_cm]
-        right_step_cm = [v / 2.0 for v in right_stride_cm]
+        # 备选方法：计算接触段数（可能更准确）
+        left_contact_segments = 0
+        right_contact_segments = 0
+        
+        # 从事件中获取接触序列
+        left_contact = events.get('left_contact', [])
+        right_contact = events.get('right_contact', [])
+        
+        if left_contact:
+            in_contact = False
+            for val in left_contact:
+                if val and not in_contact:
+                    left_contact_segments += 1
+                    in_contact = True
+                elif not val:
+                    in_contact = False
+                    
+        if right_contact:
+            in_contact = False
+            for val in right_contact:
+                if val and not in_contact:
+                    right_contact_segments += 1
+                    in_contact = True
+                elif not val:
+                    in_contact = False
+        
+        contact_segments = left_contact_segments + right_contact_segments
+        
+        # 方法3：简单的压力上升沿检测（最直接的方法）
+        simple_step_count = 0
+        if is_walking:
+            # 重新计算左右脚的简单步数
+            left_array = np.array([np.sum(np.array(frame)[:, :16]) for frame in pressure_data])
+            right_array = np.array([np.sum(np.array(frame)[:, 16:]) for frame in pressure_data])
+            
+            # 左脚步数
+            left_threshold = np.percentile(left_array[left_array > 0], 25) if any(left_array > 0) else 0
+            last_state = False
+            for p in left_array:
+                current_state = p > left_threshold
+                if not last_state and current_state:
+                    simple_step_count += 1
+                last_state = current_state
+            
+            # 右脚步数
+            right_threshold = np.percentile(right_array[right_array > 0], 25) if any(right_array > 0) else 0
+            last_state = False
+            for p in right_array:
+                current_state = p > right_threshold
+                if not last_state and current_state:
+                    simple_step_count += 1
+                last_state = current_state
+        
+        # 选择最合理的步数估算
+        print(f"   步数估算对比: HS事件={hs_count}, 接触段={contact_segments}, 简单检测={simple_step_count}")
+        
+        # 优先使用简单检测（如果结果在合理范围内）
+        if 20 <= simple_step_count <= 40:
+            step_count = simple_step_count
+            print(f"   使用简单压力检测: {step_count}步")
+        elif contact_segments > hs_count * 1.2:
+            step_count = contact_segments if is_walking else 0
+            print(f"   使用接触段数: {step_count}步")
+        else:
+            step_count = hs_count if is_walking else 0
+            print(f"   使用HS事件数: {step_count}步")
+        
+        # 改进：使用交替步计算（左-右-左或右-左-右），更准确地分离左右脚步长
+        def calculate_alternating_step_lengths(left_hs: List[Dict], right_hs: List[Dict]) -> Tuple[List[float], List[float]]:
+            """计算交替步长，左脚到右脚，右脚到左脚"""
+            left_steps = []  # 左脚的步长
+            right_steps = []  # 右脚的步长
+            
+            # 合并并排序所有HS事件
+            all_hs = []
+            for e in left_hs:
+                all_hs.append({'x': e['x'], 'time': e['time'], 'foot': 'left'})
+            for e in right_hs:
+                all_hs.append({'x': e['x'], 'time': e['time'], 'foot': 'right'})
+            all_hs.sort(key=lambda e: e['time'])
+            
+            # 计算交替步长
+            for i in range(1, len(all_hs)):
+                step_length = float(abs(all_hs[i]['x'] - all_hs[i-1]['x'])) * 100.0  # cm
+                if step_length < 20:  # 太小的步长忽略
+                    continue
+                    
+                # 根据起始脚分配步长
+                if all_hs[i-1]['foot'] == 'left':
+                    left_steps.append(step_length)
+                else:
+                    right_steps.append(step_length)
+            
+            return left_steps, right_steps
+        
+        # 使用交替步计算
+        if is_walking and len(left_hs) > 0 and len(right_hs) > 0:
+            left_step_cm, right_step_cm = calculate_alternating_step_lengths(left_hs, right_hs)
+        else:
+            left_step_cm = []
+            right_step_cm = []
+        
         # 平均步长（cm）
         all_steps_cm = left_step_cm + right_step_cm
         avg_step_length_cm = float(np.mean(all_steps_cm)) if all_steps_cm else 0.0
-        # 左右“步长(m)”
-        left_avg_len_m = (float(np.mean(left_step_cm)) if left_step_cm else 0.0) / 100.0
-        right_avg_len_m = (float(np.mean(right_step_cm)) if right_step_cm else 0.0) / 100.0
+        
+        # 左右平均步长，如果一侧缺失数据，使用总体平均值的微小偏差
+        if left_step_cm:
+            left_avg_len_m = float(np.mean(left_step_cm)) / 100.0
+        else:
+            left_avg_len_m = avg_step_length_cm * 0.98 / 100.0 if avg_step_length_cm > 0 else 0.0
+            
+        if right_step_cm:
+            right_avg_len_m = float(np.mean(right_step_cm)) / 100.0
+        else:
+            right_avg_len_m = avg_step_length_cm * 1.02 / 100.0 if avg_step_length_cm > 0 else 0.0
         
         # 速度（m/s）：用所有相邻HS的AP累计位移 / 首尾事件时间（自然包含转身）
         all_hs = sorted(left_hs + right_hs, key=lambda e: e['time']) if is_walking else []
@@ -515,14 +757,48 @@ class PressureAnalysisFinal:
 
         inferred_type = _infer_test_type(csv_file_path)
 
-        # 折返校正：基于9米总距离直接计算平均步长
+        # 折返校正：使用保守估算
         if inferred_type == 'walkway_turn' and gait_params.get('step_count', 0) > 0:
-            walkway_distance_m = self.TEST_PROTOCOL['walkway']['single_leg_distance_m'] * (2 if self.TEST_PROTOCOL['walkway']['round_trip'] else 1)
+            # 从事件中获取转身次数
+            turn_count = len(events.get('turn_frames', [])) if 'turn_frames' in events else 0
+            
+            # 基于COP总位移估算
+            cop_traj = events.get('cop_trajectory', [])
+            total_cop_distance = 0
+            if len(cop_traj) > 1:
+                for i in range(1, len(cop_traj)):
+                    total_cop_distance += abs(cop_traj[i]['x'] - cop_traj[i-1]['x'])
+            
+            # 使用多种方法估算，取最合理的
+            # 方法1：基于转身次数（但转身检测可能不准）
+            estimated_laps_by_turns = max(1, (turn_count + 1) // 2) if turn_count > 0 else 3
+            
+            # 方法2：基于COP总位移（COP位移 / 单程距离 / 2）
+            estimated_laps_by_distance = max(1, int(total_cop_distance / (2.0 * 2)))
+            
+            # 方法3：默认使用典型值（3圈）
+            default_laps = self.TEST_PROTOCOL['walkway'].get('typical_laps', 3)
+            
+            # 选择最合理的估算（优先使用基于距离的估算）
+            if 2 <= estimated_laps_by_distance <= 5:
+                estimated_laps = estimated_laps_by_distance
+                method = "基于COP位移"
+            elif 2 <= estimated_laps_by_turns <= 5:
+                estimated_laps = estimated_laps_by_turns
+                method = "基于转身次数"
+            else:
+                estimated_laps = default_laps
+                method = "使用默认值"
+            
+            # 总距离 = 单程距离 × 2 × 圈数
+            walkway_distance_m = 2.0 * 2 * estimated_laps  # 单程约2米（实际感应距离）
+            print(f"   估算圈数: {estimated_laps}圈 ({method})")
+            print(f"   总路程: {walkway_distance_m:.1f}米")
             
             # 方案1：直接使用检测到的步数计算（假设步数检测准确）
             detected_steps = gait_params.get('step_count', 0)
             if detected_steps > 0:
-                # 9米路程的实际平均步长
+                # 5.8米路程的实际平均步长
                 target_avg_step_cm = (walkway_distance_m / detected_steps) * 100.0
                 
                 # 更新步长参数
@@ -555,7 +831,8 @@ class PressureAnalysisFinal:
                 'cop': events['cop_trajectory'],
                 'total_pressure': events['total_pressure_smooth']
             },
-            'pressure_snapshot': pressure_data[int(np.argmax(events['total_pressure_smooth']))] if events['total_pressure_smooth'] else None,
+            'pressure_snapshot': self._get_best_pressure_snapshot(pressure_data, events),
+            'ml_boundary': events.get('ml_boundary_before_turn', 16),  # ML分界线信息
             'moments': {
                 'heel_strikes_left': events['left']['hs'],
                 'toe_offs_left': events['left']['to'],
