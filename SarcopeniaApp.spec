@@ -61,15 +61,16 @@ a = Analysis(
         # Algorithm engine
         'algorithm_engine_manager',
         
-        # GemSage modules
-        'gemsage', 'gemsage.core_calculator', 'gemsage.full_medical_report_generator','gemsage.enhanced_report_generator',
-        'gemsage.generate_complete_report_final',
-        'gemsage.multi_file_workflow', 'gemsage.ai_assessment_engine',
-        'gemsage.comprehensive_diagnosis', 'gemsage.adaptive_cop_analyzer',
-        'gemsage.progressive_cop_analyzer', 'gemsage.ground_reaction_force_analysis',
-        'gemsage.joint_angle_analysis', 'gemsage.joint_torque_power_analysis',
-        'gemsage.hardware_adaptive_service', 'gemsage.fix_step_detection',
-        'gemsage.debug_data_structure'
+        # GemSage modules (只包含实际存在且需要的模块)
+        'gemsage', 
+        'gemsage.core_calculator_final',              # 核心分析引擎 ✅
+        'gemsage.full_medical_report_generator',      # 报告生成器 ✅  
+        'gemsage.enhanced_report_generator',          # 增强报告生成器 ✅
+        'gemsage.generate_combined_report',           # 多文件合并分析 ✅
+        'gemsage.generate_complete_report_final',     # 完整报告生成 ✅
+        'gemsage.run_multi_tests',                   # 多文件测试工具 ✅
+        'gemsage.analyze_multiple_datasets',         # 多数据集分析 ✅
+        'gemsage.multi_file_workflow'                # 文件工作流（algorithm_engine_manager需要）✅
     ],
     hookspath=[],
     hooksconfig={},

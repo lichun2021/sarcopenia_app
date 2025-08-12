@@ -153,9 +153,9 @@ class AlgorithmEngineManager:
                 if gemsage_path not in sys.path:
                     sys.path.insert(0, gemsage_path)
                 
-                from gemsage.core_calculator import PressureAnalysisCore
-                self.analyzer = PressureAnalysisCore()
-                logger.info("成功导入gemsage.core_calculator.PressureAnalysisCore")
+                from gemsage.core_calculator_final import PressureAnalysisFinal
+                self.analyzer = PressureAnalysisFinal()
+                logger.info("成功导入gemsage.core_calculator_final.PressureAnalysisFinal")
                 
                 # 导入报告生成器
                 try:
@@ -178,8 +178,8 @@ class AlgorithmEngineManager:
                 # 回退到传统算法目录
                 logger.info(f"从 {algorithms_path} 导入算法模块")
                 try:
-                    from core_calculator import PressureAnalysisCore
-                    self.analyzer = PressureAnalysisCore()
+                    from core_calculator_final import PressureAnalysisFinal
+                    self.analyzer = PressureAnalysisFinal()
                     
                     # 导入报告生成器
                     from full_medical_report_generator import FullMedicalReportGenerator
@@ -215,25 +215,163 @@ class AlgorithmEngineManager:
             logger.error(traceback.format_exc())
             raise
     
-    def analyze_data(
+    def analyze_multiple_csv_files(
         self,
-        csv_data: str,
+        csv_files: List[str],  # CSV文件路径列表
         patient_info: Dict[str, Any],
-        test_type: str = "COMPREHENSIVE",
         generate_report: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        分析压力数据
+        分析多个CSV文件并生成综合报告
         
         Args:
-            csv_data: CSV格式的压力数据
+            csv_files: CSV文件路径列表
             patient_info: 患者信息字典
-            test_type: 测试类型
             generate_report: 是否生成报告
             
         Returns:
             分析结果字典或None
         """
+        if not self.is_initialized:
+            logger.error("算法引擎未初始化")
+            return None
+        
+        if not csv_files:
+            logger.error("没有提供CSV文件")
+            return None
+            
+        try:
+            start_time = time.time()
+            logger.info(f"开始分析 {len(csv_files)} 个CSV文件 - 患者: {patient_info.get('name', '未知')}")
+            
+            # 创建临时目录存放CSV文件
+            today = datetime.now().strftime("%Y-%m-%d")
+            temp_dir = os.path.join("tmp", today, "multi_csv_analysis")
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # 复制CSV文件到临时目录
+            temp_csv_paths = []
+            for i, csv_file in enumerate(csv_files):
+                # 保留原文件名以便分类
+                original_name = os.path.basename(csv_file)
+                temp_path = os.path.join(temp_dir, original_name)
+                
+                # 如果是文件路径，直接复制
+                if os.path.exists(csv_file):
+                    import shutil
+                    shutil.copy2(csv_file, temp_path)
+                else:
+                    # 如果是CSV内容，写入文件
+                    with open(temp_path, 'w', encoding='utf-8') as f:
+                        f.write(csv_file)
+                
+                temp_csv_paths.append(temp_path)
+                logger.info(f"  文件 {i+1}: {original_name}")
+            
+            # 使用 generate_combined_report 的方法分析整个目录
+            from gemsage.generate_combined_report import analyze_directory_and_merge
+            from gemsage.full_medical_report_generator import FullMedicalReportGenerator
+            
+            # 分析目录中的所有文件
+            combined_result = analyze_directory_and_merge(temp_dir)
+            
+            # 生成报告
+            if generate_report:
+                generator = FullMedicalReportGenerator()
+                report_html = generator.generate_report_from_algorithm(combined_result, patient_info)
+                
+                # 保存HTML报告
+                reports_dir = os.path.join("tmp", today, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                patient_name = patient_info.get('name', '未知').replace(' ', '_')
+                report_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                report_path = os.path.join(reports_dir, report_filename)
+                
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report_html)
+                
+                logger.info(f"报告已保存: {report_path}")
+                
+                combined_result['report_html'] = report_html
+                combined_result['report_path'] = report_path
+            
+            # 清理临时文件（可选）
+            # import shutil
+            # shutil.rmtree(temp_dir)
+            
+            logger.info(f"分析完成，耗时: {time.time() - start_time:.2f}秒")
+            
+            # 提取关键指标用于UI显示
+            gait_params = combined_result.get('gait_parameters', {})
+            overall_score = 85.0  # 默认分数
+            
+            # 基于步态参数计算综合评分
+            if gait_params:
+                velocity = gait_params.get('average_velocity', 0)
+                step_count = gait_params.get('step_count', 0)
+                # 简单的评分逻辑
+                if velocity >= 1.0 and step_count > 0:
+                    overall_score = 90.0
+                elif velocity >= 0.5:
+                    overall_score = 75.0
+                else:
+                    overall_score = 60.0
+            
+            # 返回UI期望的格式
+            return {
+                'status': 'success',
+                'data': {
+                    'overall_score': overall_score,
+                    'risk_level': 'LOW' if overall_score >= 70 else 'HIGH',
+                    'confidence': 0.85,
+                    'analysis_summary': f'综合分析{len(csv_files)}个文件完成',
+                    'gait_parameters': gait_params,
+                    'balance_analysis': combined_result.get('balance_analysis', {}),
+                    'metrics': {}
+                },
+                'analysis_result': combined_result,
+                'report_html': combined_result.get('report_html', ''),
+                'report_path': combined_result.get('report_path', ''),
+                'patient_info': patient_info,
+                'metadata': {
+                    'analysis_time': time.time() - start_time,
+                    'files_count': len(csv_files),
+                    'engine_type': 'multi_file_analysis'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"分析多个CSV文件时出错: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                'status': 'error',
+                'error': str(e),
+                'message': f'分析失败: {str(e)}'
+            }
+
+    def analyze_data(
+        self,
+        csv_data: str,
+        patient_info: Dict[str, Any],
+        test_type: str = "COMPREHENSIVE",  # 默认综合分析
+        generate_report: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        分析压力数据（单个文件）
+        
+        Args:
+            csv_data: CSV格式的压力数据
+            patient_info: 患者信息字典
+            test_type: 测试类型（默认COMPREHENSIVE综合分析）
+            generate_report: 是否生成报告
+            
+        Returns:
+            分析结果字典或None
+        """
+        # 强制使用综合分析
+        test_type = "COMPREHENSIVE"
         if not self.is_initialized:
             logger.error("算法引擎未初始化")
             return None

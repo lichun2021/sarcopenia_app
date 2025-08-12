@@ -2293,21 +2293,23 @@ class PressureSensorUI:
         tk.Label(test_frame, text="测试项目:", font=("Microsoft YaHei", 10, "bold"),
                 bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=0, column=0, sticky="e", padx=(0, 15), pady=8)
         
-        # 测试类型选项
+        # 测试类型 - 固定为综合评估（隐藏选择框）
+        test_type_var = tk.StringVar(value="综合评估")
+        test_type_label = tk.Label(test_frame, text="综合评估", 
+                                 bg='#ffffff', fg='#2d3748', 
+                                 font=("Microsoft YaHei", 10))
+        test_type_label.grid(row=0, column=1, sticky="w", pady=8)
+        
+        # 保留test_type_options供后续代码使用
         test_type_options = [
-            ("COMPREHENSIVE", "综合评估"),
-            ("WALK_4_LAPS", "步道4圈"),
-            ("WALK_7_LAPS", "步道7圈"),
-            ("STAND_LEFT", "左脚站立"),
-            ("STAND_RIGHT", "右脚站立"),
-            ("SIT_TO_STAND_5", "起坐5次")
+            ("COMPREHENSIVE", "综合评估")
         ]
         
-        test_type_var = tk.StringVar(value="综合评估")
+        # 创建隐藏的combo供后续代码引用（避免修改太多代码）
         test_type_combo = ttk.Combobox(test_frame, textvariable=test_type_var, 
-                                      values=[text for _, text in test_type_options],
+                                      values=["综合评估"],
                                       state="readonly", width=18, font=("Microsoft YaHei", 10))
-        test_type_combo.grid(row=0, column=1, sticky="w", pady=8)
+        # 不显示，只是为了保持代码兼容性
         
         # 活动描述已移除，直接使用默认值
         
@@ -2514,34 +2516,55 @@ class PressureSensorUI:
             if not self.algorithm_engine:
                 raise Exception("算法引擎未初始化")
             
-            # 如果有多个文件，合并CSV数据
-            combined_csv = ""
-            for i, csv_file in enumerate(csv_files):
-                if i == 0:
-                    combined_csv = csv_file['content']
-                else:
-                    # 跳过后续文件的标题行
-                    lines = csv_file['content'].split('\n')
-                    if len(lines) > 1:
-                        combined_csv += '\n' + '\n'.join(lines[1:])
-            
-            # 调试信息
-            self.log_ai_message(f"[DEBUG] 开始分析 {len(csv_files)} 个文件")
-            self.log_ai_message(f"[DEBUG] 患者信息: {patient_info}")
-            
-            # 更新加载对话框
-            if loading_dialog:
-                loading_dialog.update_message("正在分析数据...")
-                loading_dialog.update_progress(30)
-            
-            # 调用算法引擎分析
-            test_type = patient_info.get('test_type', 'COMPREHENSIVE')
-            result = self.algorithm_engine.analyze_data(
-                combined_csv,
-                patient_info,
-                test_type,
-                generate_report=True
-            )
+            # 如果有多个文件，使用新的多文件分析方法
+            if len(csv_files) > 1:
+                # 准备文件路径列表（需要保存为临时文件）
+                import tempfile
+                import os
+                temp_dir = tempfile.mkdtemp(prefix="multi_csv_")
+                csv_paths = []
+                
+                for i, csv_file in enumerate(csv_files):
+                    # 保存每个CSV到临时文件
+                    temp_path = os.path.join(temp_dir, csv_file['filename'])
+                    with open(temp_path, 'w', encoding='utf-8') as f:
+                        f.write(csv_file['content'])
+                    csv_paths.append(temp_path)
+                
+                self.log_ai_message(f"[DEBUG] 使用多文件分析模式: {len(csv_files)} 个文件")
+                self.log_ai_message(f"[DEBUG] 患者信息: {patient_info}")
+                
+                # 更新加载对话框
+                if loading_dialog:
+                    loading_dialog.update_message("正在分析多个数据文件...")
+                    loading_dialog.update_progress(30)
+                
+                # 调用多文件分析方法
+                result = self.algorithm_engine.analyze_multiple_csv_files(
+                    csv_paths,
+                    patient_info,
+                    generate_report=True
+                )
+            else:
+                # 单文件分析
+                combined_csv = csv_files[0]['content'] if csv_files else ""
+                
+                self.log_ai_message(f"[DEBUG] 使用单文件分析模式")
+                self.log_ai_message(f"[DEBUG] 患者信息: {patient_info}")
+                
+                # 更新加载对话框
+                if loading_dialog:
+                    loading_dialog.update_message("正在分析数据...")
+                    loading_dialog.update_progress(30)
+                
+                # 调用算法引擎分析
+                test_type = patient_info.get('test_type', 'COMPREHENSIVE')
+                result = self.algorithm_engine.analyze_data(
+                    combined_csv,
+                    patient_info,
+                    test_type,
+                    generate_report=True
+                )
             
             if loading_dialog:
                 loading_dialog.update_progress(90)

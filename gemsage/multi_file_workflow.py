@@ -8,10 +8,19 @@ import json
 import os
 import glob
 from datetime import datetime
-sys.path.append('/Users/xidada/foot-pressure-analysis/algorithms')
+import subprocess
+from pathlib import Path
 
-from core_calculator import PressureAnalysisCore
+# 导入新的分析引擎
+from core_calculator_final import PressureAnalysisFinal
 from full_medical_report_generator import FullMedicalReportGenerator
+# 导入新的多文件分析功能
+try:
+    from generate_combined_report import analyze_directory_and_merge
+    NEW_ENGINE_AVAILABLE = True
+except ImportError:
+    NEW_ENGINE_AVAILABLE = False
+    print("注意: 新引擎的generate_combined_report模块不可用")
 
 def analyze_multiple_files(csv_files, output_dir="analysis_results"):
     """
@@ -24,7 +33,7 @@ def analyze_multiple_files(csv_files, output_dir="analysis_results"):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    analyzer = PressureAnalysisCore()
+    analyzer = PressureAnalysisFinal()
     results = []
     
     for i, csv_file in enumerate(csv_files, 1):
@@ -362,10 +371,183 @@ def generate_reports_from_analyses_json(analysis_results, report_type="combined"
     else:
         return generated_reports
 
+def analyze_directory_direct(directory_path, patient_info=None, output_html="combined_report.html"):
+    """
+    直接使用新引擎分析目录（不通过命令行）
+    
+    参数:
+        directory_path: CSV文件所在目录路径
+        patient_info: 患者信息字典，包含 name, gender, age
+        output_html: HTML报告输出文件名
+    
+    返回:
+        str: 生成的HTML报告内容，失败返回None
+    """
+    if not NEW_ENGINE_AVAILABLE:
+        print("⚠️ 新引擎不可用，使用命令行方式")
+        return None
+    
+    print(f"🚀 直接使用新引擎分析目录: {directory_path}")
+    print("=" * 60)
+    
+    # 验证目录是否存在
+    if not os.path.exists(directory_path):
+        print(f"❌ 目录不存在: {directory_path}")
+        return None
+    
+    # 默认患者信息
+    if patient_info is None:
+        patient_info = {
+            'name': '测试患者',
+            'gender': '男',
+            'age': 35
+        }
+    
+    try:
+        # 使用新引擎分析目录
+        print(f"📊 开始分析目录中的CSV文件...")
+        combined_result = analyze_directory_and_merge(directory_path)
+        
+        # 生成报告
+        print(f"📄 生成综合报告...")
+        generator = FullMedicalReportGenerator()
+        html_content = generator.generate_report_from_algorithm(combined_result, patient_info)
+        
+        # 保存报告
+        if output_html:
+            with open(output_html, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            print(f"✅ 报告已保存: {output_html}")
+        
+        return html_content
+        
+    except Exception as e:
+        print(f"❌ 分析失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def analyze_directory_with_new_engine(directory_path, patient_info=None, output_html="combined_report.html", output_json="summary.json", output_csv="summary.csv"):
+    """
+    使用新的 run_multi_tests.py 引擎分析整个目录
+    
+    参数:
+        directory_path: CSV文件所在目录路径
+        patient_info: 患者信息字典，包含 name, gender, age, height, weight
+        output_html: HTML报告输出文件名
+        output_json: JSON汇总输出文件名
+        output_csv: CSV汇总输出文件名
+    
+    返回:
+        bool: 是否成功
+    """
+    print(f"🚀 使用新引擎分析目录: {directory_path}")
+    print("=" * 60)
+    
+    # 验证目录是否存在
+    if not os.path.exists(directory_path):
+        print(f"❌ 目录不存在: {directory_path}")
+        return False
+    
+    # 默认患者信息
+    if patient_info is None:
+        patient_info = {
+            'name': '测试患者',
+            'gender': '男',
+            'age': 35,
+            'height': 170,
+            'weight': 65
+        }
+    
+    # 构建命令行参数
+    cmd = [
+        sys.executable,  # 使用当前Python解释器
+        os.path.join(os.path.dirname(__file__), 'run_multi_tests.py'),
+        '--dir', str(directory_path),
+        '--name', str(patient_info.get('name', '测试患者')),
+        '--gender', str(patient_info.get('gender', '男')),
+        '--age', str(patient_info.get('age', 35)),
+        '--height', str(patient_info.get('height', 170)),
+        '--weight', str(patient_info.get('weight', 65)),
+        '--html', str(output_html),
+        '--json', str(output_json),
+        '--csv', str(output_csv)
+    ]
+    
+    print(f"📝 执行命令: {' '.join(cmd)}")
+    
+    try:
+        # 执行命令
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        
+        # 输出执行结果
+        if result.stdout:
+            print("\n📊 执行输出:")
+            print(result.stdout)
+        
+        if result.stderr:
+            print("\n⚠️ 错误信息:")
+            print(result.stderr)
+        
+        # 检查是否成功
+        if result.returncode == 0:
+            print(f"\n✅ 分析成功!")
+            print(f"   📄 HTML报告: {output_html}")
+            print(f"   📊 JSON汇总: {output_json}")
+            print(f"   📋 CSV汇总: {output_csv}")
+            return True
+        else:
+            print(f"\n❌ 分析失败，返回码: {result.returncode}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 执行命令时出错: {e}")
+        return False
+
 def main():
     """主程序 - 演示多文件工作流程"""
     print("🧪 多文件工作流程演示")
     print("=" * 70)
+    
+    # 演示新引擎的使用
+    print("\n📌 使用新引擎分析目录示例:")
+    print("-" * 40)
+    
+    # 示例1：使用命令行方式
+    test_dir = "D:\\sarcopenia_app\\202520809第八次测试\\2025-08-09\\detection_data"
+    patient_info = {
+        'name': '测试患者',
+        'gender': '男',
+        'age': 36,
+        'height': 170,
+        'weight': 65
+    }
+    
+    print(f"\n1️⃣ 命令行方式调用新引擎:")
+    print(f"   目录: {test_dir}")
+    if os.path.exists(test_dir):
+        success = analyze_directory_with_new_engine(
+            test_dir,
+            patient_info,
+            "test_combined_report.html",
+            "test_summary.json",
+            "test_summary.csv"
+        )
+        if success:
+            print("   ✅ 新引擎分析成功!")
+    else:
+        print(f"   ⚠️ 测试目录不存在: {test_dir}")
+    
+    print(f"\n2️⃣ 直接调用方式:")
+    if NEW_ENGINE_AVAILABLE:
+        html_content = analyze_directory_direct(test_dir, patient_info, "test_direct_report.html")
+        if html_content:
+            print("   ✅ 直接调用成功!")
+    else:
+        print("   ⚠️ 新引擎模块不可用")
+    
+    print("\n" + "-" * 40)
+    print("传统方式演示:")
     
     # 查找CSV文件
     csv_pattern = "肌少症数据/*.csv"
@@ -373,37 +555,32 @@ def main():
     
     if not csv_files:
         print(f"❌ 在 {csv_pattern} 中没有找到CSV文件")
-        return
+        # 尝试使用新的目录结构
+        csv_pattern = "*/detection_data/*.csv"
+        csv_files = glob.glob(csv_pattern)
     
-    print(f"📁 找到 {len(csv_files)} 个CSV文件:")
-    for i, file in enumerate(csv_files, 1):
-        print(f"   {i}. {os.path.basename(file)}")
-    
-    # 第一步：批量分析
-    results, analysis_dir = analyze_multiple_files(csv_files)
-    
-    if not results:
-        print("❌ 没有成功分析的文件，终止流程")
-        return
-    
-    print("\n" + "🔄" * 30)
-    print("现在您可以:")
-    print("1. 检查 analysis_results/ 目录中的分析结果")
-    print("2. 选择报告生成模式:")
-    print("   - individual: 每个文件生成独立报告")
-    print("   - combined: 所有文件合并成一个综合报告")
-    print("   - both: 生成独立报告 + 综合报告")
-    print("🔄" * 30)
-    
-    # 第二步：生成报告（演示all模式）
-    generate_reports_from_analyses(analysis_dir, "both")
+    if csv_files:
+        print(f"📁 找到 {len(csv_files)} 个CSV文件:")
+        for i, file in enumerate(csv_files[:5], 1):  # 只显示前5个
+            print(f"   {i}. {os.path.basename(file)}")
+        if len(csv_files) > 5:
+            print(f"   ... 还有 {len(csv_files)-5} 个文件")
+        
+        # 第一步：批量分析
+        results, analysis_dir = analyze_multiple_files(csv_files[:3])  # 只分析前3个作为演示
+        
+        if results:
+            # 第二步：生成报告
+            generate_reports_from_analyses(analysis_dir, "combined")
+            print("\n✅ 传统方式分析完成")
     
     print("\n" + "=" * 70)
     print("✅ 多文件工作流程演示完成")
-    print("\n📂 生成的文件:")
-    print("   📁 analysis_results/ - 分析结果目录")
-    print("   📄 *_report.html - 独立报告文件")
-    print("   📄 combined_analysis_report_*.html - 综合报告文件")
+    print("\n📂 可用的分析方式:")
+    print("   1. analyze_directory_with_new_engine() - 命令行调用新引擎")
+    print("   2. analyze_directory_direct() - 直接调用新引擎")
+    print("   3. analyze_multiple_files() - 传统批量分析")
+    print("   4. generate_reports_from_analyses() - 基于分析结果生成报告")
 
 if __name__ == '__main__':
     main()
