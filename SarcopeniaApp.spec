@@ -25,9 +25,10 @@ a = Analysis(
         'PIL', 'PIL.Image', 'PIL.ImageTk',
         'numpy', 'pandas', 'requests', 
         'scipy', 'scipy.ndimage',
-        'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg', 
+        'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_agg', 'matplotlib.backends.backend_tkagg', 
         'matplotlib.figure', 'matplotlib.colors', 'matplotlib.font_manager',
-        'matplotlib.patches', 'matplotlib.path', 'matplotlib.gridspec',
+        'matplotlib.patches', 'matplotlib.patches.Circle', 'matplotlib.patches.Ellipse', 
+        'matplotlib.path', 'matplotlib.gridspec',
         'seaborn',
         'tkcalendar', 'babel', 'babel.dates',
         'uvicorn', 'uvicorn.main', 'uvicorn.config', 'uvicorn.server',
@@ -68,14 +69,19 @@ a = Analysis(
         'gemsage.core_calculator_final',              # 核心分析引擎 ✅
         'gemsage.full_medical_report_generator',      # 报告生成器 ✅  
         'gemsage.enhanced_report_generator',          # 增强报告生成器 ✅
+        'gemsage.professional_chart_generator',       # 专业图表生成器 ✅
         'gemsage.generate_combined_report',           # 多文件合并分析 ✅
         'gemsage.generate_complete_report_final',     # 完整报告生成 ✅
         'gemsage.analyze_multiple_datasets',         # 多数据集分析 ✅
         'gemsage.multi_file_workflow',                # 文件工作流（algorithm_engine_manager需要）✅
-        'gemsage.clinical_assessment_generator',      # 临床评估生成器 (新增)
-        'gemsage.modern_clinical_assessment',         # 现代临床评估 (新增)
-        'gemsage.professional_chart_generator',       # 专业图表生成器 (新增)
-        'gemsage.ai_assessment_engine'                # AI评估引擎（algorithm_engine_manager需要）
+        'gemsage.clinical_assessment_generator',      # 临床评估生成器 ✅
+        'gemsage.modern_clinical_assessment',         # 现代临床评估 ✅
+        'gemsage.quality_control_module',             # 质量控制模块 ✅
+        'gemsage.standardized_assessment_module',     # 标准化评估模块 ✅
+        'gemsage.comprehensive_test_comparison',      # 综合测试比较 ✅
+        'gemsage.compare_20250809',                   # 特定日期比较 ✅
+        'gemsage.run_report_windows',                 # Windows报告运行器 ✅
+        'gemsage.verify_final_report'                 # 最终报告验证 ✅
     ],
     hookspath=[],
     hooksconfig={},

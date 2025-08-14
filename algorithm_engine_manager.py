@@ -459,18 +459,34 @@ class AlgorithmEngineManager:
                 raw_result = analysis_results[0]
                 logger.info(f"multi_file_workflow分析返回结果: {raw_result}")
                 
-                # 将原始患者信息保存到分析结果中
+                # 将患者信息保存到分析结果中（转换性别为中文）
                 if analysis_results:
-                    analysis_results[0]['original_patient_info'] = patient_info
-                    logger.info(f"保存原始患者信息到分析结果: {patient_info}")
+                    # 复制患者信息并转换性别
+                    processed_patient_info = patient_info.copy()
+                    gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                    if 'gender' in processed_patient_info:
+                        original_gender = processed_patient_info['gender']
+                        processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
+                        logger.info(f"性别转换: {original_gender} -> {processed_patient_info['gender']}")
+                    
+                    analysis_results[0]['original_patient_info'] = processed_patient_info
+                    logger.info(f"保存处理后的患者信息到分析结果: {processed_patient_info}")
                 
                 # 第二步：使用 generate_reports_from_analyses_json 生成报告（直接传递JSON数据）
                 logger.info("生成综合报告...")
                 try:
                     # 准备分析结果列表
                     if 'original_patient_info' not in analysis_results[0]:
-                        analysis_results[0]['original_patient_info'] = patient_info
-                        logger.info(f"补充患者信息到分析结果: {patient_info}")
+                        # 补充患者信息时也要转换性别
+                        processed_patient_info = patient_info.copy()
+                        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
+                        if 'gender' in processed_patient_info:
+                            original_gender = processed_patient_info['gender']
+                            processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
+                            logger.info(f"补充时性别转换: {original_gender} -> {processed_patient_info['gender']}")
+                        
+                        analysis_results[0]['original_patient_info'] = processed_patient_info
+                        logger.info(f"补充处理后的患者信息到分析结果: {processed_patient_info}")
                     else:
                         logger.info(f"分析结果中已存在患者信息: {analysis_results[0]['original_patient_info']}")
                     

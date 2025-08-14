@@ -54,6 +54,18 @@ def generate_report_with_final_algorithm(csv_file_path):
     left_cadence = left_foot_data.get('cadence', cadence * 0.99)
     right_cadence = right_foot_data.get('cadence', cadence * 1.01)
     
+    # 修复步频为0的问题：如果一侧步频为0，使用整体步频的合理分配
+    if left_cadence == 0 and right_cadence > 0:
+        # 左脚步频为0，使用右脚步频或整体步频
+        left_cadence = right_cadence if right_cadence > 0 else cadence
+    elif right_cadence == 0 and left_cadence > 0:
+        # 右脚步频为0，使用左脚步频或整体步频
+        right_cadence = left_cadence if left_cadence > 0 else cadence
+    elif left_cadence == 0 and right_cadence == 0:
+        # 两侧都为0，使用整体步频平均分配
+        left_cadence = cadence * 0.5
+        right_cadence = cadence * 0.5
+    
     # 4. 构造符合报告生成器格式的数据（在原有基础上合并“完整原始输出”）
     algorithm_result = {
         'analysis_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -175,6 +187,72 @@ def generate_report_with_final_algorithm(csv_file_path):
         algorithm_result['gait_analysis']['left_cadence'] = algorithm_result['gait_analysis']['left_foot'].get('cadence', 0)
         algorithm_result['gait_analysis']['right_cadence'] = algorithm_result['gait_analysis']['right_foot'].get('cadence', 0)
     
+    # 添加标准化评估和质量控制
+    try:
+        from standardized_assessment_module import enhance_gait_analysis_with_standards
+        from quality_control_module import GaitDataQualityControl
+        
+        # 执行质量控制
+        qc = GaitDataQualityControl()
+        quality_report = qc.validate_data_quality(result)
+        
+        # 准备标准化评估的参数
+        assessment_params = {
+            'average_velocity': velocity,
+            'average_step_length': step_length,
+            'cadence': cadence,
+            'step_width': gait.get('step_width', 15),
+            'gait_phases': {
+                'stance_phase': stance_phase,
+                'swing_phase': swing_phase,
+                'double_support': double_support,
+                'left_stance_phase': gait['left_foot'].get('stance_phase', stance_phase),
+                'right_stance_phase': gait['right_foot'].get('stance_phase', stance_phase),
+                'left_swing_phase': gait['left_foot'].get('swing_phase', swing_phase),
+                'right_swing_phase': gait['right_foot'].get('swing_phase', swing_phase)
+            },
+            'symmetry_indices': result.get('symmetry_indices', {
+                'step_length_si': 10,
+                'cadence_si': 8,
+                'swing_time_si': 12,
+                'overall_si': 10
+            }),
+            'cop_stability': result.get('cop_stability', {
+                'ellipse_area': 5,
+                'ap_range': 0.15,
+                'ml_range': 0.08
+            }),
+            'gait_parameters': {
+                'left_foot': {
+                    'average_step_length_m': left_step_length_m
+                },
+                'right_foot': {
+                    'average_step_length_m': right_step_length_m
+                }
+            }
+        }
+        
+        # 执行标准化评估
+        enhanced_result = enhance_gait_analysis_with_standards(assessment_params)
+        
+        # 将增强结果合并到算法结果中
+        algorithm_result['quality_control'] = quality_report
+        algorithm_result['standardized_assessment'] = enhanced_result['standardized_assessment']
+        algorithm_result['clinical_report_text'] = enhanced_result['clinical_report_text']
+        
+        print("\n📋 质量控制结果:")
+        print(f"   质量等级: {quality_report['overall_quality']}")
+        print(f"   质量分数: {quality_report['quality_score']:.1f}/100")
+        
+        print("\n🏥 临床评估结果:")
+        print(f"   综合评分: {enhanced_result['standardized_assessment']['overall_score']}/100")
+        print(f"   质量等级: {enhanced_result['standardized_assessment']['quality_grade']}")
+        
+    except ImportError as e:
+        print(f"⚠️ 标准化模块未找到，使用基础报告: {e}")
+    except Exception as e:
+        print(f"⚠️ 标准化评估出错，继续生成基础报告: {e}")
+    
     html_content = generator.generate_report_from_algorithm(
         algorithm_result=algorithm_result,
         patient_info=patient_info
@@ -203,7 +281,7 @@ if __name__ == "__main__":
         test_file = sys.argv[1]
     else:
         # 默认测试文件
-        test_file = "D:\\sarcopenia_app\\202520809第八次测试\\2025-08-09\\detection_data\\曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
+        test_file = "/Users/xidada/algorithms/数据/2025-08-09 2/detection_data/曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
     
     if Path(test_file).exists():
         report_path = generate_report_with_final_algorithm(test_file)

@@ -214,6 +214,14 @@ class FullMedicalReportGenerator:
         if not patient_info:
             patient_info = {'name': '测试患者','gender': '男','age': '29'}
         
+        # 确保性别是中文（如果传入的是英文，进行转换）
+        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女', '男': '男', '女': '女'}
+        if 'gender' in patient_info:
+            original_gender = patient_info['gender']
+            patient_info['gender'] = gender_map.get(original_gender, original_gender)
+            if original_gender != patient_info['gender']:
+                print(f"[DEBUG] 性别转换: {original_gender} -> {patient_info['gender']}")
+        
         # 调试：打印患者信息
         print(f"[DEBUG] 报告生成器收到的患者信息: {patient_info}")
         
@@ -265,10 +273,27 @@ class FullMedicalReportGenerator:
 
         # --- helpers: 统一步长/步频取值与单位 ---
         def _step_len_cm(side: str) -> float:
+            # 优先使用侧别数据的 average_step_length_m（米单位）
             m_val = gait_analysis.get(side, {}).get('average_step_length_m')
             if isinstance(m_val, (int, float)) and m_val > 0:
-                return float(m_val) * 100.0
-            return float(gait_analysis.get('average_step_length', 0.0))
+                return float(m_val) * 100.0  # 米转厘米
+            
+            # 其次尝试侧别数据的 average_step_length（可能是厘米或米）
+            side_val = gait_analysis.get(side, {}).get('average_step_length')
+            if isinstance(side_val, (int, float)) and side_val > 0:
+                # 如果值小于10，认为是米单位，需要转换
+                if side_val < 10:
+                    return float(side_val) * 100.0
+                else:
+                    return float(side_val)  # 已经是厘米
+            
+            # 最后使用全局的 average_step_length（厘米单位）
+            global_val = gait_analysis.get('average_step_length', 0.0)
+            # 如果值小于10，认为是米单位
+            if global_val < 10:
+                return float(global_val) * 100.0
+            else:
+                return float(global_val)  # 已经是厘米
 
         def _cad(side: str) -> float:
             return float(gait_analysis.get(side, {}).get('cadence', gait_analysis.get('cadence', 0.0)))
@@ -321,6 +346,8 @@ class FullMedicalReportGenerator:
             'right_double_support': f"{float(gait_analysis.get('right_double_support', ds_overall)):.2f}" if is_walking else "—",
             'step_width': f"{gait_analysis.get('step_width', 0.12)*100:.2f}",
             'turn_time': f"{gait_analysis.get('turn_time', 1.0):.2f}",
+            'turn_assessment': self._assess_turn_time(gait_analysis.get('turn_time', 1.0)),
+            'test_completion': f"{file_info.get('data_frames', 0)}项测试完成",
             'balance_analysis': balance_analysis,
             'left_max_pressure': left_max_pressure or '',
             'left_avg_pressure': left_avg_pressure or '',
@@ -394,14 +421,15 @@ class FullMedicalReportGenerator:
 
         gait_analysis = {
             'step_count': int(gp.get('step_count', 0)),
-            'average_step_length': step_length_cm / 100.0,  # m
+            'average_step_length': step_length_cm,  # 保持厘米单位，与算法输出一致
             'average_velocity': float(gp.get('average_velocity', 0.0)),
             'cadence': cadence,
             'step_width': 0.12,
             'turn_time': float(gp.get('turn_time', 0.0)),
             'is_walking': bool(gp.get('is_walking', True)),
             'left_foot': {
-                'average_step_length': left_len_m,
+                'average_step_length_m': left_len_m,  # 保持字段名和单位一致
+                'average_step_length': left_len_m,  # 兼容旧字段名
                 'cadence': left_cad if left_cad > 0 else max(0.0, cadence * 0.99),
                 'stance_phase': left_stance,
                 'double_support_time': double_support,
@@ -409,7 +437,8 @@ class FullMedicalReportGenerator:
                 'swing_speed_mps': float(left.get('swing_speed_mps', 0.0)),
             },
             'right_foot': {
-                'average_step_length': right_len_m,
+                'average_step_length_m': right_len_m,  # 保持字段名和单位一致
+                'average_step_length': right_len_m,  # 兼容旧字段名
                 'cadence': right_cad if right_cad > 0 else max(0.0, cadence * 1.01),
                 'stance_phase': right_stance,
                 'double_support_time': double_support,
@@ -581,6 +610,17 @@ class FullMedicalReportGenerator:
         else:
             return '明显偏慢'
     
+    def _assess_turn_time(self, turn_time):
+        """评估转身时间"""
+        if turn_time <= 1.0:
+            return '正常范围'
+        elif turn_time <= 1.5:
+            return '轻度延迟'
+        elif turn_time <= 2.0:
+            return '中度延迟'
+        else:
+            return '明显延迟'
+    
     def _generate_overall_assessment(self, gait_analysis, balance_analysis, file_info):
         """生成综合评估"""
         step_count = gait_analysis.get('step_count', 0)
@@ -705,110 +745,70 @@ class FullMedicalReportGenerator:
         
         # 注意：临床功能评估和COP轨迹分析部分已从模板中移除，无需在此处理
         
-        # 替换患者基本信息
-        print(f"[DEBUG] generate_report_with_static_template收到的患者信息: {patient_info}")
+        # 替换患者基本信息（使用占位符）
+        new_report_number = f"RPT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         
-        # 使用更精确的替换方式，避免误替换
-        # 从模板中查找实际的患者信息值并替换
+        # 转换性别为中文
+        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女', '男': '男', '女': '女'}
+        original_gender = patient_info.get('gender', '未知')
+        chinese_gender = gender_map.get(original_gender, original_gender)
         
-        # 替换患者姓名 - 使用精确的HTML模式
-        name_patterns = [
-            '<span class="info-value">曾超</span>',
-            '<span class="info-value">等等党2</span>'
-        ]
-        new_name = patient_info.get('name', '未知患者')
-        for pattern in name_patterns:
-            if pattern in template_content:
-                new_pattern = f'<span class="info-value">{new_name}</span>'
-                template_content = template_content.replace(pattern, new_pattern)
-                print(f"[DEBUG] 替换患者姓名: {pattern} -> {new_pattern}")
-                break
+        template_content = template_content.replace('{REPORT_NUMBER}', new_report_number)
+        template_content = template_content.replace('{PATIENT_NAME}', patient_info.get('name', '未知患者'))
+        template_content = template_content.replace('{PATIENT_GENDER}', chinese_gender)
+        template_content = template_content.replace('{PATIENT_AGE}', str(patient_info.get('age', '未知')))
+        template_content = template_content.replace('{TEST_DATE}', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        template_content = template_content.replace('{MEDICAL_RECORD_ID}', patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}'))
+        
+        # 根据年龄动态生成年龄组和参考范围
+        age = patient_info.get('age', 0)
+        if isinstance(age, str):
+            try:
+                age = int(age)
+            except:
+                age = 35  # 默认年龄
+        
+        if age < 30:
+            age_group = "青年组 (18-30岁)"
+            reference_range = "[18-30岁]"
+        elif age < 50:
+            age_group = "中年组 (30-50岁)"
+            reference_range = "[30-50岁]"
+        elif age < 70:
+            age_group = "中老年组 (50-70岁)"
+            reference_range = "[50-70岁]"
         else:
-            print(f"[DEBUG] 模板中未找到姓名模式，尝试通用替换")
-            
-        # 替换性别 - 使用精确的HTML模式，并确保性别转换为中文
+            age_group = "老年组 (70岁以上)"
+            reference_range = "[70岁以上]"
+        
+        template_content = template_content.replace('{AGE_GROUP}', age_group)
+        template_content = template_content.replace('{REFERENCE_AGE_RANGE}', reference_range)
+        
+        # 同时兼容旧模板（如果还有残留的硬编码值）
+        template_content = template_content.replace('等等党2', patient_info.get('name', '未知患者'))
+        template_content = template_content.replace('曾超', patient_info.get('name', '未知患者'))
+        
+        # 精确替换性别（使用HTML标签定位）- 使用已经转换的中文性别
         gender_patterns = [
             '<span class="info-value">男</span>',
-            '<span class="info-value">女</span>'
+            '<span class="info-value">女</span>',
+            '<span class="info-value">MALE</span>',
+            '<span class="info-value">FEMALE</span>'
         ]
-        
-        # 确保性别转换为中文
-        raw_gender = patient_info.get('gender', '未知')
-        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女', '男': '男', '女': '女'}
-        new_gender = gender_map.get(raw_gender, raw_gender)
-        print(f"[DEBUG] 性别转换: {raw_gender} -> {new_gender}")
-        
         for pattern in gender_patterns:
             if pattern in template_content:
-                new_pattern = f'<span class="info-value">{new_gender}</span>'
-                template_content = template_content.replace(pattern, new_pattern)
-                print(f"[DEBUG] 替换性别: {pattern} -> {new_pattern}")
+                template_content = template_content.replace(pattern, f'<span class="info-value">{chinese_gender}</span>')
                 break
-        else:
-            print(f"[DEBUG] 模板中未找到性别模式")
-            
-        # 替换年龄 - 使用精确的HTML模式
-        age_patterns = [
-            '<span class="info-value">68</span>',
-            '<span class="info-value">66</span>',
-            '<span class="info-value">29</span>'
-        ]
-        new_age = str(patient_info.get('age', '未知'))
-        for pattern in age_patterns:
-            if pattern in template_content:
-                new_pattern = f'<span class="info-value">{new_age}</span>'
-                template_content = template_content.replace(pattern, new_pattern)
-                print(f"[DEBUG] 替换年龄: {pattern} -> {new_pattern}")
-                break
-        else:
-            print(f"[DEBUG] 模板中未找到年龄模式")
-        # 替换其他信息，也使用更精确的模式
-        # 替换日期
-        date_patterns = [
-            '2025-08-12 20:53:05',
-            '2025-07-26 17:41:42'
-        ]
-        new_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        for pattern in date_patterns:
-            if pattern in template_content:
-                template_content = template_content.replace(pattern, new_date)
-                print(f"[DEBUG] 替换日期: {pattern} -> {new_date}")
-                break
-                
-        # 替换就诊号
-        record_patterns = [
-            'MR20250812_曾超',
-            'MR20250004'
-        ]
-        new_record = patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}')
-        for pattern in record_patterns:
-            if pattern in template_content:
-                template_content = template_content.replace(pattern, new_record)
-                print(f"[DEBUG] 替换就诊号: {pattern} -> {new_record}")
-                break
-                
-        # 替换科室
-        department_patterns = [
-            '康复医学科',
-            '自动化系统'
-        ]
-        new_department = patient_info.get('department', '康复医学科')
-        for pattern in department_patterns:
-            if pattern in template_content and pattern != new_department:
-                template_content = template_content.replace(pattern, new_department)
-                print(f"[DEBUG] 替换科室: {pattern} -> {new_department}")
-                break
-        # 替换报告编号
-        report_patterns = [
-            'RPT-20250812-205305',
-            'RPT-20250726-887182'
-        ]
+        
+        # 其他替换
+        template_content = template_content.replace('2025-07-26 17:41:42', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        template_content = template_content.replace('2025-08-12 20:53:05', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        template_content = template_content.replace('MR20250004', patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}'))
+        template_content = template_content.replace('MR20250812_曾超', patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}'))
+        template_content = template_content.replace('自动化系统', patient_info.get('department', '康复医学科'))
         new_report_number = f"RPT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        for pattern in report_patterns:
-            if pattern in template_content:
-                template_content = template_content.replace(pattern, new_report_number)
-                print(f"[DEBUG] 替换报告编号: {pattern} -> {new_report_number}")
-                break
+        template_content = template_content.replace('RPT-20250726-887182', new_report_number)
+        template_content = template_content.replace('RPT-20250812-205305', new_report_number)
         
         # 注意：评估历史部分已从模板中移除
         
@@ -920,32 +920,9 @@ class FullMedicalReportGenerator:
                         x_scale_cm = float(parts[0]); y_scale_cm = float(parts[1])
                     except Exception:
                         x_scale_cm = y_scale_cm = None
-                if snapshot is not None:
-                    arr = np.asarray(snapshot, dtype=float)
-                    h, w = arr.shape
-                    # 使用算法提供的ML分界线，如果没有则使用中线
-                    ml_boundary = report_data.get('ml_boundary', w // 2)
-                    mid = int(ml_boundary)
-                    # 确保分界线在有效范围内
-                    mid = max(1, min(w - 1, mid))
-                    left_mat = arr[:, :mid]
-                    right_mat = arr[:, mid:]
-                    charts['pressure_heatmap_left'] = chart_gen.generate_pressure_heatmap(
-                        pressure_matrix=left_mat, 
-                        x_scale_cm=x_scale_cm, 
-                        y_scale_cm=y_scale_cm, 
-                        title='左脚压力分布热力图'
-                    )
-                    charts['pressure_heatmap_right'] = chart_gen.generate_pressure_heatmap(
-                        pressure_matrix=right_mat, 
-                        x_scale_cm=x_scale_cm, 
-                        y_scale_cm=y_scale_cm, 
-                        title='右脚压力分布热力图'
-                    )
-                else:
-                    charts['pressure_heatmap_left'] = chart_gen.generate_pressure_heatmap(title='左脚压力分布热力图')
-                    charts['pressure_heatmap_right'] = chart_gen.generate_pressure_heatmap(title='右脚压力分布热力图')
-                print(f"   ✅ COP与热力图生成成功（真实数据优先）")
+                # 压力热力图生成部分已移除（根据用户要求）
+                # 保留COP轨迹等其他分析
+                print(f"   ✅ COP生成成功（压力热力图已移除）")
                 
                 # 生成专业临床图表
                 if PROFESSIONAL_CHARTS_AVAILABLE:
@@ -1048,7 +1025,7 @@ class FullMedicalReportGenerator:
             ('热力图显示区域', f'<img src="{charts.get("pressure_heatmap_left", "")}" style="width:100%;height:200px;object-fit:contain;" alt="压力热力图" />')
         ]
         
-        # 新的占位符替换逻辑
+        # 新的占位符替换逻辑 - 包含所有可能的图表占位符
         replacements = [
             ('VELOCITY_CHART_PLACEHOLDER', charts.get('velocity_chart', '')),
             ('STRIDE_CHART_PLACEHOLDER', charts.get('stride_chart', '')),
@@ -1063,13 +1040,21 @@ class FullMedicalReportGenerator:
         
         # 执行替换
         replaced_count = 0
-        for placeholder, chart_data in replacements:
-            if placeholder in template_content and chart_data:
-                template_content = template_content.replace(placeholder, chart_data)
-                replaced_count += 1
-                print(f"   ✅ 替换 {placeholder}")
+        empty_chart_msg = '<div style="width:100%;height:200px;background:#f5f5f5;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;color:#999;">图表生成中...</div>'
         
-        print(f"   总共替换了 {replaced_count} 个占位符")
+        for placeholder, chart_data in replacements:
+            if placeholder in template_content:
+                if chart_data:
+                    # 有图表数据，正常替换
+                    template_content = template_content.replace(placeholder, chart_data)
+                    replaced_count += 1
+                    print(f"   ✅ 替换 {placeholder}")
+                else:
+                    # 没有图表数据，替换为空或提示信息
+                    template_content = template_content.replace(placeholder, empty_chart_msg)
+                    print(f"   ⚠️ {placeholder} 无数据，使用占位提示")
+        
+        print(f"   总共替换了 {replaced_count} 个有效占位符")
         
         # 跳过COP轨迹图替换（该部分已移除）
         print(f"   🚫 跳过COP轨迹图替换（该部分已从报告中移除）")

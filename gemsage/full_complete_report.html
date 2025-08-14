@@ -519,7 +519,7 @@
         
         <!-- 报告头部 -->
         <div class="report-header">
-            <div class="report-number">RPT-20250812-205305</div>
+            <div class="report-number">{REPORT_NUMBER}</div>
             <h1 class="hospital-name">肌智神护 AI 平台</h1>
             <h2 class="report-title">步态分析报告</h2>
         </div>
@@ -528,23 +528,23 @@
         <div class="patient-info">
             <div class="info-item">
                 <span class="info-label">姓名</span>
-                <span class="info-value">曾超</span>
+                <span class="info-value">{PATIENT_NAME}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">性别</span>
-                <span class="info-value">男</span>
+                <span class="info-value">{PATIENT_GENDER}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">年龄</span>
-                <span class="info-value">68</span>
+                <span class="info-value">{PATIENT_AGE}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">日期</span>
-                <span class="info-value">2025-08-12 20:53:05</span>
+                <span class="info-value">{TEST_DATE}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">就诊号</span>
-                <span class="info-value">MR20250812_曾超</span>
+                <span class="info-value">{MEDICAL_RECORD_ID}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">科室</span>
@@ -552,7 +552,7 @@
             </div>
             <div class="info-item">
                 <span class="info-label">参考范围</span>
-                <span class="info-value">中老年组 (50-70岁)</span>
+                <span class="info-value">{AGE_GROUP}</span>
             </div>
         </div>
         
@@ -563,7 +563,7 @@
                     <th>参数</th>
                     <th>左/右</th>
                     <th>数值</th>
-                    <th>参考范围[50-70岁]</th>
+                    <th>参考范围{REFERENCE_AGE_RANGE}</th>
                     <th>单位</th>
                 </tr>
             </thead>
@@ -571,110 +571,110 @@
                 <tr>
                     <td>步速</td>
                     <td>-</td>
-                    <td>1.31</td>
+                    <td>{{ walking_speed }}</td>
                     <td>[0.90, 1.40]</td>
                     <td>m/s</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步长</td>
                     <td>左</td>
-                    <td>43.25</td>
+                    <td>{{ left_step_length }}</td>
                     <td rowspan="2">[45.0, 60.0]</td>
                     <td rowspan="2">cm</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>45.53</td>
+                    <td>{{ right_step_length }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步幅</td>
                     <td>左</td>
-                    <td>86.49</td>
+                    <td>{{ left_stride_length }}</td>
                     <td rowspan="2">[100.00, 130.00]</td>
                     <td rowspan="2">cm</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>91.06</td>
+                    <td>{{ right_stride_length }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">步频</td>
                     <td>左</td>
-                    <td>48.65</td>
+                    <td>{{ left_cadence }}</td>
                     <td rowspan="2">[103, 123]</td>
                     <td rowspan="2">steps/min</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>62.07</td>
+                    <td>{{ right_cadence }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">跨步速度</td>
                     <td>左</td>
-                    <td>0.70</td>
+                    <td>{{ left_stride_speed }}</td>
                     <td rowspan="2">[1.53, 3.08]</td>
                     <td rowspan="2">m/s</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>0.94</td>
+                    <td>{{ right_stride_speed }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">摆动速度</td>
                     <td>左</td>
-                    <td>1.14</td>
+                    <td>{{ left_swing_speed }}</td>
                     <td rowspan="2">[2.13, 4.90]</td>
                     <td rowspan="2">m/s</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>1.39</td>
+                    <td>{{ right_swing_speed }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">站立相</td>
                     <td>左</td>
-                    <td>60.00</td>
+                    <td>{{ left_stance_phase }}</td>
                     <td rowspan="2">[60.00, 68.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>60.00</td>
+                    <td>{{ left_stance_phase }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">摆动相</td>
                     <td>左</td>
-                    <td>46.85</td>
+                    <td>{{ left_swing_phase }}</td>
                     <td rowspan="2">[32.00, 40.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>54.15</td>
+                    <td>{{ right_swing_phase }}</td>
                 </tr>
                 <tr>
                     <td rowspan="2">双支撑相</td>
                     <td>左</td>
-                    <td>20.00</td>
+                    <td>{{ left_double_support }}</td>
                     <td rowspan="2">[18.00, 22.00]</td>
                     <td rowspan="2">%</td>
                 </tr>
                 <tr>
                     <td>右</td>
-                    <td>20.00</td>
+                    <td>{{ left_double_support }}</td>
                 </tr>
                 
                 <tr>
                     <td>步宽</td>
                     <td>-</td>
-                    <td>12.00</td>
+                    <td>{{ step_width }}</td>
                     <td>[9.00, 15.00]</td>
                     <td>cm</td>
                 </tr>
                 <tr>
                     <td>转身时间</td>
                     <td>-</td>
-                    <td>1.00</td>
+                    <td>{{ turn_time }}</td>
                     <td>[0.50, 1.00]</td>
                     <td>s</td>
                 </tr>
@@ -685,11 +685,11 @@
         <div class="conclusion-section">
             <div class="conclusion-title">评估结论：</div>
             <div class="conclusion-content">
-                <p><strong>步速：</strong>步速1.31 m/s，未见异常。</p>
+                <p><strong>步速：</strong>步速{{ walking_speed }} m/s，{{ speed_assessment }}。</p>
                 
-                <p><strong>转身时间：</strong>转身时间1.00秒，超出正常范围。</p>
+                <p><strong>转身时间：</strong>转身时间{{ turn_time }}秒，{{ turn_assessment }}。</p>
                 
-                <p><strong>总体评价：</strong>综合评估显示低风险。9项测试完成。</p>
+                <p><strong>总体评价：</strong>{{ overall_assessment }}。{{ test_completion }}。</p>
             </div>
         </div>
         
@@ -721,20 +721,7 @@
                 </div>
             </div>
             
-            <!-- 足底压力热力图 -->
-            <div class="chart-item" style="margin: 30px 0; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <h4 style="font-size: 18px; color: #333; margin-bottom: 20px; text-align: center; font-weight: 500;">足底压力热力图</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center;">
-                    <div style="text-align: center;">
-                        <h5 style="margin-bottom: 15px; font-size: 16px; color: #666;">左足</h5>
-                        <img src="PRESSURE_HEATMAP_LEFT_PLACEHOLDER" style="width:100%;max-width:350px;height:auto;border-radius: 4px; border: 1px solid #e8e8e8;" alt="左足压力热力图" />
-                    </div>
-                    <div style="text-align: center;">
-                        <h5 style="margin-bottom: 15px; font-size: 16px; color: #666;">右足</h5>
-                        <img src="PRESSURE_HEATMAP_RIGHT_PLACEHOLDER" style="width:100%;max-width:350px;height:auto;border-radius: 4px; border: 1px solid #e8e8e8;" alt="右足压力热力图" />
-                    </div>
-                </div>
-            </div>
+            <!-- 足底压力热力图部分已移除 -->
         </div>
         
         <!-- COP稳定性详细分析 -->
