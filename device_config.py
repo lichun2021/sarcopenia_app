@@ -359,8 +359,12 @@ class DeviceConfigDialog:
                                         
                                         # 在主线程中更新UI
                                         def update_ui():
-                                            self.update_device_status_display(dev_id)
+                                            # 立即更新端口显示
                                             self.update_ports_display()
+                                            # 更新设备状态显示
+                                            self.update_device_status_display(dev_id)
+                                            # 强制刷新所有使用该端口的设备状态
+                                            self.update_device_status_for_port(port_name)
                                             self.log_message(f"✅ {dev_name} 端口{p_idx+1} {port_name} 检测完成: {result}")
                                         
                                         try:
@@ -373,7 +377,12 @@ class DeviceConfigDialog:
                                         self.port_data_status[port_name] = error_result
                                         
                                         def update_error():
+                                            # 立即更新端口显示
+                                            self.update_ports_display()
+                                            # 更新设备状态显示
                                             self.update_device_status_display(dev_id)
+                                            # 强制刷新所有使用该端口的设备状态
+                                            self.update_device_status_for_port(port_name)
                                             self.log_message(f"❌ {dev_name} 端口{p_idx+1} {port_name} 检测失败: {str(e)}")
                                         
                                         try:
@@ -624,9 +633,10 @@ class DeviceConfigDialog:
         
     def check_port_validity_1024(self, port_name):
         """检测端口是否有1024字节的有效数据帧"""
-        # 如果端口在跳过列表中，直接返回使用中状态
+        # 如果端口在跳过列表中，表示主程序正在使用
+        # 直接标记为"有效"
         if port_name in self.skip_port_detection:
-            return "⚠️ 端口使用中（主程序占用）"
+            return "✅ 有效"
             
         try:
             import serial
@@ -665,9 +675,9 @@ class DeviceConfigDialog:
             ser.close()
             
             if frame_found:
-                return "✅ 1024字节有效数据"
+                return "✅ 有效"
             else:
-                return "❌ 非1024字节数据"
+                return "❌ 无效"
                 
         except Exception as e:
             error_msg = str(e)
@@ -697,19 +707,10 @@ class DeviceConfigDialog:
                 for port in self.available_ports:
                     # 检查是否已有状态，没有则显示"未检测"
                     status = self.port_data_status.get(port, "未检测")
-                    if "✅ 1024字节有效数据" in status:
+                    if "✅" in status and "有效" in status:
                         simple_status = "有效"
-                    elif "⚠️ 端口使用中" in status:
-                        if "主程序占用" in status:
-                            simple_status = "使用中"
-                        else:
-                            simple_status = "占用"
-                    elif "❌" in status:
-                        simple_status = "无效"
-                    elif "⚠️" in status:
-                        simple_status = "警告"
                     else:
-                        simple_status = "未检测"
+                        simple_status = "无效"
                     port_info.append(f"{port}({simple_status})")
                 
                 self.ports_list_label.config(text=f"发现的端口: {', '.join(port_info)}")
@@ -757,21 +758,11 @@ class DeviceConfigDialog:
             status_label = self.device_rows[device_id]['status_label']
             data_status = self.port_data_status.get(port_name, "未检测")
             
-            if "✅ 1024字节有效数据" in data_status:
+            if "✅" in data_status and "有效" in data_status:
                 status_label.config(text="✅ 有效", foreground="green")
-            elif "⚠️ 端口使用中" in data_status:
-                if "主程序占用" in data_status:
-                    status_label.config(text="✅ 使用中", foreground="green")
-                else:
-                    status_label.config(text="⚠️ 使用中", foreground="orange")
-            elif "未检测" in data_status:
-                status_label.config(text="⏳ 未检测", foreground="blue")
-            elif "❌" in data_status:
-                status_label.config(text="❌ 无效", foreground="red")
-            elif "⚠️" in data_status:
-                status_label.config(text="⚠️ 警告", foreground="orange")
             else:
-                status_label.config(text="🔍 检测中", foreground="blue")
+                # 所有其他情况都显示为无效
+                status_label.config(text="❌ 无效", foreground="red")
         except Exception as e:
             print(f"更新端口状态显示出错: {e}")
     
@@ -874,7 +865,7 @@ class DeviceConfigDialog:
                 configured_ports.append(port_name)
                 # 检查端口状态
                 port_status = self.port_data_status.get(port_name, "未检测")
-                if "✅ 1024字节有效数据" in port_status or "使用中" in port_status:
+                if "✅" in port_status and "有效" in port_status:
                     valid_ports += 1
                 elif "❌" in port_status:
                     invalid_ports += 1
@@ -893,7 +884,7 @@ class DeviceConfigDialog:
             status_label.config(text="🔍 检测中", foreground="blue")
     
     def refresh_ports(self):
-        """手动刷新端口 - 立即显示，不自动检测"""
+        """手动刷新端口 - 重新扫描并检测所有端口"""
         # 防止重复点击
         if hasattr(self, '_refreshing') and self._refreshing:
             self.log_message("⚠️ 正在刷新中，请稍候...")
@@ -904,26 +895,24 @@ class DeviceConfigDialog:
         self.scan_status_label.config(text="正在刷新...", foreground="orange")
         self.ports_list_label.config(text="发现的端口: 刷新中...")
         
-        # 清空端口数据状态
-        self.port_data_status.clear()
-        
-        # 清空当前端口列表
-        self.available_ports = []
-        
         # 重新启动扫描
         self.scanning = True
         refresh_thread = threading.Thread(target=self.refresh_worker, daemon=True)
         refresh_thread.start()
         
     def refresh_worker(self):
-        """刷新工作线程 - 确保完成后更新UI状态"""
+        """刷新工作线程 - 重新扫描并检测所有端口"""
         try:
             self.log_message("🔍 正在扫描可用端口...")
+            
+            # 清空端口数据状态，重新开始
+            self.port_data_status.clear()
             
             # 快速获取所有可用端口
             ports = self.serial_interface.get_available_ports()
             new_ports = [port['device'] for port in ports]
             
+            self.available_ports = new_ports
             self.log_message(f"✅ 扫描完成，发现 {len(new_ports)} 个端口")
             
             # 立即更新UI显示端口列表
@@ -932,6 +921,35 @@ class DeviceConfigDialog:
                 self.update_queue.put(("refresh_complete", len(new_ports)))
             except:
                 return
+            
+            # 等待UI更新完成
+            import time
+            time.sleep(0.5)
+            
+            # 开始检测所有端口的有效性
+            self.log_message("🔍 开始检测端口有效性...")
+            for port in new_ports:
+                try:
+                    result = self.check_port_validity_1024(port)
+                    self.port_data_status[port] = result
+                    self.log_message(f"  {port}: {result}")
+                    
+                    # 实时更新UI
+                    try:
+                        def update_ui():
+                            self.update_ports_display()
+                            # 更新所有使用该端口的设备状态
+                            self.update_device_status_for_port(port)
+                        self.dialog.after(0, update_ui)
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    error_result = f"❌ 检测失败: {str(e)[:20]}..."
+                    self.port_data_status[port] = error_result
+                    self.log_message(f"  {port}: {error_result}")
+            
+            self.log_message("✅ 端口刷新和检测完成")
                 
         except Exception as e:
             self.log_message(f"❌ 刷新失败: {e}")
