@@ -462,6 +462,7 @@ class AlgorithmEngineManager:
                 # 将原始患者信息保存到分析结果中
                 if analysis_results:
                     analysis_results[0]['original_patient_info'] = patient_info
+                    logger.info(f"保存原始患者信息到分析结果: {patient_info}")
                 
                 # 第二步：使用 generate_reports_from_analyses_json 生成报告（直接传递JSON数据）
                 logger.info("生成综合报告...")
@@ -469,6 +470,9 @@ class AlgorithmEngineManager:
                     # 准备分析结果列表
                     if 'original_patient_info' not in analysis_results[0]:
                         analysis_results[0]['original_patient_info'] = patient_info
+                        logger.info(f"补充患者信息到分析结果: {patient_info}")
+                    else:
+                        logger.info(f"分析结果中已存在患者信息: {analysis_results[0]['original_patient_info']}")
                     
                     # 使用新方法生成报告HTML
                     report_html = generate_reports_from_analyses_json(analysis_results, "combined")
@@ -1185,13 +1189,39 @@ AI智能评估结果:
                         """
                         modified_html = modified_html[:html_tag_end+1] + font_style + modified_html[html_tag_end+1:]
             
-            # 创建PDF
-            with open(output_path, "wb") as result_file:
-                pisa_status = pisa.CreatePDF(
-                    modified_html,
-                    dest=result_file,
-                    encoding='utf-8'
-                )
+            # 创建PDF - 添加权限检查和重试机制
+            try:
+                # 确保目录存在
+                output_dir = os.path.dirname(output_path)
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # 如果文件已存在，尝试删除（可能被占用）
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                        logger.info(f"删除已存在的PDF文件: {output_path}")
+                    except PermissionError:
+                        # 文件被占用，生成新的文件名
+                        import time
+                        timestamp = int(time.time())
+                        base_name = output_path.replace('.pdf', '')
+                        output_path = f"{base_name}_{timestamp}.pdf"
+                        logger.warning(f"原文件被占用，使用新文件名: {output_path}")
+                
+                logger.info(f"📥 转换为PDF格式...")
+                with open(output_path, "wb") as result_file:
+                    pisa_status = pisa.CreatePDF(
+                        modified_html,
+                        dest=result_file,
+                        encoding='utf-8'
+                    )
+            except PermissionError as pe:
+                logger.warning(f"[WARN] PDF转换异常: PDF转换失败: {pe}，使用HTML报告")
+                # 如果仍然有权限问题，返回HTML文件
+                html_path = output_path.replace('.pdf', '.html')
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                return html_path
             
             if not pisa_status.err:
                 logger.info(f"PDF生成成功: {output_path}")

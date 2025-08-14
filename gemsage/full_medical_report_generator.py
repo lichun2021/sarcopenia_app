@@ -214,6 +214,9 @@ class FullMedicalReportGenerator:
         if not patient_info:
             patient_info = {'name': '测试患者','gender': '男','age': '29'}
         
+        # 调试：打印患者信息
+        print(f"[DEBUG] 报告生成器收到的患者信息: {patient_info}")
+        
         reference_ranges = self._get_reference_ranges(patient_info.get('age'))
         
         # 基于真实COP时序计算平衡指标（覆盖占位）
@@ -703,14 +706,109 @@ class FullMedicalReportGenerator:
         # 注意：临床功能评估和COP轨迹分析部分已从模板中移除，无需在此处理
         
         # 替换患者基本信息
-        template_content = template_content.replace('等等党2', patient_info.get('name', '未知患者'))
-        template_content = template_content.replace('女', patient_info.get('gender', '未知'))
-        template_content = template_content.replace('66', str(patient_info.get('age', '未知')))
-        template_content = template_content.replace('2025-07-26 17:41:42', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        template_content = template_content.replace('MR20250004', patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}'))
-        template_content = template_content.replace('自动化系统', patient_info.get('department', '康复医学科'))
+        print(f"[DEBUG] generate_report_with_static_template收到的患者信息: {patient_info}")
+        
+        # 使用更精确的替换方式，避免误替换
+        # 从模板中查找实际的患者信息值并替换
+        
+        # 替换患者姓名 - 使用精确的HTML模式
+        name_patterns = [
+            '<span class="info-value">曾超</span>',
+            '<span class="info-value">等等党2</span>'
+        ]
+        new_name = patient_info.get('name', '未知患者')
+        for pattern in name_patterns:
+            if pattern in template_content:
+                new_pattern = f'<span class="info-value">{new_name}</span>'
+                template_content = template_content.replace(pattern, new_pattern)
+                print(f"[DEBUG] 替换患者姓名: {pattern} -> {new_pattern}")
+                break
+        else:
+            print(f"[DEBUG] 模板中未找到姓名模式，尝试通用替换")
+            
+        # 替换性别 - 使用精确的HTML模式，并确保性别转换为中文
+        gender_patterns = [
+            '<span class="info-value">男</span>',
+            '<span class="info-value">女</span>'
+        ]
+        
+        # 确保性别转换为中文
+        raw_gender = patient_info.get('gender', '未知')
+        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女', '男': '男', '女': '女'}
+        new_gender = gender_map.get(raw_gender, raw_gender)
+        print(f"[DEBUG] 性别转换: {raw_gender} -> {new_gender}")
+        
+        for pattern in gender_patterns:
+            if pattern in template_content:
+                new_pattern = f'<span class="info-value">{new_gender}</span>'
+                template_content = template_content.replace(pattern, new_pattern)
+                print(f"[DEBUG] 替换性别: {pattern} -> {new_pattern}")
+                break
+        else:
+            print(f"[DEBUG] 模板中未找到性别模式")
+            
+        # 替换年龄 - 使用精确的HTML模式
+        age_patterns = [
+            '<span class="info-value">68</span>',
+            '<span class="info-value">66</span>',
+            '<span class="info-value">29</span>'
+        ]
+        new_age = str(patient_info.get('age', '未知'))
+        for pattern in age_patterns:
+            if pattern in template_content:
+                new_pattern = f'<span class="info-value">{new_age}</span>'
+                template_content = template_content.replace(pattern, new_pattern)
+                print(f"[DEBUG] 替换年龄: {pattern} -> {new_pattern}")
+                break
+        else:
+            print(f"[DEBUG] 模板中未找到年龄模式")
+        # 替换其他信息，也使用更精确的模式
+        # 替换日期
+        date_patterns = [
+            '2025-08-12 20:53:05',
+            '2025-07-26 17:41:42'
+        ]
+        new_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for pattern in date_patterns:
+            if pattern in template_content:
+                template_content = template_content.replace(pattern, new_date)
+                print(f"[DEBUG] 替换日期: {pattern} -> {new_date}")
+                break
+                
+        # 替换就诊号
+        record_patterns = [
+            'MR20250812_曾超',
+            'MR20250004'
+        ]
+        new_record = patient_info.get('medical_record', f'MR{datetime.now().strftime("%Y%m%d")}_{patient_info.get("name", "UNKNOWN")}')
+        for pattern in record_patterns:
+            if pattern in template_content:
+                template_content = template_content.replace(pattern, new_record)
+                print(f"[DEBUG] 替换就诊号: {pattern} -> {new_record}")
+                break
+                
+        # 替换科室
+        department_patterns = [
+            '康复医学科',
+            '自动化系统'
+        ]
+        new_department = patient_info.get('department', '康复医学科')
+        for pattern in department_patterns:
+            if pattern in template_content and pattern != new_department:
+                template_content = template_content.replace(pattern, new_department)
+                print(f"[DEBUG] 替换科室: {pattern} -> {new_department}")
+                break
+        # 替换报告编号
+        report_patterns = [
+            'RPT-20250812-205305',
+            'RPT-20250726-887182'
+        ]
         new_report_number = f"RPT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        template_content = template_content.replace('RPT-20250726-887182', new_report_number)
+        for pattern in report_patterns:
+            if pattern in template_content:
+                template_content = template_content.replace(pattern, new_report_number)
+                print(f"[DEBUG] 替换报告编号: {pattern} -> {new_report_number}")
+                break
         
         # 注意：评估历史部分已从模板中移除
         

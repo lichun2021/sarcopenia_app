@@ -1494,6 +1494,24 @@ class PressureSensorUI:
             # 如果失败，再次尝试
             self.root.after(200, self._set_paned_ratio)
     
+    def _fix_cursor_issues(self, right_frame):
+        """修复光标问题：确保拖动光标只在分隔线上显示"""
+        try:
+            def set_default_cursor(widget):
+                """递归设置默认光标"""
+                try:
+                    widget.configure(cursor='')
+                    for child in widget.winfo_children():
+                        set_default_cursor(child)
+                except (tk.TclError, AttributeError):
+                    pass
+            
+            # 设置右侧面板及其所有子控件的默认光标
+            set_default_cursor(right_frame)
+            print("[DEBUG] 已修复光标问题：右侧面板使用默认光标")
+        except Exception as e:
+            print(f"[DEBUG] 修复光标问题失败: {e}")
+    
     def setup_ui(self):
         """设置用户界面"""
         # 创建菜单栏
@@ -1567,13 +1585,16 @@ class PressureSensorUI:
         
         # 使用PanedWindow来控制左右比例 - 美化分割线
         self.paned_window = tk.PanedWindow(content_frame, orient=tk.HORIZONTAL, 
-                                     sashwidth=4, sashrelief=tk.FLAT,  # 细线，扁平风格
+                                     sashwidth=2, sashrelief=tk.FLAT,  # 更细的线
                                      bg='#d0d0d0', showhandle=False,  # 浅灰色，隐藏手柄
-                                     sashpad=0,  # 无间距
+                                     sashpad=1,  # 最小间距
                                      borderwidth=0,  # 无边框
-                                     cursor='',  # PanedWindow本身使用默认光标
+                                     relief=tk.FLAT,  # 扁平样式
                                      sashcursor='sb_h_double_arrow')  # 只在分隔线上显示拖动光标
         self.paned_window.pack(fill=tk.BOTH, expand=True)
+        
+        # 设置PanedWindow的默认光标
+        self.paned_window.configure(cursor='')
         
         # 左侧容器框架，添加内边距
         left_container = ttk.Frame(self.paned_window, style='Hospital.TFrame')
@@ -1582,21 +1603,24 @@ class PressureSensorUI:
         self.plot_frame = ttk.LabelFrame(left_container, 
                                        text="压力传感器热力图", 
                                        padding=15, style='Hospital.TLabelframe')
-        self.plot_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 5))  # 右边距5像素
+        self.plot_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 8))  # 右边距8像素，增加与分隔线的距离
         
         # 右侧容器框架，添加内边距
         right_container = ttk.Frame(self.paned_window, style='Hospital.TFrame')
         
         # 右侧：数据日志和统计 - 医院白色（30%宽度）
         right_frame = ttk.Frame(right_container, style='Hospital.TFrame')
-        right_frame.pack(fill=tk.BOTH, expand=True, padx=(8, 0))  # 增加左边距
+        right_frame.pack(fill=tk.BOTH, expand=True, padx=(8, 0))  # 左边距8像素，增加与分隔线的距离
         
         # 添加到PanedWindow中，设置初始宽度
         self.paned_window.add(left_container, minsize=500, width=700)  # 70%初始宽度
         self.paned_window.add(right_container, minsize=250, width=300)  # 30%初始宽度
         
         # 设置初始位置为7:3比例（延迟设置以确保窗口已经渲染）
-        self.root.after(500, self._set_paned_ratio)  # 增加延迟时间
+        self.root.after(500, self._set_paned_ratio)
+        
+        # 延迟修复光标问题
+        self.root.after(1000, lambda: self._fix_cursor_issues(right_frame))  # 增加延迟时间
         
         # 统计信息面板 - 医院风格
         stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
@@ -4229,13 +4253,35 @@ class PressureSensorUI:
     def start_new_detection(self):
         """开始新的检测"""
         try:
-            # 重置检测相关状态
+            print(f"[DEBUG] 开始新检测 - 患者: {self.current_patient['name'] if self.current_patient else 'None'}")
+            
+            # 彻底重置检测相关状态
             self.detection_in_progress = False
             self.embedded_detection_active = False
             
-            # 重置检测界面状态
+            # 重置检测界面状态，强制重建界面
             if hasattr(self, '_detection_widgets_created'):
                 self._detection_widgets_created = False
+                print(f"[DEBUG] 重置检测界面组件状态")
+            
+            # 清空当前会话，避免状态污染
+            self.current_session = None
+            
+            # 如果检测内容区域存在，清空它并显示初始状态
+            if hasattr(self, 'detection_content_frame'):
+                for widget in self.detection_content_frame.winfo_children():
+                    widget.destroy()
+                print(f"[DEBUG] 清空检测内容区域")
+                
+                # 重新显示初始状态标签
+                if hasattr(self, 'detection_status_label'):
+                    self.detection_status_label.pack(expand=True)
+                    print(f"[DEBUG] 重新显示初始状态标签")
+            
+            # 重置其他检测状态变量
+            if hasattr(self, 'current_step_index'):
+                self.current_step_index = 0
+                print(f"[DEBUG] 重置当前步骤索引")
             
             # 创建新的检测会话
             session_name = f"检测-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -4252,6 +4298,12 @@ class PressureSensorUI:
                     'total_steps': 6
                 }
                 
+                # 验证步骤是否正确创建
+                session_steps = db.get_session_steps(session_id)
+                print(f"[DEBUG] 新会话步骤验证: 找到{len(session_steps)}个步骤")
+                for step in session_steps:
+                    print(f"[DEBUG] 步骤{step['step_number']}: {step['step_name']} - {step['status']}")
+                
                 self.detection_in_progress = True
                 messagebox.showinfo("检测开始", 
                                   f"患者 {self.current_patient['name']} 的检测已开始！\n"
@@ -4262,14 +4314,23 @@ class PressureSensorUI:
                 self.start_detection_btn.config(text="🔄 检测中...", state="disabled")
                 
                 # 启动检测向导
+                print(f"[DEBUG] 准备启动检测向导")
                 self.show_detection_wizard()
+                print(f"[DEBUG] 检测向导启动完成")
+                
+                # 强制更新界面以确保立即显示
+                self.root.update_idletasks()
+                print(f"[DEBUG] 强制界面更新完成")
                 
             else:
                 messagebox.showerror("错误", "创建检测会话失败！")
+                print(f"[ERROR] 创建检测会话失败，session_id={session_id}")
                 
         except Exception as e:
             messagebox.showerror("错误", f"开始检测失败：{e}")
             print(f"[ERROR] 开始检测错误: {e}")
+            import traceback
+            traceback.print_exc()
     
     def resume_detection(self):
         """恢复检测"""
@@ -4481,18 +4542,22 @@ class PressureSensorUI:
     def show_embedded_detection(self):
         """显示嵌入式检测界面"""
         try:
-            # 只在首次创建时清除组件
-            if not hasattr(self, '_detection_widgets_created'):
+            # 检查是否需要创建或重新创建组件
+            if not hasattr(self, '_detection_widgets_created') or not self._detection_widgets_created:
+                print(f"[DEBUG] 创建/重新创建检测界面组件")
+                
                 # 清除检测内容区域
                 for widget in self.detection_content_frame.winfo_children():
                     widget.destroy()
                 
                 # 隐藏初始状态标签
-                self.detection_status_label.pack_forget()
+                if hasattr(self, 'detection_status_label'):
+                    self.detection_status_label.pack_forget()
                 
                 # 创建固定的控件引用
                 self._create_detection_widgets()
                 self._detection_widgets_created = True
+                print(f"[DEBUG] 检测界面组件创建完成")
             
             # 设置检测活动状态
             self.embedded_detection_active = True
@@ -4559,15 +4624,21 @@ class PressureSensorUI:
     def _update_detection_content(self):
         """更新检测界面内容（不重建控件）"""
         try:
+            print(f"[DEBUG] 更新检测界面内容开始")
+            
             # 获取会话信息
             session_steps = db.get_session_steps(self.current_session['id'])
             completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
             total_steps = self.current_session.get('total_steps', 6)
             
+            print(f"[DEBUG] 会话步骤状态: 已完成={completed_steps}, 总步骤={total_steps}")
+            
             # 更新患者信息
             patient_name = self.current_patient.get('name', '') if self.current_patient else ''
             session_name = self.current_session.get('session_name', '') if self.current_session else ''
             current_hardware = self.get_current_step_hardware()
+            
+            print(f"[DEBUG] 界面信息更新: 患者={patient_name}, 会话={session_name}, 硬件={current_hardware}")
             
             self._patient_name_label.config(text=f"👤 患者: {patient_name}")
             self._session_name_label.config(text=f"📋 会话: {session_name}")
@@ -4581,8 +4652,12 @@ class PressureSensorUI:
             # 更新步骤内容（不重建控件）
             self._update_step_content(session_steps, completed_steps)
             
+            print(f"[DEBUG] 检测界面内容更新完成")
+            
         except Exception as e:
             print(f"更新检测界面内容失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _create_step_display_widgets(self):
         """创建步骤显示的固定控件（只创建一次）"""
@@ -4768,8 +4843,12 @@ class PressureSensorUI:
                     self._action_btn.config(text=f"🚀 开始第{current_step['number']}步", 
                                           command=lambda: self.start_detection_step(current_step))
             
+            print(f"[DEBUG] 步骤内容更新完成: 当前步骤={current_step['number']}, 状态={step_status}")
+            
         except Exception as e:
             print(f"更新步骤内容失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def prev_detection_step(self):
         """导航到上一个检测步骤"""
@@ -5561,6 +5640,12 @@ class PressureSensorUI:
             if not session_steps:
                 raise Exception("没有找到检测数据")
             
+            # 验证当前患者信息
+            if not self.current_patient:
+                raise Exception("当前患者信息为空")
+            
+            print(f"[DEBUG] 使用患者信息生成报告: {self.current_patient['name']} (ID: {self.current_patient.get('id')})")
+            
             # 准备患者信息（与导入CSV相同的格式）
             # 性别字段转换：中文转英文，匹配CSV导入的格式
             gender_map = {'男': 'MALE', '女': 'FEMALE'}
@@ -5575,6 +5660,8 @@ class PressureSensorUI:
                 'test_type': 'COMPREHENSIVE',
                 'test_names': [f"第{step['step_number']}步检测" for step in session_steps if step['status'] == 'completed']
             }
+            
+            print(f"[DEBUG] 报告使用的患者信息: 姓名={patient_info['name']}, 年龄={patient_info['age']}, 性别={patient_info['gender']}, 身高={patient_info['height']}, 体重={patient_info['weight']}")
             
             # 创建临时CSV文件用于上传
             import tempfile
@@ -6051,7 +6138,8 @@ class PressureSensorUI:
             self.current_session = {'id': session_id}
             self.current_patient = session_patient  # 使用会话对应的患者信息
             
-            print(f"[DEBUG] 生成报告 - 患者: {session_patient['name']}, 会话ID: {session_id}")
+            print(f"[DEBUG] 生成报告 - 患者: {session_patient['name']} (ID: {session_patient['id']}), 会话ID: {session_id}")
+            print(f"[DEBUG] 患者详细信息: 年龄={session_patient.get('age')}, 性别={session_patient.get('gender')}, 身高={session_patient.get('height')}, 体重={session_patient.get('weight')}")
             
             # 启动AI分析（会调用SarcNeuro Edge API）
             self.start_ai_analysis()

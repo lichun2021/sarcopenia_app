@@ -337,15 +337,23 @@ def generate_reports_from_analyses_json(analysis_results, report_type="combined"
             # 综合患者信息
             if len(analysis_results) == 1 and 'original_patient_info' in analysis_results[0]:
                 combined_patient_info = analysis_results[0]['original_patient_info'].copy()
+                print(f"[DEBUG] multi_file_workflow: 使用单个分析结果的患者信息: {combined_patient_info}")
                 
                 # 转换性别为中文
                 gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
                 if 'gender' in combined_patient_info:
+                    original_gender = combined_patient_info['gender']
                     combined_patient_info['gender'] = gender_map.get(
                         combined_patient_info['gender'], 
                         combined_patient_info['gender']
                     )
+                    print(f"[DEBUG] 性别转换: {original_gender} -> {combined_patient_info['gender']}")
             else:
+                print(f"[DEBUG] multi_file_workflow: 未找到original_patient_info，使用默认患者信息")
+                print(f"[DEBUG] 分析结果数量: {len(analysis_results)}")
+                if analysis_results:
+                    print(f"[DEBUG] 第一个分析结果的keys: {list(analysis_results[0].keys())}")
+                
                 avg_age = calculate_average_age(analysis_results)
                 combined_patient_info = {
                     'name': f'{len(analysis_results)}个样本综合分析',
@@ -353,8 +361,10 @@ def generate_reports_from_analyses_json(analysis_results, report_type="combined"
                     'age': avg_age if avg_age > 0 else 35,
                     'id': 'COMBINED_ANALYSIS'
                 }
+                print(f"[DEBUG] 使用默认患者信息: {combined_patient_info}")
             
             # 直接使用原有方法生成综合报告
+            print(f"[DEBUG] multi_file_workflow: 最终传递给报告生成器的患者信息: {combined_patient_info}")
             combined_html = generator.generate_report_from_algorithm(combined_result, combined_patient_info)
             
             if report_type == "combined":
