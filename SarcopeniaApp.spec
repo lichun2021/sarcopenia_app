@@ -27,6 +27,8 @@ a = Analysis(
         'scipy', 'scipy.ndimage',
         'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg', 
         'matplotlib.figure', 'matplotlib.colors', 'matplotlib.font_manager',
+        'matplotlib.patches', 'matplotlib.path', 'matplotlib.gridspec',
+        'seaborn',
         'tkcalendar', 'babel', 'babel.dates',
         'uvicorn', 'uvicorn.main', 'uvicorn.config', 'uvicorn.server',
         'fastapi', 'fastapi.middleware.cors', 'fastapi.responses', 'fastapi.staticfiles',
@@ -68,9 +70,12 @@ a = Analysis(
         'gemsage.enhanced_report_generator',          # 增强报告生成器 ✅
         'gemsage.generate_combined_report',           # 多文件合并分析 ✅
         'gemsage.generate_complete_report_final',     # 完整报告生成 ✅
-        'gemsage.run_multi_tests',                   # 多文件测试工具 ✅
         'gemsage.analyze_multiple_datasets',         # 多数据集分析 ✅
-        'gemsage.multi_file_workflow'                # 文件工作流（algorithm_engine_manager需要）✅
+        'gemsage.multi_file_workflow',                # 文件工作流（algorithm_engine_manager需要）✅
+        'gemsage.clinical_assessment_generator',      # 临床评估生成器 (新增)
+        'gemsage.modern_clinical_assessment',         # 现代临床评估 (新增)
+        'gemsage.professional_chart_generator',       # 专业图表生成器 (新增)
+        'gemsage.ai_assessment_engine'                # AI评估引擎（algorithm_engine_manager需要）
     ],
     hookspath=[],
     hooksconfig={},

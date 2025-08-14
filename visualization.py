@@ -287,7 +287,7 @@ class HeatmapVisualizer:
     #     title = f'Medical Pressure Imaging ({self.array_rows}x{self.array_cols})'
     #     self.ax.set_title(title, fontsize=16, fontweight='bold', pad=20, color='white')
         
-    def update_data(self, matrix_2d, statistics=None):
+    def update_data(self, matrix_2d, statistics=None, device_type=None):
         """更新显示数据 - 带帧跳跃优化（保证在主线程执行UI操作）"""
         try:
             if self._closing:
@@ -295,7 +295,7 @@ class HeatmapVisualizer:
             # 如果当前不在主线程，切回主线程执行
             if threading.current_thread() is not threading.main_thread():
                 try:
-                    self._scheduled_after_id = self.parent_frame.after(0, lambda: self.update_data(matrix_2d, statistics))
+                    self._scheduled_after_id = self.parent_frame.after(0, lambda: self.update_data(matrix_2d, statistics, device_type))
                 except Exception:
                     pass
                 return
@@ -327,11 +327,21 @@ class HeatmapVisualizer:
             self.frame_skip_counter = 0
             self.last_render_time = current_time
             
+            # 根据设备类型应用不同的放大系数（仅用于显示）
+            display_matrix = matrix_2d.copy()  # 复制数据，不改变原始数据
+            if device_type == 'cushion':
+                # 坐垫数据乘以1.5倍
+                # print(f"[坐垫模式] 应用1.5倍放大系数 - 原始最大值: {matrix_2d.max():.1f}, 放大后最大值: {min(matrix_2d.max() * 1.5, 255):.1f}")
+                display_matrix = display_matrix * 5
+                # 确保不超过255
+                display_matrix = np.minimum(display_matrix, 255)
+            # 步道和脚垫保持原值（乘以1.0）
+            
             # 应用高质量渲染或平滑处理
             if self.enable_high_quality:
-                smoothed_matrix = self.apply_high_quality_rendering(matrix_2d)
+                smoothed_matrix = self.apply_high_quality_rendering(display_matrix)
             else:
-                smoothed_matrix = self.smooth_data(matrix_2d)
+                smoothed_matrix = self.smooth_data(display_matrix)
             
             # 检查数组大小是否改变，如果改变需要重新配置
             if matrix_2d.shape != (self.array_rows, self.array_cols):

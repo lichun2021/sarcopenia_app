@@ -157,14 +157,8 @@ class AlgorithmEngineManager:
                 self.analyzer = PressureAnalysisFinal()
                 logger.info("成功导入gemsage.core_calculator_final.PressureAnalysisFinal")
                 
-                # 导入报告生成器
-                try:
-                    from gemsage.ai_assessment_engine import AIAssessmentEngine
-                    self.ai_engine = AIAssessmentEngine()
-                    logger.info("成功导入gemsage.ai_assessment_engine.AIAssessmentEngine")
-                except ImportError as e:
-                    logger.warning(f"无法导入AI评估引擎: {e}")
-                    self.ai_engine = None
+                # AI引擎已移除，不再导入
+                self.ai_engine = None
                 
                 # 尝试导入报告生成器
                 try:
@@ -394,19 +388,6 @@ class AlgorithmEngineManager:
                 result = self._analyze_sync(csv_data, patient_info, test_type)
             
             if result and generate_report:
-                # 暂时跳过PDF生成，直接保存AI评估结果
-                if 'ai_assessment' in result:
-                    # 保存AI评估结果到文件
-                    import json
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    patient_name = patient_info.get('name', 'Unknown').replace(' ', '_')
-                    ai_result_path = f"ai_assessment_{patient_name}_{timestamp}.json"
-                    
-                    with open(ai_result_path, 'w', encoding='utf-8') as f:
-                        json.dump(result['ai_assessment'], f, ensure_ascii=False, indent=2, default=str)
-                    
-                    logger.info(f"AI评估结果已保存到: {ai_result_path}")
-                
                 # 对于综合分析，report_html 已经在 _analyze_sync 中生成
                 # 其他分析类型才需要在这里生成报告
                 if test_type.upper() != "COMPREHENSIVE":
@@ -538,95 +519,7 @@ class AlgorithmEngineManager:
                 
                 logger.info(f"最终分析结果: {raw_result}")
                 
-                # 如果有gemsage AI引擎，进行AI评估
-                if self.ai_engine:
-                    logger.info("调用gemsage AI评估引擎...")
-                    try:
-                        # 使用AI引擎进行综合评估
-                        from gemsage.ai_assessment_engine import ComprehensiveMetrics
-                        
-                        # 构建综合指标数据结构 - 直接传递原始数据，不做任何适配
-                        logger.info(f"构建ComprehensiveMetrics，数据结构:")
-                        gait_data = raw_result.get('gait_analysis', {})
-                        balance_data = raw_result.get('balance_analysis', {})
-                        logger.info(f"  gait_analysis: {gait_data}")
-                        logger.info(f"  balance_analysis: {balance_data}")
-                        logger.info(f"  patient_info: {patient_info}")
-                        
-                        # 将numpy类型转换为标准Python类型
-                        def convert_numpy_types(data):
-                            if isinstance(data, dict):
-                                return {k: convert_numpy_types(v) for k, v in data.items()}
-                            elif isinstance(data, list):
-                                return [convert_numpy_types(item) for item in data]
-                            elif hasattr(data, 'item'):  # numpy类型
-                                return data.item()
-                            else:
-                                return data
-                        
-                        # 转换数据类型
-                        converted_gait_data = convert_numpy_types(gait_data)
-                        converted_balance_data = convert_numpy_types(balance_data)
-                        
-                        # 转换patient_info中的数字字段
-                        converted_patient_info = patient_info.copy()
-                        for key in ['age', 'weight', 'height']:
-                            if key in converted_patient_info:
-                                try:
-                                    converted_patient_info[key] = float(converted_patient_info[key])
-                                except (ValueError, TypeError):
-                                    # 如果转换失败，使用默认值
-                                    defaults = {'age': 65, 'weight': 70, 'height': 170}
-                                    converted_patient_info[key] = defaults.get(key, 0)
-                        
-                        comprehensive_metrics = ComprehensiveMetrics(
-                            gait_metrics=converted_gait_data,
-                            temporal_metrics={},
-                            joint_metrics={},
-                            power_metrics={},
-                            posture_metrics=converted_balance_data,
-                            grf_metrics={},
-                            patient_info=converted_patient_info
-                        )
-                        
-                        logger.info("开始调用AI评估引擎...")
-                        logger.info(f"传递给AI引擎的数据类型检查:")
-                        logger.info(f"  gait_metrics类型: {type(converted_gait_data)}")
-                        logger.info(f"  posture_metrics类型: {type(converted_balance_data)}")
-                        logger.info(f"  converted_patient_info: {converted_patient_info}")
-                        
-                        # 调用正确的方法名
-                        ai_assessment = self.ai_engine.calculate_comprehensive_assessment(comprehensive_metrics)
-                        
-                        # 生成诊断建议
-                        logger.info("生成AI诊断建议...")
-                        diagnostic_suggestions = self.ai_engine.generate_diagnostic_suggestions(ai_assessment, comprehensive_metrics)
-                        
-                        # 生成详细评估报告
-                        logger.info("生成AI详细评估报告...")
-                        detailed_report = self.ai_engine.generate_detailed_report(ai_assessment, comprehensive_metrics)
-                        
-                        # 将AI评估结果合并到原始结果中
-                        raw_result['ai_assessment'] = ai_assessment
-                        raw_result['ai_diagnostic_suggestions'] = diagnostic_suggestions
-                        raw_result['ai_detailed_report'] = detailed_report
-                        
-                        logger.info("🎉 gemsage AI评估完成!")
-                        logger.info(f"AI评估结果类型: {type(ai_assessment)}")
-                        logger.info(f"AI评估结果: {ai_assessment}")
-                        logger.info(f"生成了 {len(diagnostic_suggestions)} 条诊断建议")
-                        logger.info(f"详细报告包含 {len(detailed_report.评估明细)} 条评估明细")
-                        
-                        # 生成AI评估文本摘要，用于集成到现有医疗报告中
-                        ai_summary = self._generate_ai_summary(ai_assessment, diagnostic_suggestions, detailed_report)
-                        raw_result['ai_summary'] = ai_summary
-                        logger.info("✅ AI评估摘要已生成，将集成到医疗报告中")
-                        
-                    except Exception as ai_error:
-                        import traceback
-                        logger.error(f"gemsage AI评估失败: {ai_error}")
-                        logger.error(f"详细错误信息: {traceback.format_exc()}")
-                        # AI评估失败不影响基础分析结果
+                # AI引擎已移除，跳过AI评估
                         
             else:
                 # 其他分析类型
@@ -821,14 +714,7 @@ class AlgorithmEngineManager:
                 'overall_assessment': f"综合评分: {data.get('overall_score', 'N/A')}分"
             }
             
-            # 如果有AI评估摘要，添加到报告的总体评估中
-            if 'ai_summary' in analysis_result:
-                ai_summary = analysis_result['ai_summary']
-                logger.info("📊 集成AI评估摘要到医疗报告...")
-                
-                # 将AI摘要追加到总体评估中
-                current_assessment = report_data.get('overall_assessment', '')
-                report_data['overall_assessment'] = f"{current_assessment}\n\n{ai_summary}"
+            # AI评估已移除
             
             # 生成报告选项 - 显示所有模块
             options = {
@@ -1198,10 +1084,11 @@ AI智能评估结果:
                                 logger.info(f"图片 {i+1}: 验证通过")
                                 
                         except Exception as e:
-                            # 如果base64解码失败或数据无效，替换为占位符
+                            # 如果base64解码失败或数据无效，直接移除该图片
                             logger.warning(f"图片 {i+1}: 清理有问题的图片数据: {e}")
-                            placeholder = self._create_placeholder_svg()
-                            html_content = html_content.replace(img_tag, placeholder)
+                            # 直接移除有问题的图片标签
+                            html_content = html_content.replace(img_tag, 
+                                '<div style="text-align:center;padding:20px;border:1px solid #ccc;">图表暂时无法显示</div>')
                             replaced_count += 1
                             
                 except Exception as e:
@@ -1213,6 +1100,28 @@ AI智能评估结果:
             
         except Exception as e:
             logger.warning(f"清理图片数据时出错: {e}，返回原始HTML")
+            return html_content
+    
+    def _fix_css_for_pdf(self, html_content: str) -> str:
+        """修复HTML中的CSS以兼容PDF转换"""
+        import re
+        try:
+            # 替换有问题的CSS属性
+            # 将 width: 100% 替换为具体像素值或移除
+            html_content = re.sub(r'width:\s*100%', 'width: 800px', html_content)
+            html_content = re.sub(r'height:\s*100%', 'height: 600px', html_content)
+            html_content = re.sub(r'max-width:\s*100%', 'max-width: 800px', html_content)
+            html_content = re.sub(r'max-height:\s*100%', 'max-height: 600px', html_content)
+            
+            # 修复img标签的样式属性
+            html_content = re.sub(r'style="[^"]*width:\s*100%[^"]*"', 'style="width:100%;height:auto;"', html_content)
+            
+            # 移除一些可能有问题的CSS属性
+            html_content = re.sub(r'object-fit:\s*[^;]+;?', '', html_content)
+            
+            return html_content
+        except Exception as e:
+            logger.warning(f"修复CSS时出错: {e}")
             return html_content
     
     def _create_placeholder_svg(self) -> str:
@@ -1244,6 +1153,9 @@ AI智能评估结果:
             
             # 先清理有问题的base64图片数据
             modified_html = self._clean_problematic_images(html_content)
+            
+            # 清理CSS中的百分比单位以兼容PDF转换
+            modified_html = self._fix_css_for_pdf(modified_html)
             
             # 查找</head>标签的位置
             head_end = modified_html.find('</head>')
@@ -1285,7 +1197,7 @@ AI智能评估结果:
                 logger.info(f"PDF生成成功: {output_path}")
                 return output_path
             else:
-                logger.warning(f"PDF生成失败: {pisa_status.err}")
+                logger.warning(f"PDF生成失败: {pisa_status.err}，使用HTML报告")
                 # 如果PDF生成失败，返回HTML
                 html_path = output_path.replace('.pdf', '.html')
                 with open(html_path, 'w', encoding='utf-8') as f:

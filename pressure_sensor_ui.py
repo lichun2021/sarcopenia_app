@@ -1466,6 +1466,34 @@ class PressureSensorUI:
                  background=[('active', '#218838'),
                            ('pressed', '#1e7e34')])
     
+    def _set_paned_ratio(self):
+        """设置PanedWindow的初始比例为7:3"""
+        try:
+            # 强制更新窗口布局
+            self.paned_window.update_idletasks()
+            
+            # 获取PanedWindow的总宽度
+            total_width = self.paned_window.winfo_width()
+            print(f"[DEBUG] PanedWindow宽度: {total_width}")
+            
+            if total_width > 100:  # 确保窗口已渲染且有合理的宽度
+                # 设置分隔线位置为总宽度的70%
+                sash_position = int(total_width * 0.7)
+                print(f"[DEBUG] 设置分隔线位置: {sash_position} (70%)")
+                
+                # 使用paneconfigure设置sash位置
+                self.paned_window.sash_place(0, sash_position, 0)
+                
+                # 再次更新确保生效
+                self.paned_window.update()
+            else:
+                # 窗口还未完全渲染，稍后重试
+                self.root.after(200, self._set_paned_ratio)
+        except Exception as e:
+            print(f"[DEBUG] 设置比例失败: {e}")
+            # 如果失败，再次尝试
+            self.root.after(200, self._set_paned_ratio)
+    
     def setup_ui(self):
         """设置用户界面"""
         # 创建菜单栏
@@ -1537,16 +1565,37 @@ class PressureSensorUI:
         content_frame = ttk.Frame(main_frame, style='Hospital.TFrame')
         content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 左侧：热力图显示 - 医院风格边框
-        self.plot_frame = ttk.LabelFrame(content_frame, 
+        # 使用PanedWindow来控制左右比例 - 美化分割线
+        self.paned_window = tk.PanedWindow(content_frame, orient=tk.HORIZONTAL, 
+                                     sashwidth=3, sashrelief=tk.FLAT,  # 细线，扁平风格
+                                     bg='#d0d0d0', showhandle=False,  # 浅灰色，隐藏手柄
+                                     sashpad=2,  # 分隔线两侧的间距
+                                     borderwidth=0,  # 无边框
+                                     sashcursor='sb_h_double_arrow')  # 水平调整光标
+        self.paned_window.pack(fill=tk.BOTH, expand=True)
+        
+        # 左侧容器框架，添加内边距
+        left_container = ttk.Frame(self.paned_window, style='Hospital.TFrame')
+        
+        # 左侧：热力图显示 - 医院风格边框（70%宽度）
+        self.plot_frame = ttk.LabelFrame(left_container, 
                                        text="压力传感器热力图", 
                                        padding=15, style='Hospital.TLabelframe')
-        self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
+        self.plot_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 5))  # 右边距5像素
         
-        # 右侧：数据日志和统计 - 医院白色
-        right_frame = ttk.Frame(content_frame, style='Hospital.TFrame')
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 0))
-        right_frame.config(width=650)  # 增加右侧面板宽度以容纳检测会话区域
+        # 右侧容器框架，添加内边距
+        right_container = ttk.Frame(self.paned_window, style='Hospital.TFrame')
+        
+        # 右侧：数据日志和统计 - 医院白色（30%宽度）
+        right_frame = ttk.Frame(right_container, style='Hospital.TFrame')
+        right_frame.pack(fill=tk.BOTH, expand=True, padx=(5, 0))  # 左边距5像素
+        
+        # 添加到PanedWindow中，设置初始宽度
+        self.paned_window.add(left_container, minsize=500, width=700)  # 70%初始宽度
+        self.paned_window.add(right_container, minsize=250, width=300)  # 30%初始宽度
+        
+        # 设置初始位置为7:3比例（延迟设置以确保窗口已经渲染）
+        self.root.after(500, self._set_paned_ratio)  # 增加延迟时间
         
         # 统计信息面板 - 医院风格
         stats_frame = ttk.LabelFrame(right_frame, text="实时统计", 
@@ -1884,9 +1933,23 @@ class PressureSensorUI:
                         matrix_2d = processed_data['matrix_2d']
                         statistics = processed_data['statistics']
                         
+                        # 获取当前设备类型
+                        device_type = None
+                        if self.device_manager:
+                            device_info = self.device_manager.get_current_device_info()
+                            if device_info:
+                                # 根据设备名称判断类型
+                                device_name = device_info.get('name', '')
+                                if '坐垫' in device_name:
+                                    device_type = 'cushion'
+                                elif '步道' in device_name:
+                                    device_type = 'walkway'
+                                elif '脚垫' in device_name:
+                                    device_type = 'footpad'
+                        
                         # 确保可视化器已初始化
                         if self.visualizer is not None:
-                            self.visualizer.update_data(matrix_2d, statistics)
+                            self.visualizer.update_data(matrix_2d, statistics, device_type)
                         elif not self._visualizer_initialized:
                             # 触发延迟初始化
                             self._lazy_init_visualizer()

@@ -21,6 +21,30 @@ except ImportError:
     CHART_GENERATOR_AVAILABLE = False
     print("注意: 图表生成器不可用，图表将显示占位符")
 
+# 导入专业图表生成器
+try:
+    from professional_chart_generator import ProfessionalChartGenerator
+    PROFESSIONAL_CHARTS_AVAILABLE = True
+except ImportError:
+    PROFESSIONAL_CHARTS_AVAILABLE = False
+    print("注意: 专业图表生成器不可用")
+
+# 导入临床评估生成器
+try:
+    from clinical_assessment_generator import ClinicalAssessmentGenerator
+    CLINICAL_ASSESSMENT_AVAILABLE = True
+except ImportError:
+    CLINICAL_ASSESSMENT_AVAILABLE = False
+    print("注意: 临床评估生成器不可用")
+
+# 导入现代化临床评估系统
+try:
+    from modern_clinical_assessment import ModernClinicalAssessment
+    MODERN_ASSESSMENT_AVAILABLE = True
+except ImportError:
+    MODERN_ASSESSMENT_AVAILABLE = False
+    print("注意: 现代化评估系统不可用")
+
 # 尝试导入增强版报告生成器
 try:
     from enhanced_report_generator import (
@@ -268,6 +292,13 @@ class FullMedicalReportGenerator:
             'age_group': self._get_age_group(patient_info.get('age')),
             'age_range': self._get_age_range(patient_info.get('age')),
             'reference_ranges': reference_ranges,
+            # 添加专业临床指标
+            'cop_stability': algorithm_result.get('cop_stability'),
+            'cop_spectrum': algorithm_result.get('cop_spectrum'),
+            'symmetry_indices': algorithm_result.get('symmetry_indices'),
+            'pressure_time_integral': algorithm_result.get('pressure_time_integral'),
+            'gait_phases_detailed': algorithm_result.get('gait_phases_detailed'),
+            'pressure_zones': algorithm_result.get('pressure_zones'),
             'walking_speed': f"{gait_analysis.get('average_velocity', 0):.2f}" if is_walking else "—",
             'left_step_length': f"{left_len_cm:.2f}",
             'right_step_length': f"{right_len_cm:.2f}",
@@ -659,6 +690,18 @@ class FullMedicalReportGenerator:
         except Exception as e:
             print(f"⚠️ 动态建议替换失败: {e}")
         
+        import re
+        
+        # 移除足底压力分析部分（从足底压力分析到PTI分析之前）
+        try:
+            template_content = re.sub(r'<!-- 足底压力分析 -->[\s\S]*?<!-- Pressure-Time Integral \(PTI\) 分析 -->', 
+                                     '<!-- Pressure-Time Integral (PTI) 分析 -->', template_content)
+            print(f"✅ 已移除足底压力分析部分")
+        except Exception as e:
+            print(f"⚠️ 移除足底压力分析失败: {e}")
+        
+        # 注意：临床功能评估和COP轨迹分析部分已从模板中移除，无需在此处理
+        
         # 替换患者基本信息
         template_content = template_content.replace('等等党2', patient_info.get('name', '未知患者'))
         template_content = template_content.replace('女', patient_info.get('gender', '未知'))
@@ -668,6 +711,8 @@ class FullMedicalReportGenerator:
         template_content = template_content.replace('自动化系统', patient_info.get('department', '康复医学科'))
         new_report_number = f"RPT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         template_content = template_content.replace('RPT-20250726-887182', new_report_number)
+        
+        # 注意：评估历史部分已从模板中移除
         
         # 应用图表替换
         template_content = self._replace_chart_placeholders(template_content, charts)
@@ -724,28 +769,48 @@ class FullMedicalReportGenerator:
                 
                 print(f"🎨 开始生成图表...")
                 
-                # 历史评估图（美化：更多点+平滑）
-                if gait_data.get('average_velocity'):
-                    v = gait_data['average_velocity']
-                    velocities = [v*0.85, v*0.92, v, v*1.05, v*0.98, v*1.08]
-                    charts['velocity_chart'] = chart_gen._create_velocity_chart(velocities)
-                    print(f"   ✅ 步速趋势图生成成功")
+                # 跳过临床功能评估图表生成（已移除该部分）
+                print(f"   🚫 跳过临床功能评估图表生成（该部分已从报告中移除）")
                 
-                if gait_data.get('left_foot') and gait_data.get('right_foot'):
-                    # average_step_length已经是cm单位，average_step_length_m是米单位
-                    left_length = gait_data['left_foot'].get('average_step_length_m', 0.6)  # 米单位
-                    right_length = gait_data['right_foot'].get('average_step_length_m', 0.6)  # 米单位
-                    charts['stride_chart'] = chart_gen._create_stride_comparison(left_length, right_length)
-                    print(f"   ✅ 步幅对比图生成成功")
+                # 跳过其他评估图表
+                if False:  # 禁用所有评估图表
+                    clinical_gen = ClinicalAssessmentGenerator()
+                    
+                    # 生成步态功能综合评估图
+                    charts['velocity_chart'] = clinical_gen.generate_gait_assessment_chart(report_data)
+                    print(f"   ✅ 步态功能评估图生成成功")
+                    
+                    # 生成平衡功能评估图
+                    balance_data = report_data.get('balance_analysis', {})
+                    cop_data = report_data.get('time_series', {}).get('cop', [])
+                    charts['stride_chart'] = clinical_gen.generate_balance_assessment_chart(balance_data, cop_data)
+                    print(f"   ✅ 平衡功能评估图生成成功")
+                    
+                    # 生成康复进展评估图
+                    charts['gait_cycle_chart'] = clinical_gen.generate_rehabilitation_progress_chart(report_data)
+                    print(f"   ✅ 康复进展评估图生成成功")
+                else:
+                    # 降级到原始图表
+                    if gait_data.get('average_velocity'):
+                        v = gait_data['average_velocity']
+                        velocities = [v*0.85, v*0.92, v, v*1.05, v*0.98, v*1.08]
+                        charts['velocity_chart'] = chart_gen._create_velocity_chart(velocities)
+                        print(f"   ✅ 步速趋势图生成成功")
+                    
+                    if gait_data.get('left_foot') and gait_data.get('right_foot'):
+                        left_length = gait_data['left_foot'].get('average_step_length_m', 0.6)
+                        right_length = gait_data['right_foot'].get('average_step_length_m', 0.6)
+                        charts['stride_chart'] = chart_gen._create_stride_comparison(left_length, right_length)
+                        print(f"   ✅ 步幅对比图生成成功")
+                    
+                    if phases_data:
+                        stance = phases_data.get('stance_phase', 60.0)
+                        swing = phases_data.get('swing_phase', 40.0)
+                        charts['gait_cycle_chart'] = chart_gen._create_gait_cycle_chart(stance, swing)
+                        print(f"   ✅ 步态周期图生成成功")
                 
-                if phases_data:
-                    stance = phases_data.get('stance_phase', 60.0)
-                    swing = phases_data.get('swing_phase', 40.0)
-                    charts['gait_cycle_chart'] = chart_gen._create_gait_cycle_chart(stance, swing)
-                    print(f"   ✅ 步态周期饬图生成成功")
-                
-                real_images = _build_cop_and_heatmap_images(report_data)
-                charts['cop_trajectory'] = real_images.get('cop_trajectory', chart_gen.generate_cop_trajectory())
+                # 跳过COP轨迹图生成（已从报告中移除）
+                print(f"   🚫 跳过COP轨迹图生成（该部分已从报告中移除）")
                 # 依据硬件网格按 ML 方向切片生成左右脚热力图
                 snapshot = report_data.get('pressure_snapshot')
                 x_scale_cm = y_scale_cm = None
@@ -784,6 +849,55 @@ class FullMedicalReportGenerator:
                     charts['pressure_heatmap_right'] = chart_gen.generate_pressure_heatmap(title='右脚压力分布热力图')
                 print(f"   ✅ COP与热力图生成成功（真实数据优先）")
                 
+                # 生成专业临床图表
+                if PROFESSIONAL_CHARTS_AVAILABLE:
+                    print(f"🏥 生成专业临床分析图表...")
+                    pro_chart_gen = ProfessionalChartGenerator()
+                    
+                    # COP稳定性分析图
+                    cop_stability = report_data.get('cop_stability', {})
+                    cop_trajectory = report_data.get('time_series', {}).get('cop', [])
+                    print(f"   调试: cop_stability存在={bool(cop_stability)}, cop_trajectory长度={len(cop_trajectory) if cop_trajectory else 0}")
+                    if cop_stability and cop_trajectory:
+                        charts['cop_stability_chart'] = pro_chart_gen.generate_cop_stability_chart(
+                            cop_trajectory, cop_stability
+                        )
+                        print(f"   ✅ COP稳定性分析图生成成功")
+                    
+                    # 压力分区分析图
+                    pressure_zones = report_data.get('pressure_zones', {})
+                    if pressure_zones:
+                        charts['pressure_zones_chart'] = pro_chart_gen.generate_pressure_zones_chart(
+                            pressure_zones
+                        )
+                        print(f"   ✅ 压力分区分析图生成成功")
+                    
+                    # 对称性分析图
+                    symmetry_indices = report_data.get('symmetry_indices', {})
+                    left_foot = report_data.get('gait_analysis', {}).get('left_foot', {})
+                    right_foot = report_data.get('gait_analysis', {}).get('right_foot', {})
+                    if symmetry_indices and left_foot and right_foot:
+                        charts['symmetry_chart'] = pro_chart_gen.generate_symmetry_analysis_chart(
+                            symmetry_indices, left_foot, right_foot
+                        )
+                        print(f"   ✅ 对称性分析图生成成功")
+                    
+                    # 步态时相分析图
+                    gait_phases_detailed = report_data.get('gait_phases_detailed', {})
+                    if gait_phases_detailed:
+                        charts['gait_phases_chart'] = pro_chart_gen.generate_gait_phases_chart(
+                            gait_phases_detailed
+                        )
+                        print(f"   ✅ 步态时相分析图生成成功")
+                    
+                    # PTI分析图
+                    pti_metrics = report_data.get('pressure_time_integral', {})
+                    if pti_metrics:
+                        charts['pti_chart'] = pro_chart_gen.generate_pti_analysis_chart(
+                            pti_metrics
+                        )
+                        print(f"   ✅ PTI分析图生成成功")
+                
                 print(f"🎨 图表生成完成，共{len(charts)}个图表")
                 
             except Exception as e:
@@ -804,12 +918,23 @@ class FullMedicalReportGenerator:
             'gait_cycle_chart': placeholder,
             'cop_trajectory': placeholder,
             'pressure_heatmap_left': placeholder,
-            'pressure_heatmap_right': placeholder
+            'pressure_heatmap_right': placeholder,
+            'cop_stability_chart': placeholder,
+            'pressure_zones_chart': placeholder,
+            'symmetry_chart': placeholder,
+            'gait_phases_chart': placeholder,
+            'pti_chart': placeholder
         }
     
     def _replace_chart_placeholders(self, template_content: str, charts: Dict[str, str]) -> str:
         """替换模板中的图表占位符"""
         print(f"🔄 开始替换图表占位符...")
+        print(f"   图表数据: {list(charts.keys())}")
+        for key, value in charts.items():
+            if value:
+                print(f"   {key}: {len(value)} 字符, 开头: {value[:30] if value else 'None'}")
+            else:
+                print(f"   {key}: 空值")
         
         # 替换评估历史图表（步速、步幅、转身时间）
         replacements = [
@@ -825,43 +950,141 @@ class FullMedicalReportGenerator:
             ('热力图显示区域', f'<img src="{charts.get("pressure_heatmap_left", "")}" style="width:100%;height:200px;object-fit:contain;" alt="压力热力图" />')
         ]
         
-        # 按顺序替换三个图表占位符
-        # 查找所有占位符的位置
-        placeholder = '<div class="chart-placeholder">图表加载中...</div>'
+        # 新的占位符替换逻辑
+        replacements = [
+            ('VELOCITY_CHART_PLACEHOLDER', charts.get('velocity_chart', '')),
+            ('STRIDE_CHART_PLACEHOLDER', charts.get('stride_chart', '')),
+            ('GAIT_CYCLE_CHART_PLACEHOLDER', charts.get('gait_cycle_chart', '')),
+            ('PRESSURE_HEATMAP_LEFT_PLACEHOLDER', charts.get('pressure_heatmap_left', '')),
+            ('PRESSURE_HEATMAP_RIGHT_PLACEHOLDER', charts.get('pressure_heatmap_right', '')),
+            ('COP_STABILITY_CHART_PLACEHOLDER', charts.get('cop_stability_chart', '')),
+            ('PRESSURE_ZONES_CHART_PLACEHOLDER', charts.get('pressure_zones_chart', '')),
+            ('SYMMETRY_CHART_PLACEHOLDER', charts.get('symmetry_chart', '')),
+            ('GAIT_PHASES_CHART_PLACEHOLDER', charts.get('gait_phases_chart', '')),
+        ]
         
-        # 第一个占位符：步速图表
-        if placeholder in template_content:
-            template_content = template_content.replace(
-                placeholder,
-                f'<img src="{charts.get("velocity_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步速趋势图" />',
-                1  # 只替换第一个
-            )
+        # 执行替换
+        replaced_count = 0
+        for placeholder, chart_data in replacements:
+            if placeholder in template_content and chart_data:
+                template_content = template_content.replace(placeholder, chart_data)
+                replaced_count += 1
+                print(f"   ✅ 替换 {placeholder}")
         
-        # 第二个占位符：步幅图表
-        if placeholder in template_content:
-            template_content = template_content.replace(
-                placeholder,
-                f'<img src="{charts.get("stride_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步幅对比图" />',
-                1  # 只替换第一个（现在是第二个）
-            )
+        print(f"   总共替换了 {replaced_count} 个占位符")
         
-        # 第三个占位符：步态周期图表
-        if placeholder in template_content:
-            template_content = template_content.replace(
-                placeholder,
-                f'<img src="{charts.get("gait_cycle_chart", "")}" style="width:100%;height:200px;object-fit:contain;" alt="步态周期图" />',
-                1  # 只替换第一个（现在是第三个）
-            )
+        # 跳过COP轨迹图替换（该部分已移除）
+        print(f"   🚫 跳过COP轨迹图替换（该部分已从报告中移除）")
         
-        template_content = template_content.replace(
-            'COP轨迹图',
-            f'<img src="{charts.get("cop_trajectory", "")}" style="width:100%;height:200px;object-fit:contain;" alt="COP轨迹图" />'
-        )
+        # 替换压力热力图 - 在对应位置插入
+        if 'pressure_heatmap_left' in charts and 'pressure_heatmap_right' in charts:
+            left_img = charts.get('pressure_heatmap_left', '')
+            right_img = charts.get('pressure_heatmap_right', '')
+            if left_img and right_img:
+                heatmap_html = f'''
+                <div style="display:flex;justify-content:space-around;margin:20px 0;">
+                    <div style="width:48%;">
+                        <h4 style="text-align:center;margin-bottom:10px;">左脚压力分布</h4>
+                        <img src="{left_img}" style="width:100%;height:auto;" alt="左脚压力热力图" />
+                    </div>
+                    <div style="width:48%;">
+                        <h4 style="text-align:center;margin-bottom:10px;">右脚压力分布</h4>
+                        <img src="{right_img}" style="width:100%;height:auto;" alt="右脚压力热力图" />
+                    </div>
+                </div>
+                '''
+                # 在压力分析表格后插入热力图
+                pressure_marker = '最大压力 (kPa)'
+                if pressure_marker in template_content:
+                    # 找到包含压力数据的表格的结束位置
+                    pos = template_content.find(pressure_marker)
+                    if pos != -1:
+                        # 找到这个表格的结束标签
+                        table_end = template_content.find('</table>', pos)
+                        if table_end != -1:
+                            template_content = template_content[:table_end+8] + heatmap_html + template_content[table_end+8:]
+                            print(f"   ✅ 插入左右脚压力热力图")
         
-        template_content = template_content.replace(
-            '热力图显示区域',
-            f'<img src="{charts.get("pressure_heatmap_left", "")}" style="width:100%;height:200px;object-fit:contain;" alt="压力热力图" />'
-        )
+        # 插入专业临床图表到对应位置
+        # 注意：需要在基础图表替换后查找已替换的img标签
+        
+        # 1. 在COP轨迹图后插入COP稳定性分析图
+        if 'cop_stability_chart' in charts:
+            cop_img_pattern = 'alt="COP轨迹图" /></div>'
+            if cop_img_pattern in template_content:
+                cop_stability_html = f'''
+                </div>
+                <div style="margin-top: 20px;">
+                    <h4>COP稳定性详细分析</h4>
+                    <img src="{charts.get('cop_stability_chart', '')}" style="width:100%;max-width:900px;height:auto;" alt="COP稳定性分析" />
+                </div>
+                '''
+                template_content = template_content.replace(cop_img_pattern, cop_img_pattern[:-6] + cop_stability_html)
+        
+        # 2. 在压力热力图后插入压力分区分析图
+        if 'pressure_zones_chart' in charts:
+            heatmap_pattern = 'alt="压力热力图" /></div>'
+            if heatmap_pattern in template_content:
+                pressure_zones_html = f'''
+                </div>
+                <div style="margin-top: 20px;">
+                    <h4>足底压力分区分析</h4>
+                    <img src="{charts.get('pressure_zones_chart', '')}" style="width:100%;max-width:900px;height:auto;" alt="压力分区分析" />
+                </div>
+                '''
+                template_content = template_content.replace(heatmap_pattern, heatmap_pattern[:-6] + pressure_zones_html)
+        
+        # 3. 在步态周期图后插入对称性分析图
+        if 'symmetry_chart' in charts:
+            gait_cycle_pattern = 'alt="步态周期图" /></div>'
+            if gait_cycle_pattern in template_content:
+                symmetry_html = f'''
+                </div>
+                <div style="margin-top: 20px;">
+                    <h4>步态对称性分析</h4>
+                    <img src="{charts.get('symmetry_chart', '')}" style="width:100%;max-width:900px;height:auto;" alt="对称性分析" />
+                </div>
+                '''
+                template_content = template_content.replace(gait_cycle_pattern, gait_cycle_pattern[:-6] + symmetry_html)
+        
+        # 4. 在步态时相表格后插入详细时相分析
+        if 'gait_phases_chart' in charts:
+            # 查找步态相位表格的结束位置
+            phase_marker = '</table>'
+            pos = 0
+            while True:
+                pos = template_content.find(phase_marker, pos)
+                if pos == -1:
+                    break
+                # 检查是否是步态相位的表格（通过查找特征词）
+                context_start = max(0, pos-500)
+                context = template_content[context_start:pos]
+                if '支撑相' in context and '摆动相' in context and '双支撑相' in context:
+                    gait_phases_html = f'''
+                    <div style="margin-top: 20px;">
+                        <h4>步态时相详细分析</h4>
+                        <img src="{charts.get('gait_phases_chart', '')}" style="width:100%;max-width:900px;height:auto;" alt="步态时相分析" />
+                    </div>
+                    '''
+                    template_content = template_content[:pos+len(phase_marker)] + gait_phases_html + template_content[pos+len(phase_marker):]
+                    break
+                pos += len(phase_marker)
+        
+        # 5. 在签名区域前添加PTI分析部分
+        if 'pti_chart' in charts:
+            pti_section = f'''
+        
+        <!-- Pressure-Time Integral (PTI) 分析 -->
+        <div class="section" style="margin-top: 40px; padding: 30px; background: #f9f0ff; border-radius: 8px; border-left: 4px solid #722ed1;">
+            <h3 class="section-title" style="margin-bottom: 20px; text-align: center; color: #722ed1;">压力-时间积分(PTI)分析</h3>
+            <p style="margin: 20px 0; text-align: center; color: #666; font-size: 15px; line-height: 1.6;">压力-时间积分(PTI)是评估足底压力累积负荷的重要指标，反映了压力大小与作用时间的综合效应。</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <img src="{charts.get('pti_chart', '')}" style="width:100%;max-width:800px;height:auto;border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" alt="PTI分析" />
+            </div>
+        </div>'''
+            # 在签名区域前插入PTI分析
+            if '<!-- 签名区域 -->' in template_content:
+                template_content = template_content.replace('<!-- 签名区域 -->', pti_section + '\n        \n        <!-- 签名区域 -->')
         
         print(f"   ✅ 图表占位符替换完成")
         return template_content

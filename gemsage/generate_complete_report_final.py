@@ -118,8 +118,14 @@ def generate_report_with_final_algorithm(csv_file_path):
         }
     }
     
-    # 合并“完整原始输出”以供图表使用（真实COP/热力图/HS/TO）
+    # 合并"完整原始输出"以供图表使用（真实COP/热力图/HS/TO）
     for key in ['time_series', 'pressure_snapshot', 'moments', 'hardware_config']:
+        if key in result:
+            algorithm_result[key] = result[key]
+    
+    # 添加专业临床指标
+    for key in ['cop_stability', 'cop_spectrum', 'symmetry_indices', 
+                'pressure_time_integral', 'gait_phases_detailed', 'pressure_zones']:
         if key in result:
             algorithm_result[key] = result[key]
     
@@ -197,7 +203,7 @@ if __name__ == "__main__":
         test_file = sys.argv[1]
     else:
         # 默认测试文件
-        test_file = "/Users/xidada/algorithms/数据/2025-08-09 2/detection_data/曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
+        test_file = "D:\\sarcopenia_app\\202520809第八次测试\\2025-08-09\\detection_data\\曾超0809-第6步-4.5米步道折返-20250809_172526.csv"
     
     if Path(test_file).exists():
         report_path = generate_report_with_final_algorithm(test_file)
