@@ -1567,11 +1567,12 @@ class PressureSensorUI:
         
         # 使用PanedWindow来控制左右比例 - 美化分割线
         self.paned_window = tk.PanedWindow(content_frame, orient=tk.HORIZONTAL, 
-                                     sashwidth=3, sashrelief=tk.FLAT,  # 细线，扁平风格
+                                     sashwidth=4, sashrelief=tk.FLAT,  # 细线，扁平风格
                                      bg='#d0d0d0', showhandle=False,  # 浅灰色，隐藏手柄
-                                     sashpad=2,  # 分隔线两侧的间距
+                                     sashpad=0,  # 无间距
                                      borderwidth=0,  # 无边框
-                                     sashcursor='sb_h_double_arrow')  # 水平调整光标
+                                     cursor='',  # PanedWindow本身使用默认光标
+                                     sashcursor='sb_h_double_arrow')  # 只在分隔线上显示拖动光标
         self.paned_window.pack(fill=tk.BOTH, expand=True)
         
         # 左侧容器框架，添加内边距
@@ -1588,7 +1589,7 @@ class PressureSensorUI:
         
         # 右侧：数据日志和统计 - 医院白色（30%宽度）
         right_frame = ttk.Frame(right_container, style='Hospital.TFrame')
-        right_frame.pack(fill=tk.BOTH, expand=True, padx=(5, 0))  # 左边距5像素
+        right_frame.pack(fill=tk.BOTH, expand=True, padx=(8, 0))  # 增加左边距
         
         # 添加到PanedWindow中，设置初始宽度
         self.paned_window.add(left_container, minsize=500, width=700)  # 70%初始宽度
@@ -3967,6 +3968,10 @@ class PressureSensorUI:
         try:
             from patient_manager_ui import PatientEditDialog
             
+            # 临时清空当前患者，避免数据污染
+            temp_current_patient = self.current_patient
+            self.current_patient = None
+            
             def _open_dialog():
                 prev_min_interval = getattr(self.visualizer, 'min_render_interval', None)
                 try:
@@ -3977,7 +3982,8 @@ class PressureSensorUI:
                     if prev_min_interval is not None:
                         self.visualizer.min_render_interval = max(0.2, prev_min_interval)
 
-                    dialog = PatientEditDialog(self.root, title="新建患者档案")
+                    # 创建新患者对话框，传递空数据确保表单为空
+                    dialog = PatientEditDialog(self.root, title="新建患者档案", patient_data=None)
                     
                     if dialog.result:
                         patient_id = db.add_patient(**dialog.result)
@@ -3990,9 +3996,16 @@ class PressureSensorUI:
                                 messagebox.showinfo("成功", f"患者档案创建成功！\n已自动选择患者：{self.current_patient['name']}")
                         else:
                             messagebox.showerror("错误", "患者档案创建失败！")
+                            # 恢复之前的患者信息
+                            self.current_patient = temp_current_patient
+                    else:
+                        # 用户取消，恢复之前的患者信息
+                        self.current_patient = temp_current_patient
                 except Exception as e:
                     messagebox.showerror("错误", f"新建患者失败：{e}")
                     print(f"[ERROR] 新建患者错误: {e}")
+                    # 恢复之前的患者信息
+                    self.current_patient = temp_current_patient
                 finally:
                     # 恢复渲染速率与标记
                     try:
@@ -4216,6 +4229,14 @@ class PressureSensorUI:
     def start_new_detection(self):
         """开始新的检测"""
         try:
+            # 重置检测相关状态
+            self.detection_in_progress = False
+            self.embedded_detection_active = False
+            
+            # 重置检测界面状态
+            if hasattr(self, '_detection_widgets_created'):
+                self._detection_widgets_created = False
+            
             # 创建新的检测会话
             session_name = f"检测-{datetime.now().strftime('%Y%m%d%H%M%S')}"
             print(f"[DEBUG] 创建会话: 患者ID={self.current_patient['id']}, 会话名={session_name}")
@@ -4445,11 +4466,17 @@ class PressureSensorUI:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return
             
+            print(f"[DEBUG] 启动检测向导: 患者={self.current_patient['name']}, 会话={self.current_session['session_name']}")
+            
             # 启用嵌入式检测界面
             self.show_embedded_detection()
+            
+            # 确保检测界面显示
+            self.log_message(f"[INFO] 检测向导已启动 - 患者: {self.current_patient['name']}")
                 
         except Exception as e:
             messagebox.showerror("错误", f"显示检测向导失败：{e}")
+            print(f"[ERROR] 检测向导启动失败: {e}")
     
     def show_embedded_detection(self):
         """显示嵌入式检测界面"""
