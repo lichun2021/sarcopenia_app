@@ -5920,16 +5920,8 @@ class PressureSensorUI:
             else:
                 session_id = completed_sessions[0]['id']
             
-            # 临时设置为当前患者以便生成报告
-            original_patient = self.current_patient
-            self.current_patient = patient
-            
-            try:
-                # 为选中的会话生成报告
-                self.generate_report_for_session(session_id)
-            finally:
-                # 恢复原患者
-                self.current_patient = original_patient
+            # 直接为选中的会话生成报告（患者信息会在generate_report_for_session中正确设置）
+            self.generate_report_for_session(session_id)
             
         except Exception as e:
             messagebox.showerror("错误", f"生成报告失败：{e}")
@@ -6040,20 +6032,37 @@ class PressureSensorUI:
     
     def generate_report_for_session(self, session_id):
         """为指定的检测会话生成报告"""
+        # 保存原始状态
+        original_session = self.current_session
+        original_patient = self.current_patient
+        
         try:
-            # 临时设置会话ID和患者信息
-            original_session = self.current_session
+            # 获取会话信息，包括患者ID
+            session_info = db.get_test_session_by_id(session_id)
+            if not session_info:
+                raise Exception("找不到指定的检测会话")
+            
+            # 获取会话对应的患者信息
+            session_patient = db.get_patient_by_id(session_info['patient_id'])
+            if not session_patient:
+                raise Exception("找不到会话对应的患者信息")
+            
+            # 设置会话ID和正确的患者信息
             self.current_session = {'id': session_id}
+            self.current_patient = session_patient  # 使用会话对应的患者信息
+            
+            print(f"[DEBUG] 生成报告 - 患者: {session_patient['name']}, 会话ID: {session_id}")
             
             # 启动AI分析（会调用SarcNeuro Edge API）
             self.start_ai_analysis()
             
-            # 恢复原会话
-            self.current_session = original_session
-            
         except Exception as e:
-            self.current_session = original_session  # 确保恢复原会话
+            print(f"[ERROR] 生成报告失败: {e}")
             raise
+        finally:
+            # 恢复原会话和患者
+            self.current_session = original_session
+            self.current_patient = original_patient
     
     def add_log(self, message):
         """添加日志信息（如果有日志控件的话）"""
