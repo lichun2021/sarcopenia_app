@@ -327,13 +327,19 @@ class HeatmapVisualizer:
             self.frame_skip_counter = 0
             self.last_render_time = current_time
             
-            # 根据设备类型应用不同的放大系数（仅用于显示）
+            # 根据设备类型应用不同的处理（仅用于显示）
             display_matrix = matrix_2d.copy()  # 复制数据，不改变原始数据
             if device_type == 'cushion':
-                # 坐垫数据乘以1.5倍
-                # print(f"[坐垫模式] 应用1.5倍放大系数 - 原始最大值: {matrix_2d.max():.1f}, 放大后最大值: {min(matrix_2d.max() * 1.5, 255):.1f}")
+                # 坐垫：只做轻微噪点处理
+                from scipy.ndimage import median_filter
+                
+                # 1. 使用中值滤波去除噪点（3x3窗口，保持边缘和压力分布）
+                display_matrix = median_filter(display_matrix, size=3)
+                
+                # 2. 放大压力值（原始的5倍）
                 display_matrix = display_matrix * 5
-                # 确保不超过255
+                
+                # 3. 确保不超过255
                 display_matrix = np.minimum(display_matrix, 255)
             # 步道和脚垫保持原值（乘以1.0）
             

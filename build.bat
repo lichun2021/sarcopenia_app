@@ -5,6 +5,8 @@ echo 智能肌少症检测系统 - 打包
 echo ========================================
 echo.
 
+
+
 REM 检查文件
 if not exist pressure_sensor_ui.py (
     echo 错误：pressure_sensor_ui.py 文件不存在！

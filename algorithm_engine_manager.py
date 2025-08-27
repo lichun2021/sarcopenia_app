@@ -8,6 +8,7 @@ import json
 import time
 import traceback
 import logging
+import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
@@ -85,30 +86,57 @@ class AlgorithmEngineManager:
             
             # 优先尝试导入gemsage，即使算法目录不存在
             
-            # 优先尝试导入gemsage模块
-            logger.info(f"尝试导入gemsage分析引擎")
-            try:
-                # 添加gemsage目录到路径
-                gemsage_path = os.path.join(os.path.dirname(__file__), 'gemsage')
-                if gemsage_path not in sys.path:
-                    sys.path.insert(0, gemsage_path)
+            # 检查GemSage单文件是否存在
+            logger.info(f"检查GemSage单文件分析引擎")
+            
+            # 获取正确的基础目录（处理打包环境）
+            if getattr(sys, 'frozen', False):
+                # 打包后的exe环境
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                # 开发环境
+                base_dir = os.path.dirname(__file__)
+            
+            gemsage_path = os.path.join(base_dir, 'gemsage', 'GemSage_GaitAnalysis_Professional.py')
+            logger.info(f"GemSage路径: {gemsage_path}")
+            
+            if os.path.exists(gemsage_path):
+                logger.info("找到GemSage单文件分析引擎")
+                self.gemsage_script_path = gemsage_path
                 
-                # 使用新的ultimate_fix_report_generator作为主入口
-                from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
-                from gemsage.gait_report_generator import CompleteGaitAnalyzer
-                self.analyzer = CompleteGaitAnalyzer()  # 使用基础分析器
-                self.report_generator_new = UltimateFixReportGenerator()  # 新的报告生成器
-                logger.info("成功导入gemsage终极修复版报告生成器")
-                
-                # AI引擎已移除，不再导入
-                self.ai_engine = None
-                
-                # 报告生成器已在上面初始化
-                self.report_generator = self.report_generator_new
+                # 导入GemSage单文件中的类
+                try:
+                    # 添加gemsage目录到Python路径
+                    gemsage_dir = os.path.dirname(gemsage_path)
+                    if gemsage_dir not in sys.path:
+                        sys.path.insert(0, gemsage_dir)
                     
-            except ImportError as e:
-                logger.error(f"无法导入gemsage模块: {e}")
-                raise ImportError(f"必需的gemsage模块导入失败: {e}")
+                    # 直接导入单文件模块
+                    spec = importlib.util.spec_from_file_location("gemsage_professional", gemsage_path)
+                    gemsage_module = importlib.util.module_from_spec(spec)
+                    
+                    # 关键修复：将模块注册到 sys.modules 中，避免 dataclass 装饰器错误
+                    sys.modules["gemsage_professional"] = gemsage_module
+                    
+                    spec.loader.exec_module(gemsage_module)
+                    
+                    # 获取类引用
+                    self.UltimateFixReportGenerator = gemsage_module.UltimateFixReportGenerator
+                    logger.info("成功导入GemSage单文件类")
+                    
+                except Exception as e:
+                    logger.error(f"导入GemSage单文件失败: {e}")
+                    # 如果导入失败，抛出异常终止初始化
+                    self.UltimateFixReportGenerator = None
+                    raise ImportError(f"GemSage单文件类导入失败: {e}")
+                
+                self.analyzer = None  
+                self.report_generator_new = None  
+                self.ai_engine = None
+                self.report_generator = None
+            else:
+                logger.error(f"GemSage单文件不存在: {gemsage_path}")
+                raise ImportError(f"必需的GemSage单文件不存在: {gemsage_path}")
             
             # 如果启用异步，导入异步客户端
             if app_config['enable_async']:
@@ -182,45 +210,179 @@ class AlgorithmEngineManager:
                 temp_csv_paths.append(temp_path)
                 logger.info(f"  文件 {i+1}: {original_name}")
             
-            # 使用新的ultimate_fix_report_generator处理多文件
-            from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
-            
-            generator = UltimateFixReportGenerator()
-            # 获取患者年龄和姓名
+            # 使用GemSage单文件处理多文件
             patient_name = patient_info.get('name', '测试者')
             patient_age = patient_info.get('age', 65)
+            # 性别参数映射：将英文映射为中文
+            raw_gender = patient_info.get('gender', '男')
+            gender_mapping = {
+                'MALE': '男',
+                'FEMALE': '女', 
+                'male': '男',
+                'female': '女',
+                '男': '男',
+                '女': '女'
+            }
+            patient_gender = gender_mapping.get(raw_gender, '男')
             
-            # 分析目录中的所有文件
-            combined_result = generator.process_test_data_with_ultimate_fixes(
-                folder_path=temp_dir,
-                group_name=patient_name,
-                age=patient_age
-            )
+            if self.UltimateFixReportGenerator:
+                # 方式1：直接调用类方法生成完整报告
+                try:
+                    generator = self.UltimateFixReportGenerator()
+                    
+                    # 准备输出路径（使用绝对路径）
+                    # 获取程序运行目录
+                    if getattr(sys, 'frozen', False):
+                        # 打包后的exe
+                        base_dir = os.path.dirname(sys.executable)
+                    else:
+                        # 开发环境
+                        base_dir = os.path.dirname(os.path.abspath(__file__))
+                    
+                    reports_dir = os.path.join(base_dir, "tmp", today, "reports")
+                    os.makedirs(reports_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                    output_path = os.path.join(reports_dir, output_filename)
+                    logger.info(f"报告将生成到: {output_path}")
+                    
+                    # 直接生成完整报告
+                    generator.generate_ultimate_report(
+                        folder_path=temp_dir,
+                        group_name=patient_name,
+                        age=patient_age,
+                        output_path=output_path,
+                        gender=patient_gender
+                    )
+                    
+                    # 读取生成的HTML文件内容
+                    if os.path.exists(output_path):
+                        with open(output_path, 'r', encoding='utf-8') as f:
+                            report_html = f.read()
+                        combined_result = {
+                            'success': True,
+                            'report_path': output_path,
+                            'report_html': report_html,
+                            'message': '报告生成成功'
+                        }
+                    else:
+                        combined_result = {
+                            'success': False,
+                            'error': f'报告文件未生成: {output_path}',
+                            'report_path': output_path
+                        }
+                    logger.info("通过类方法调用GemSage分析完成")
+                except Exception as e:
+                    logger.error(f"类方法调用失败: {e}")
+                    combined_result = {'error': str(e), 'success': False}
+            else:
+                # 方式2：使用subprocess调用命令行
+                try:
+                    # 获取程序运行目录
+                    if getattr(sys, 'frozen', False):
+                        # 打包后的exe
+                        base_dir = os.path.dirname(sys.executable)
+                    else:
+                        # 开发环境
+                        base_dir = os.path.dirname(os.path.abspath(__file__))
+                    
+                    reports_dir = os.path.join(base_dir, "tmp", today, "reports")
+                    os.makedirs(reports_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                    output_path = os.path.join(reports_dir, output_filename)
+                    logger.info(f"[subprocess] 报告将生成到: {output_path}")
+                    
+                    import subprocess
+                    # 判断是否是打包后的exe
+                    if getattr(sys, 'frozen', False):
+                        # 打包后，使用python命令（需要系统安装Python）或直接导入模块
+                        # 最好直接使用类方法，避免subprocess
+                        logger.error("打包环境下subprocess调用不可用，请使用类方法调用")
+                        combined_result = {'error': 'Subprocess not available in frozen mode', 'success': False}
+                        return combined_result
+                    else:
+                        # 开发环境，使用Python解释器
+                        cmd = [
+                            sys.executable, self.gemsage_script_path,
+                            '--data_folder', temp_dir,
+                            '--name', patient_name,
+                            '--age', str(patient_age),
+                            '--gender', patient_gender,
+                            '--output', output_path
+                        ]
+                    
+                    logger.info(f"执行GemSage命令: {' '.join(cmd)}")
+                    
+                    # 设置环境变量以支持UTF-8编码
+                    env = os.environ.copy()
+                    env['PYTHONIOENCODING'] = 'utf-8'
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env, encoding='utf-8')
+                    
+                    if result.returncode == 0:
+                        logger.info("subprocess调用GemSage分析完成")
+                        # 读取生成的HTML文件内容
+                        if os.path.exists(output_path):
+                            with open(output_path, 'r', encoding='utf-8') as f:
+                                report_html = f.read()
+                            combined_result = {
+                                'report_html': report_html,
+                                'report_path': output_path,
+                                'success': True
+                            }
+                        else:
+                            combined_result = {'success': True, 'report_path': output_path}
+                    else:
+                        logger.error(f"GemSage执行失败: {result.stderr}")
+                        combined_result = {'error': result.stderr, 'success': False}
+                        
+                except subprocess.TimeoutExpired:
+                    logger.error("GemSage执行超时")
+                    combined_result = {'error': 'Analysis timeout', 'success': False}
+                except Exception as e:
+                    logger.error(f"subprocess调用异常: {e}")
+                    combined_result = {'error': str(e), 'success': False}
             
-            # 生成报告
+            # 处理报告生成
             if generate_report:
-                # 生成HTML报告模板
-                report_html = generator.generate_corrected_html_template()
-                # 替换模板变量
-                for k, v in combined_result.items():
-                    report_html = report_html.replace(f"{{{{{k}}}}}", str(v))
-                
-                # 保存HTML报告
-                reports_dir = os.path.join("tmp", today, "reports")
-                os.makedirs(reports_dir, exist_ok=True)
-                
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                patient_name = patient_info.get('name', '未知').replace(' ', '_')
-                report_filename = f"{patient_name}_综合报告_{timestamp}.html"
-                report_path = os.path.join(reports_dir, report_filename)
-                
-                with open(report_path, 'w', encoding='utf-8') as f:
-                    f.write(report_html)
-                
-                logger.info(f"报告已保存: {report_path}")
-                
-                combined_result['report_html'] = report_html
-                combined_result['report_path'] = report_path
+                # 检查是否已经有报告路径（subprocess方式生成的）
+                if 'report_path' in combined_result and os.path.exists(combined_result['report_path']):
+                    logger.info(f"报告已生成: {combined_result['report_path']}")
+                    # 读取报告内容
+                    with open(combined_result['report_path'], 'r', encoding='utf-8') as f:
+                        combined_result['report_html'] = f.read()
+                elif self.UltimateFixReportGenerator and 'error' not in combined_result:
+                    # 如果使用类方法调用成功，需要手动生成HTML报告
+                    try:
+                        generator = self.UltimateFixReportGenerator()
+                        template = generator.generate_ultimate_html_template()
+                        
+                        # 替换模板变量
+                        for k, v in combined_result.items():
+                            placeholder = f"{{{{{k}}}}}"
+                            template = template.replace(placeholder, str(v))
+                        
+                        # 保存HTML报告
+                        reports_dir = os.path.join("tmp", today, "reports")
+                        os.makedirs(reports_dir, exist_ok=True)
+                        
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        safe_patient_name = patient_info.get('name', '未知').replace(' ', '_')
+                        report_filename = f"{safe_patient_name}_综合报告_{timestamp}.html"
+                        report_path = os.path.join(reports_dir, report_filename)
+                        
+                        with open(report_path, 'w', encoding='utf-8') as f:
+                            f.write(template)
+                        
+                        logger.info(f"报告已保存: {report_path}")
+                        
+                        combined_result['report_html'] = template
+                        combined_result['report_path'] = report_path
+                        
+                    except Exception as e:
+                        logger.error(f"生成HTML报告失败: {e}")
+                        combined_result['report_error'] = str(e)
             
             # 清理临时文件（可选）
             # import shutil
@@ -372,23 +534,38 @@ class AlgorithmEngineManager:
                 logger.info("执行综合分析...")
                 logger.info(f"CSV文件路径: {temp_csv_path}")
                 
-                # 使用新的ultimate_fix_report_generator
-                from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
-                
-                # 使用终极修复版生成器处理单个文件
-                generator = UltimateFixReportGenerator()
-                
-                # 获取文件所在目录
+                # 使用GemSage单文件处理单个文件
                 csv_dir = os.path.dirname(temp_csv_path)
                 patient_name = patient_info.get('name', '测试者')
                 patient_age = patient_info.get('age', 65)
+                # 性别参数映射：将英文映射为中文
+                raw_gender = patient_info.get('gender', '男')
+                gender_mapping = {
+                    'MALE': '男',
+                    'FEMALE': '女', 
+                    'male': '男',
+                    'female': '女',
+                    '男': '男',
+                    '女': '女'
+                }
+                patient_gender = gender_mapping.get(raw_gender, '男')
                 
-                # 处理数据并生成分析结果
-                analysis_results = generator.process_test_data_with_ultimate_fixes(
-                    folder_path=csv_dir,
-                    group_name=patient_name, 
-                    age=patient_age
-                )
+                if self.UltimateFixReportGenerator:
+                    # 方式1：直接调用类方法
+                    try:
+                        generator = self.UltimateFixReportGenerator()
+                        analysis_results = generator.process_test_data_with_ultimate_fixes(
+                            folder_path=csv_dir,
+                            group_name=patient_name, 
+                            age=patient_age,
+                            gender=patient_gender
+                        )
+                    except Exception as e:
+                        logger.error(f"单文件分析失败: {e}")
+                        analysis_results = {'error': str(e)}
+                else:
+                    logger.error("GemSage类未正确导入，无法进行单文件分析")
+                    analysis_results = {'error': 'GemSage not available'}
                 
                 # 打印JSON格式的分析结果
                 import json
@@ -1086,66 +1263,35 @@ AI智能评估结果:
         return placeholder_svg
     
     def convert_html_to_pdf(self, html_content: str, output_path: str = None) -> str:
-        """将HTML内容转换为PDF文件"""
+        """将HTML内容转换为PDF文件 - 使用Playwright方案"""
         try:
-            # 为了解决中文问题，我们需要注册字体
-            from xhtml2pdf import pisa
-            from reportlab.pdfbase import pdfmetrics
-            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-            
-            # 注册中文字体
-            try:
-                pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-                logger.info("注册中文字体成功")
-            except Exception as e:
-                logger.warning(f"注册中文字体失败: {e}")
+            # 导入新的HTML转PDF模块
+            from html_to_pdf import convert_html_to_pdf
+            from pathlib import Path
+            import asyncio
             
             if output_path is None:
                 temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
                 os.close(temp_fd)
             
-            # 处理HTML内容，清理有问题的图片和添加字体声明
-            import re
+            # 先保存HTML到临时文件
+            temp_html_fd, temp_html_path = tempfile.mkstemp(suffix='.html')
+            os.close(temp_html_fd)
             
-            # 先清理有问题的base64图片数据
+            # 处理HTML内容，清理有问题的图片
             modified_html = self._clean_problematic_images(html_content)
-            
-            # 清理CSS中的百分比单位以兼容PDF转换
             modified_html = self._fix_css_for_pdf(modified_html)
             
-            # 查找</head>标签的位置
-            head_end = modified_html.find('</head>')
-            if head_end > 0:
-                # 插入字体样式
-                font_style = """
-                <style>
-                    body { font-family: STSong-Light, sans-serif; }
-                    * { font-family: STSong-Light, sans-serif; }
-                </style>
-                """
-                # 在</head>之前插入样式
-                modified_html = modified_html[:head_end] + font_style + modified_html[head_end:]
-            else:
-                # 如果没有head标签，尝试在<html>后面添加
-                html_start = modified_html.find('<html')
-                if html_start >= 0:
-                    html_tag_end = modified_html.find('>', html_start)
-                    if html_tag_end > 0:
-                        font_style = """
-                        <head>
-                        <style>
-                            body { font-family: STSong-Light, sans-serif; }
-                            * { font-family: STSong-Light, sans-serif; }
-                        </style>
-                        </head>
-                        """
-                        modified_html = modified_html[:html_tag_end+1] + font_style + modified_html[html_tag_end+1:]
+            # 保存HTML内容到临时文件
+            with open(temp_html_path, 'w', encoding='utf-8') as f:
+                f.write(modified_html)
             
-            # 创建PDF - 添加权限检查和重试机制
+            # 创建PDF - 使用Playwright方案
             try:
                 # 确保目录存在
                 output_dir = os.path.dirname(output_path)
-                os.makedirs(output_dir, exist_ok=True)
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
                 
                 # 如果文件已存在，尝试删除（可能被占用）
                 if os.path.exists(output_path):
@@ -1161,146 +1307,45 @@ AI智能评估结果:
                         logger.warning(f"原文件被占用，使用新文件名: {output_path}")
                 
                 logger.info(f"📥 转换为PDF格式...")
-                with open(output_path, "wb") as result_file:
-                    pisa_status = pisa.CreatePDF(
-                        modified_html,
-                        dest=result_file,
-                        encoding='utf-8'
-                    )
-            except PermissionError as pe:
-                logger.warning(f"[WARN] PDF转换异常: PDF转换失败: {pe}，使用HTML报告")
-                # 如果仍然有权限问题，返回HTML文件
+                
+                # 使用新的HTML转PDF转换器
+                asyncio.run(convert_html_to_pdf(
+                    input_html_path=Path(temp_html_path),
+                    output_pdf_path=Path(output_path),
+                    media="screen",
+                    wait_state="networkidle",
+                    page_format="A4"
+                ))
+                
+                logger.info(f"PDF生成成功: {output_path}")
+                return output_path
+                
+            except Exception as e:
+                logger.warning(f"[WARN] PDF转换异常: {e}，使用HTML报告")
+                # 如果PDF生成失败，返回HTML文件
                 html_path = output_path.replace('.pdf', '.html')
                 with open(html_path, 'w', encoding='utf-8') as f:
                     f.write(html_content)
-                return html_path
-            
-            if not pisa_status.err:
-                logger.info(f"PDF生成成功: {output_path}")
-                return output_path
-            else:
-                logger.warning(f"PDF生成失败: {pisa_status.err}，使用HTML报告")
-                # 如果PDF生成失败，返回HTML
-                html_path = output_path.replace('.pdf', '.html')
-                with open(html_path, 'w', encoding='utf-8') as f:
-                    f.write(html_content)  # 保存原始HTML，不是修改后的
                 logger.info(f"PDF生成失败，已保存HTML: {html_path}")
                 return html_path
-                
-                # 尝试使用weasyprint
-                try:
-                    from weasyprint import HTML, CSS
-                    
-                    if output_path is None:
-                        temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
-                        os.close(temp_fd)
-                    
-                    # 基本CSS样式
-                    css = CSS(string='''
-                        @page {
-                            size: A4;
-                            margin: 2cm;
-                        }
-                        body {
-                            font-family: Arial, "Microsoft YaHei", sans-serif;
-                            font-size: 12px;
-                            line-height: 1.6;
-                        }
-                        h1, h2, h3 {
-                            color: #333;
-                        }
-                        table {
-                            border-collapse: collapse;
-                            width: 100%;
-                        }
-                        table, th, td {
-                            border: 1px solid #ddd;
-                        }
-                        th, td {
-                            padding: 8px;
-                            text-align: left;
-                        }
-                    ''')
-                    
-                    # 生成PDF
-                    HTML(string=html_content).write_pdf(output_path, stylesheets=[css])
-                    logger.info(f"PDF生成成功 (weasyprint): {output_path}")
-                    return output_path
-                    
-                except ImportError:
-                    logger.warning("weasyprint未安装，尝试使用reportlab")
-                    
-                    # 使用reportlab作为后备方案
+            
+            finally:
+                # 清理临时HTML文件
+                if os.path.exists(temp_html_path):
                     try:
-                        from reportlab.pdfgen import canvas
-                        from reportlab.lib.pagesizes import A4
-                        from reportlab.lib import colors
-                        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                        from reportlab.lib.units import inch
-                        from bs4 import BeautifulSoup
-                        import re
-                        
-                        if output_path is None:
-                            temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
-                            os.close(temp_fd)
-                        
-                        # 解析HTML内容
-                        soup = BeautifulSoup(html_content, 'html.parser')
-                        
-                        # 创建PDF文档
-                        doc = SimpleDocTemplate(output_path, pagesize=A4)
-                        styles = getSampleStyleSheet()
-                        story = []
-                        
-                        # 提取文本内容并格式化
-                        for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'div', 'table']):
-                            text = element.get_text().strip()
-                            if text:
-                                if element.name in ['h1', 'h2', 'h3']:
-                                    style = styles['Heading1'] if element.name == 'h1' else styles['Heading2']
-                                else:
-                                    style = styles['Normal']
-                                
-                                para = Paragraph(text, style)
-                                story.append(para)
-                                story.append(Spacer(1, 12))
-                        
-                        # 构建PDF
-                        doc.build(story)
-                        logger.info(f"PDF生成成功 (reportlab): {output_path}")
-                        return output_path
-                        
-                    except ImportError:
-                        logger.warning("没有可用的PDF生成库，生成文本格式报告")
-                        
-                        # 使用简单的文本格式作为后备
-                        if output_path is None:
-                            temp_fd, output_path = tempfile.mkstemp(suffix='.txt')
-                            os.close(temp_fd)
-                        
-                        # 解析HTML内容生成文本
-                        try:
-                            from bs4 import BeautifulSoup
-                            soup = BeautifulSoup(html_content, 'html.parser')
-                            text_content = soup.get_text()
-                        except ImportError:
-                            # 简单的HTML标签移除
-                            import re
-                            text_content = re.sub(r'<[^>]+>', '', html_content)
-                            text_content = re.sub(r'\s+', ' ', text_content).strip()
-                        
-                        with open(output_path, 'w', encoding='utf-8') as f:
-                            f.write("肌少症分析报告\n" + "="*50 + "\n\n")
-                            f.write(text_content)
-                            f.write("\n\n" + "="*50)
-                            f.write("\n报告生成时间: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                        
-                        logger.info(f"文本报告生成成功: {output_path}")
-                        return output_path
+                        os.remove(temp_html_path)
+                    except:
+                        pass
                         
         except Exception as e:
             logger.error(f"HTML到PDF转换失败: {e}")
+            # 如果转换失败，返回HTML文件
+            if output_path:
+                html_path = output_path.replace('.pdf', '.html')
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                logger.info(f"PDF转换失败，返回HTML: {html_path}")
+                return html_path
             raise Exception(f"PDF转换失败: {e}")
     
 
