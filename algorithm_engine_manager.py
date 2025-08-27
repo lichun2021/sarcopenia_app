@@ -86,57 +86,34 @@ class AlgorithmEngineManager:
             
             # 优先尝试导入gemsage，即使算法目录不存在
             
-            # 检查GemSage单文件是否存在
-            logger.info(f"检查GemSage单文件分析引擎")
+            # 直接导入GemSage模块
+            logger.info(f"直接导入GemSage单文件分析引擎")
             
-            # 获取正确的基础目录（处理打包环境）
-            if getattr(sys, 'frozen', False):
-                # 打包后的exe环境
-                base_dir = os.path.dirname(sys.executable)
-            else:
-                # 开发环境
-                base_dir = os.path.dirname(__file__)
-            
-            gemsage_path = os.path.join(base_dir, 'gemsage', 'GemSage_GaitAnalysis_Professional.py')
-            logger.info(f"GemSage路径: {gemsage_path}")
-            
-            if os.path.exists(gemsage_path):
-                logger.info("找到GemSage单文件分析引擎")
-                self.gemsage_script_path = gemsage_path
+            try:
+                # 添加gemsage目录到Python路径
+                gemsage_dir = os.path.join(os.path.dirname(__file__), 'gemsage')
+                if gemsage_dir not in sys.path:
+                    sys.path.insert(0, gemsage_dir)
+                    logger.info(f"添加gemsage目录到路径: {gemsage_dir}")
                 
-                # 导入GemSage单文件中的类
-                try:
-                    # 添加gemsage目录到Python路径
-                    gemsage_dir = os.path.dirname(gemsage_path)
-                    if gemsage_dir not in sys.path:
-                        sys.path.insert(0, gemsage_dir)
-                    
-                    # 直接导入单文件模块
-                    spec = importlib.util.spec_from_file_location("gemsage_professional", gemsage_path)
-                    gemsage_module = importlib.util.module_from_spec(spec)
-                    
-                    # 关键修复：将模块注册到 sys.modules 中，避免 dataclass 装饰器错误
-                    sys.modules["gemsage_professional"] = gemsage_module
-                    
-                    spec.loader.exec_module(gemsage_module)
-                    
-                    # 获取类引用
-                    self.UltimateFixReportGenerator = gemsage_module.UltimateFixReportGenerator
-                    logger.info("成功导入GemSage单文件类")
-                    
-                except Exception as e:
-                    logger.error(f"导入GemSage单文件失败: {e}")
-                    # 如果导入失败，抛出异常终止初始化
-                    self.UltimateFixReportGenerator = None
-                    raise ImportError(f"GemSage单文件类导入失败: {e}")
+                # 直接导入模块
+                from gemsage.GemSage_GaitAnalysis_Professional import UltimateFixReportGenerator
+                self.UltimateFixReportGenerator = UltimateFixReportGenerator
+                logger.info("成功导入GemSage单文件类")
                 
-                self.analyzer = None  
-                self.report_generator_new = None  
-                self.ai_engine = None
-                self.report_generator = None
-            else:
-                logger.error(f"GemSage单文件不存在: {gemsage_path}")
-                raise ImportError(f"必需的GemSage单文件不存在: {gemsage_path}")
+            except ImportError as e:
+                logger.error(f"GemSage模块导入失败: {e}")
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                raise ImportError(f"GemSage模块导入失败: {e}")
+            except Exception as e:
+                logger.error(f"GemSage导入异常: {e}")
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                raise ImportError(f"GemSage导入异常: {e}")
+            
+            self.analyzer = None  
+            self.report_generator_new = None  
+            self.ai_engine = None
+            self.report_generator = None
             
             # 如果启用异步，导入异步客户端
             if app_config['enable_async']:
