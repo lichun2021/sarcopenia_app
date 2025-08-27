@@ -20,66 +20,6 @@ import base64
 # 设置日志
 logger = logging.getLogger(__name__)
 
-class MockPressureAnalysisCore:
-    """模拟压力分析核心类"""
-    
-    def comprehensive_analysis_final(self, csv_path):
-        """模拟综合分析"""
-        return {
-            'overall_score': 85.0,
-            'balance_score': 85.0,
-            'balance_metrics': {
-                'scores': {
-                    'overall': 85.0,
-                    'stability': 80.0,
-                    'symmetry': 90.0,
-                    'mobility': 85.0
-                }
-            },
-            'cop_metrics': {},
-            'gait_events': []
-        }
-    
-    def parse_csv_data(self, csv_content):
-        """模拟CSV数据解析"""
-        return {"timestamp": [], "pressure": []}
-    
-    def calculate_cop_metrics(self, pressure_data_list):
-        """模拟COP指标计算"""
-        return {"center_of_pressure": [0, 0]}
-    
-    def analyze_balance(self, pressure_data_list):
-        """模拟平衡分析"""
-        return {"balance_score": 85.0}
-
-class MockReportGenerator:
-    """模拟报告生成器"""
-    
-    def generate_report(self, report_data, options):
-        """模拟生成HTML报告"""
-        patient_name = report_data.get('patient_info', {}).get('name', '测试患者')
-        score = report_data.get('analysis_result', {}).get('overall_score', 85.0)
-        
-        return f"""
-        <html>
-        <head><title>肌少症分析报告</title></head>
-        <body>
-            <h1>肌少症分析报告</h1>
-            <h2>患者信息</h2>
-            <p>姓名: {patient_name}</p>
-            <h2>分析结果</h2>
-            <p>综合评分: {score:.1f}/100</p>
-            <p>风险等级: {'低风险' if score >= 70 else '高风险'}</p>
-            <h2>建议</h2>
-            <ul>
-                <li>保持健康的生活方式</li>
-                <li>定期进行体检</li>
-                <li>适量运动</li>
-            </ul>
-        </body>
-        </html>
-        """
-
 def load_config():
     """加载配置文件"""
     config = configparser.ConfigParser()
@@ -153,42 +93,22 @@ class AlgorithmEngineManager:
                 if gemsage_path not in sys.path:
                     sys.path.insert(0, gemsage_path)
                 
-                from gemsage.core_calculator_final import PressureAnalysisFinal
-                self.analyzer = PressureAnalysisFinal()
-                logger.info("成功导入gemsage.core_calculator_final.PressureAnalysisFinal")
+                # 使用新的ultimate_fix_report_generator作为主入口
+                from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
+                from gemsage.gait_report_generator import CompleteGaitAnalyzer
+                self.analyzer = CompleteGaitAnalyzer()  # 使用基础分析器
+                self.report_generator_new = UltimateFixReportGenerator()  # 新的报告生成器
+                logger.info("成功导入gemsage终极修复版报告生成器")
                 
                 # AI引擎已移除，不再导入
                 self.ai_engine = None
                 
-                # 尝试导入报告生成器
-                try:
-                    from full_medical_report_generator import FullMedicalReportGenerator
-                    self.report_generator = FullMedicalReportGenerator()
-                except ImportError:
-                    self.report_generator = MockReportGenerator()
+                # 报告生成器已在上面初始化
+                self.report_generator = self.report_generator_new
                     
             except ImportError as e:
-                logger.warning(f"无法导入gemsage模块: {e}")
-                # 回退到传统算法目录
-                logger.info(f"从 {algorithms_path} 导入算法模块")
-                try:
-                    from core_calculator_final import PressureAnalysisFinal
-                    self.analyzer = PressureAnalysisFinal()
-                    
-                    # 导入报告生成器
-                    from full_medical_report_generator import FullMedicalReportGenerator
-                    self.report_generator = FullMedicalReportGenerator()
-                except ImportError as e2:
-                    logger.warning(f"无法导入传统算法模块: {e2}")
-                    # 使用模拟模块
-                    self.analyzer = MockPressureAnalysisCore()
-                    self.report_generator = MockReportGenerator()
-            
-            # 如果analyzer仍为None，使用mock
-            if self.analyzer is None:
-                logger.warning("所有算法引擎导入失败，使用模拟引擎")
-                self.analyzer = MockPressureAnalysisCore()
-                self.report_generator = MockReportGenerator()
+                logger.error(f"无法导入gemsage模块: {e}")
+                raise ImportError(f"必需的gemsage模块导入失败: {e}")
             
             # 如果启用异步，导入异步客户端
             if app_config['enable_async']:
@@ -262,17 +182,28 @@ class AlgorithmEngineManager:
                 temp_csv_paths.append(temp_path)
                 logger.info(f"  文件 {i+1}: {original_name}")
             
-            # 使用 generate_combined_report 的方法分析整个目录
-            from gemsage.generate_combined_report import analyze_directory_and_merge
-            from gemsage.full_medical_report_generator import FullMedicalReportGenerator
+            # 使用新的ultimate_fix_report_generator处理多文件
+            from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
+            
+            generator = UltimateFixReportGenerator()
+            # 获取患者年龄和姓名
+            patient_name = patient_info.get('name', '测试者')
+            patient_age = patient_info.get('age', 65)
             
             # 分析目录中的所有文件
-            combined_result = analyze_directory_and_merge(temp_dir)
+            combined_result = generator.process_test_data_with_ultimate_fixes(
+                folder_path=temp_dir,
+                group_name=patient_name,
+                age=patient_age
+            )
             
             # 生成报告
             if generate_report:
-                generator = FullMedicalReportGenerator()
-                report_html = generator.generate_report_from_algorithm(combined_result, patient_info)
+                # 生成HTML报告模板
+                report_html = generator.generate_corrected_html_template()
+                # 替换模板变量
+                for k, v in combined_result.items():
+                    report_html = report_html.replace(f"{{{{{k}}}}}", str(v))
                 
                 # 保存HTML报告
                 reports_dir = os.path.join("tmp", today, "reports")
@@ -441,26 +372,34 @@ class AlgorithmEngineManager:
                 logger.info("执行综合分析...")
                 logger.info(f"CSV文件路径: {temp_csv_path}")
                 
-                # 使用 multi_file_workflow 的两个方法
-                # 导入 multi_file_workflow 模块
-                from gemsage.multi_file_workflow import analyze_multiple_files, generate_reports_from_analyses_json
+                # 使用新的ultimate_fix_report_generator
+                from gemsage.ultimate_fix_report_generator import UltimateFixReportGenerator
                 
-                # 第一步：使用 analyze_multiple_files 分析文件（使用日期目录）
-                csv_files = [str(temp_csv_path)]
-                today = datetime.now().strftime("%Y-%m-%d")
-                temp_analysis_dir = os.path.join("tmp", today, "temp_analysis_results")
-                analysis_results, analysis_dir = analyze_multiple_files(csv_files, temp_analysis_dir)
+                # 使用终极修复版生成器处理单个文件
+                generator = UltimateFixReportGenerator()
+                
+                # 获取文件所在目录
+                csv_dir = os.path.dirname(temp_csv_path)
+                patient_name = patient_info.get('name', '测试者')
+                patient_age = patient_info.get('age', 65)
+                
+                # 处理数据并生成分析结果
+                analysis_results = generator.process_test_data_with_ultimate_fixes(
+                    folder_path=csv_dir,
+                    group_name=patient_name, 
+                    age=patient_age
+                )
                 
                 # 打印JSON格式的分析结果
                 import json
                 # 分析结果处理完成
                 
-                # 获取第一个（也是唯一的）分析结果
-                raw_result = analysis_results[0]
-                logger.info(f"multi_file_workflow分析返回结果: {raw_result}")
+                # 分析结果直接从generator返回
+                raw_result = analysis_results
+                logger.info(f"ultimate_fix分析返回结果: {raw_result}")
                 
                 # 将患者信息保存到分析结果中（转换性别为中文）
-                if analysis_results:
+                if raw_result:
                     # 复制患者信息并转换性别
                     processed_patient_info = patient_info.copy()
                     gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
@@ -469,14 +408,14 @@ class AlgorithmEngineManager:
                         processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
                         logger.info(f"性别转换: {original_gender} -> {processed_patient_info['gender']}")
                     
-                    analysis_results[0]['original_patient_info'] = processed_patient_info
+                    raw_result['original_patient_info'] = processed_patient_info
                     logger.info(f"保存处理后的患者信息到分析结果: {processed_patient_info}")
                 
                 # 第二步：使用 generate_reports_from_analyses_json 生成报告（直接传递JSON数据）
                 logger.info("生成综合报告...")
                 try:
-                    # 准备分析结果列表
-                    if 'original_patient_info' not in analysis_results[0]:
+                    # 准备分析结果
+                    if 'original_patient_info' not in raw_result:
                         # 补充患者信息时也要转换性别
                         processed_patient_info = patient_info.copy()
                         gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
@@ -485,13 +424,16 @@ class AlgorithmEngineManager:
                             processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
                             logger.info(f"补充时性别转换: {original_gender} -> {processed_patient_info['gender']}")
                         
-                        analysis_results[0]['original_patient_info'] = processed_patient_info
+                        raw_result['original_patient_info'] = processed_patient_info
                         logger.info(f"补充处理后的患者信息到分析结果: {processed_patient_info}")
                     else:
-                        logger.info(f"分析结果中已存在患者信息: {analysis_results[0]['original_patient_info']}")
+                        logger.info(f"分析结果中已存在患者信息: {raw_result['original_patient_info']}")
                     
-                    # 使用新方法生成报告HTML
-                    report_html = generate_reports_from_analyses_json(analysis_results, "combined")
+                    # 生成HTML报告模板
+                    report_html = generator.generate_corrected_html_template()
+                    # 替换模板变量
+                    for k, v in raw_result.items():
+                        report_html = report_html.replace(f"{{{{{k}}}}}", str(v))
                     
                     # 保存HTML报告到文件
                     today = datetime.now().strftime("%Y-%m-%d")
@@ -522,14 +464,8 @@ class AlgorithmEngineManager:
                     raw_result['report_html'] = report_html
                     raw_result['report_path'] = report_path
                     
-                    # 清理不需要的JSON文件
-                    try:
-                        import shutil
-                        if os.path.exists(temp_analysis_dir):
-                            shutil.rmtree(temp_analysis_dir)
-                            logger.info(f"🗑️ 清理临时文件目录: {temp_analysis_dir}")
-                    except Exception as cleanup_error:
-                        logger.warning(f"清理临时文件失败: {cleanup_error}")
+                    # 清理临时文件（如果有的话）
+                    pass
                     
                 except Exception as e:
                     logger.error(f"❌ 报告生成失败: {e}")
@@ -1396,14 +1332,13 @@ def get_algorithm_engine(algorithms_dir: str = None) -> AlgorithmEngineManager:
 
 def test_engine():
     """测试算法引擎"""
-    # 静默测试
-    
     try:
         # 创建引擎
         engine = AlgorithmEngineManager()
         
         # 检查状态
         status = engine.get_status()
+        logger.info(f"引擎状态: {status}")
         
         # 测试数据
         test_csv = "timestamp,x1,y1,x2,y2\n1,10,20,30,40\n2,15,25,35,45"
@@ -1422,8 +1357,15 @@ def test_engine():
             'COMPREHENSIVE'
         )
         
+        if result:
+            logger.info("测试成功")
+        else:
+            logger.error("测试失败")
+        
     except Exception as e:
-        pass  # 测试失败，静默处理
+        logger.error(f"测试失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     test_engine()

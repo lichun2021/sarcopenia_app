@@ -25,6 +25,7 @@ a = Analysis(
         'PIL', 'PIL.Image', 'PIL.ImageTk',
         'numpy', 'pandas', 'requests', 
         'scipy', 'scipy.ndimage',
+        'cv2',
         'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_agg', 'matplotlib.backends.backend_tkagg', 
         'matplotlib.figure', 'matplotlib.colors', 'matplotlib.font_manager',
         'matplotlib.patches', 'matplotlib.patches.Circle', 'matplotlib.patches.Ellipse', 
@@ -64,24 +65,28 @@ a = Analysis(
         # Algorithm engine
         'algorithm_engine_manager',
         
-        # GemSage modules (只包含实际存在且需要的模块)
-        'gemsage', 
-        'gemsage.core_calculator_final',              # 核心分析引擎 ✅
-        'gemsage.full_medical_report_generator',      # 报告生成器 ✅  
-        'gemsage.enhanced_report_generator',          # 增强报告生成器 ✅
-        'gemsage.professional_chart_generator',       # 专业图表生成器 ✅
-        'gemsage.generate_combined_report',           # 多文件合并分析 ✅
-        'gemsage.generate_complete_report_final',     # 完整报告生成 ✅
-        'gemsage.analyze_multiple_datasets',         # 多数据集分析 ✅
-        'gemsage.multi_file_workflow',                # 文件工作流（algorithm_engine_manager需要）✅
-        'gemsage.clinical_assessment_generator',      # 临床评估生成器 ✅
-        'gemsage.modern_clinical_assessment',         # 现代临床评估 ✅
-        'gemsage.quality_control_module',             # 质量控制模块 ✅
-        'gemsage.standardized_assessment_module',     # 标准化评估模块 ✅
-        'gemsage.comprehensive_test_comparison',      # 综合测试比较 ✅
-        'gemsage.compare_20250809',                   # 特定日期比较 ✅
-        'gemsage.run_report_windows',                 # Windows报告运行器 ✅
-        'gemsage.verify_final_report'                 # 最终报告验证 ✅
+        # GemSage modules (根据11.py和实际导入更新)
+        'gemsage',
+        'gemsage.ultimate_fix_report_generator',      # 终极修复版报告生成器 (11.py入口)
+        'gemsage.gait_report_generator',              # 基础步态报告生成器
+        'gemsage.improved_report_generator',          # 改进版报告生成器
+        'gemsage.gait_analyzer',                      # 步态分析器 (main_gait_system.py需要)
+        'gemsage.visualization',                      # 可视化模块
+        'gemsage.report_generator',                   # 报告生成器
+        'gemsage.hospital_heatmap_generator',         # 医院级热力图生成器
+        'gemsage.medical_heatmap_generator',          # 医疗热力图生成器
+        'gemsage.medical_step_length_analyzer',       # 医疗步长分析器
+        'gemsage.integrated_heatmap_report',          # 集成热力图报告
+        'gemsage.improved_gait_report_generator',     # 改进版步态报告生成器
+        'gemsage.complete_improved_report_generator', # 完整改进版报告生成器
+        'gemsage.final_fix_report_generator',         # 最终修复版报告生成器
+        'gemsage.generate_improved_report',           # 生成改进报告
+        'gemsage.generate_professional_report',       # 生成专业报告
+        'gemsage.batch_processor',                    # 批处理器
+        'gemsage.template_filler',                    # 模板填充器
+        'gemsage.main_gait_system',                   # 主步态系统
+        'gemsage.advanced_gait_analyzer',             # 高级步态分析器 (main_gait_system需要)
+        'gemsage.test_system'                         # 测试系统 (batch_processor需要)
     ],
     hookspath=[],
     hooksconfig={},

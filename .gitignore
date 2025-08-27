@@ -4,3 +4,6 @@
 *.pyc
 /build
 /202520809第八次测试
+/gemsage/data
+/tmp
+logs/device.log
