@@ -336,10 +336,15 @@ class HeatmapVisualizer:
                 # 1. 使用中值滤波去除噪点（3x3窗口，保持边缘和压力分布）
                 display_matrix = median_filter(display_matrix, size=3)
                 
-                # 2. 放大压力值（原始的5倍）
-                display_matrix = display_matrix * 5
+                # 2. 放大压力值（提高到10倍以获得更好的视觉效果）
+                display_matrix = display_matrix * 10
                 
-                # 3. 确保不超过255
+                # 3. 应用对比度增强
+                # 将低值区域进一步降低，高值区域进一步提高
+                # 使用幂次变换增强对比度
+                display_matrix = np.power(display_matrix / 255.0, 0.8) * 255
+                
+                # 4. 确保不超过255
                 display_matrix = np.minimum(display_matrix, 255)
             # 步道和脚垫保持原值（乘以1.0）
             

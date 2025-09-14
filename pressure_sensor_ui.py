@@ -2238,7 +2238,7 @@ class PressureSensorUI:
         import re
         
         dialog = WindowManager.create_managed_window(self.root, WindowLevel.DIALOG,
-                                                   "AI肌少症分析 - 患者信息录入", (500, 650))
+                                                   "AI肌少症分析 - 患者信息录入", (500, 550))
         dialog.grab_set()
         dialog.transient(self.root)
         
@@ -2367,36 +2367,7 @@ class PressureSensorUI:
         tk.Label(weight_frame, text="kg", font=("Microsoft YaHei", 10),
                 bg='#ffffff', fg='#666666').pack(side=tk.LEFT, padx=(5, 0))
         
-        # 测试信息区域
-        test_frame = tk.LabelFrame(main_frame, text=" 检测配置信息 ", 
-                                  font=("Microsoft YaHei", 10, "bold"),
-                                  bg='#ffffff', fg='#2c5282',
-                                  relief='groove', bd=2, padx=15, pady=15)
-        test_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 网格配置
-        test_frame.grid_columnconfigure(1, weight=1)
-        
-        # 测试项目选择（下拉框）
-        tk.Label(test_frame, text="测试项目:", font=("Microsoft YaHei", 10, "bold"),
-                bg='#ffffff', fg='#2d3748', width=12, anchor='e').grid(row=0, column=0, sticky="e", padx=(0, 15), pady=8)
-        
-        # 测试类型 - 固定为综合评估（隐藏选择框）
-        test_type_var = tk.StringVar(value="综合评估")
-        test_type_label = tk.Label(test_frame, text="综合评估", 
-                                 bg='#ffffff', fg='#2d3748', 
-                                 font=("Microsoft YaHei", 10))
-        test_type_label.grid(row=0, column=1, sticky="w", pady=8)
-        
-        # 保留test_type_options供后续代码使用
-        test_type_options = [
-            ("COMPREHENSIVE", "综合评估")
-        ]
-        
-        # 创建隐藏的combo供后续代码引用（避免修改太多代码）
-        test_type_combo = ttk.Combobox(test_frame, textvariable=test_type_var, 
-                                      values=["综合评估"],
-                                      state="readonly", width=18, font=("Microsoft YaHei", 10))
+    
         # 不显示，只是为了保持代码兼容性
         
         # 活动描述已移除，直接使用默认值
@@ -2426,23 +2397,23 @@ class PressureSensorUI:
                 age_entry.focus()
                 return
             
-            # 获取选中的测试类型（从下拉框）
-            selected_text = test_type_combo.get()
-            if not selected_text:
-                messagebox.showerror("选择错误", "请选择测试项目", parent=dialog)
-                return
+            # # 获取选中的测试类型（从下拉框）
+            # selected_text = test_type_combo.get()
+            # if not selected_text:
+            #     messagebox.showerror("选择错误", "请选择测试项目", parent=dialog)
+            #     return
             
             # 查找对应的API值
-            primary_type = "COMPREHENSIVE"
-            selected_name = selected_text
-            for api_val, cn_name in test_type_options:
-                if cn_name == selected_text:
-                    primary_type = api_val
-                    selected_name = cn_name
-                    break
+            # primary_type = "COMPREHENSIVE"
+            # selected_name = selected_text
+            # for api_val, cn_name in test_type_options:
+            #     if cn_name == selected_text:
+            #         primary_type = api_val
+            #         selected_name = cn_name
+            #         break
             
-            selected_types = [primary_type]
-            selected_names = [selected_name]
+            # selected_types = [primary_type]
+            # selected_names = [selected_name]
             
             # 构建患者信息
             result['patient_info'] = {
@@ -2452,9 +2423,9 @@ class PressureSensorUI:
                 'height': height_var.get().strip() if height_var.get().strip() else None,
                 'weight': weight_var.get().strip() if weight_var.get().strip() else None,
                 'test_date': datetime.now().strftime("%Y-%m-%d"),
-                'test_type': primary_type,  # 主要测试类型
-                'test_types': selected_types,  # 所有选中的测试类型
-                'test_names': selected_names,  # 中文测试名称
+                'test_type': "",  # 主要测试类型
+                'test_types': "",  # 所有选中的测试类型
+                'test_names': "",  # 中文测试名称
                 'notes': default_activity if default_activity else '从CSV文件导入的数据',
                 'created_time': datetime.now().isoformat()
             }
@@ -3469,6 +3440,8 @@ class PressureSensorUI:
             # 如果用户在管理界面中选择了患者，则设置为当前患者
             if hasattr(manager, 'selected_patient') and manager.selected_patient:
                 self.current_patient = manager.selected_patient
+                # 清除之前的分析结果缓存
+                self._last_analysis_result = None
                 self.update_patient_status()
         except Exception as e:
             messagebox.showerror("错误", f"打开患者档案管理失败：{e}")
@@ -3642,6 +3615,8 @@ class PressureSensorUI:
                     'age': session.get('patient_age', 0)
                 }
                 self.current_patient = patient_info
+                # 清除之前的分析结果缓存
+                self._last_analysis_result = None
                 
                 # 标记正在恢复会话，避免触发自动检查
                 self._resuming_session = True
@@ -3911,6 +3886,8 @@ class PressureSensorUI:
             
             if selector.selected_patient:
                 self.current_patient = selector.selected_patient
+                # 清除之前的分析结果缓存
+                self._last_analysis_result = None
                 print(f"[PATIENT_DIALOG] 设置current_patient: {self.current_patient['name']}")
                 
                 # 检查是否需要跳转到特定步骤
@@ -4015,6 +3992,8 @@ class PressureSensorUI:
                             new_patient = db.get_patient_by_id(patient_id)
                             if new_patient:
                                 self.current_patient = new_patient
+                                # 清除之前的分析结果缓存
+                                self._last_analysis_result = None
                                 self.update_patient_status()
                                 self.log_message(f"[OK] 新建患者成功：{self.current_patient['name']}")
                                 messagebox.showinfo("成功", f"患者档案创建成功！\n已自动选择患者：{self.current_patient['name']}")
@@ -4065,6 +4044,9 @@ class PressureSensorUI:
     def start_detection_process(self):
         """开始检测流程"""
         try:
+            # 清除之前的分析结果缓存
+            self._last_analysis_result = None
+            
             # 检查设备配置
             if not self.device_configured:
                 messagebox.showwarning("设备未配置", "请先配置检测设备后再开始检测！")
