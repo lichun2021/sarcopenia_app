@@ -31,6 +31,23 @@ pyinstaller --clean --noconfirm SarcopeniaApp.spec
 
 echo.
 
+REM 构建后复制资源到 dist
+if exist dist (
+    echo 复制 chrome 目录到 dist\chrome ...
+    if exist chrome (
+        xcopy "chrome" "dist\chrome" /E /I /Y >nul
+    ) else (
+        echo 警告：未找到 chrome 目录，跳过复制
+    )
+
+    echo 复制 icon.ico 到 dist 根目录...
+    if exist icon.ico (
+        copy /Y "icon.ico" "dist\icon.ico" >nul
+    ) else (
+        echo 警告：未找到 icon.ico，跳过复制
+    )
+)
+
 if exist dist\SarcopeniaApp.exe (
     echo ========================================
     echo 打包成功！

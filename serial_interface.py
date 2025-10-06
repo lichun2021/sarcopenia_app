@@ -133,6 +133,17 @@ class SerialInterface:
                             print(f"🔄 端口变更从 {current_port} 到 {port_name}，先断开旧连接")
                             self.disconnect()
             
+            # 在重新连接前，清空合并缓冲，避免切换设备后残留导致拼接错位
+            try:
+                self.device_buffer.clear()
+                self.device_frame_count = 0
+                for k in list(self.device_data_buffers.keys()):
+                    self.device_data_buffers[k] = bytearray()
+                for k in list(self.device_frame_counts.keys()):
+                    self.device_frame_counts[k] = 0
+            except Exception:
+                pass
+
             # 检查是否为多端口模式
             if self.multi_port_config and len(self.multi_port_config) > 1:
                 return self._connect_multi_port()
@@ -181,6 +192,16 @@ class SerialInterface:
         if success_count == len(self.multi_port_config):
             print(f"🎉 所有 {len(self.multi_port_config)} 个端口连接成功")
             self.is_running = True
+            # 连接成功后，确保清空上一轮的残留数据，避免条纹
+            try:
+                self.device_buffer.clear()
+                self.device_frame_count = 0
+                for k in list(self.device_data_buffers.keys()):
+                    self.device_data_buffers[k] = bytearray()
+                for k in list(self.device_frame_counts.keys()):
+                    self.device_frame_counts[k] = 0
+            except Exception:
+                pass
             self._start_multi_port_threads()
             return True
         else:
@@ -248,6 +269,12 @@ class SerialInterface:
         self.multi_port_threads.clear()
         self.device_data_buffers.clear()
         self.device_frame_counts.clear()
+        # 关键：清空拼接缓冲，避免下一次连接残留数据导致条纹
+        try:
+            self.device_buffer.clear()
+            self.device_frame_count = 0
+        except Exception:
+            pass
     
     def get_data(self, timeout=0.1):
         """获取数据，非阻塞 - 优化版"""

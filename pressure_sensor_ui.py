@@ -68,11 +68,16 @@ class PressureSensorUI:
         # 启用双缓冲减少重绘闪烁
         self.root.option_add('*tearOff', False)
         
-        # 设置窗口图标
+        # 设置窗口图标（兼容打包路径）
         try:
-            self.root.iconbitmap("icon.ico")
+            import sys, os
+            base_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+            icon_path = os.path.join(base_dir, 'icon.ico')
+            if not os.path.exists(icon_path):
+                # 回退到工作目录
+                icon_path = os.path.join(os.getcwd(), 'icon.ico')
+            self.root.iconbitmap(icon_path)
         except Exception:
-            # 如果图标文件不存在，使用默认图标
             pass
         
         # 清理过期会话数据
@@ -1924,6 +1929,9 @@ class PressureSensorUI:
                             self.data_processor.set_array_size(32, 64)  # 32x64: 左右拼接两个32x32
                         elif com_ports == 3:
                             self.data_processor.set_array_size(32, 96)  # 32x96: 左右拼接三个32x32
+                    else:
+                        # 单端口或未知时，确保回到32x32，避免保持上一次的多端口尺寸导致条纹
+                        self.data_processor.set_array_size(32, 32)
                     
                     # 只处理最新的帧，丢弃过旧的数据以减少延迟
                     frame_data = frame_data_list[-1]  # 取最新帧
@@ -1933,6 +1941,19 @@ class PressureSensorUI:
                         com_ports = device_info.get('com_ports', 1)
                         expected_length = com_ports * 1024
                         actual_length = len(frame_data.get('data', b''))
+                        # 长度不匹配时跳过该帧，等待下一帧对齐，避免条纹
+                        if actual_length != expected_length:
+                            # 可选：记录一次性调试信息
+                            # self.log_message(f"[WARN] 多端口帧长度不匹配: 期望{expected_length}, 实际{actual_length}, 已跳过该帧")
+                            self._update_after_id = self.root.after(10, self.update_data)
+                            return
+                    else:
+                        # 单端口应为1024字节，如果不是，跳过以避免错误reshape导致条纹
+                        actual_length = len(frame_data.get('data', b''))
+                        if actual_length != 1024:
+                            # self.log_message(f"[WARN] 单端口帧长度异常: 实际{actual_length}, 已跳过该帧")
+                            self._update_after_id = self.root.after(10, self.update_data)
+                            return
                             
                     
                     # 正确的JQ转换逻辑：
@@ -1946,6 +1967,11 @@ class PressureSensorUI:
                         else:
                             enable_jq = False
                             jq_reason = f"多端口设备({com_ports}端口)已在合并时JQ转换"
+                            # 为稳妥起见，再次保证尺寸为(32, 64/96)，避免误用32x32导致条纹
+                            if com_ports == 2:
+                                self.data_processor.set_array_size(32, 64)
+                            elif com_ports == 3:
+                                self.data_processor.set_array_size(32, 96)
                     else:
                         enable_jq = True
                         jq_reason = "默认启用JQ转换"
@@ -2244,7 +2270,12 @@ class PressureSensorUI:
         
         # 设置窗口图标
         try:
-            dialog.iconbitmap("icon.ico")
+            import sys, os
+            base_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+            icon_path = os.path.join(base_dir, 'icon.ico')
+            if not os.path.exists(icon_path):
+                icon_path = os.path.join(os.getcwd(), 'icon.ico')
+            dialog.iconbitmap(icon_path)
         except:
             pass
         
@@ -3534,7 +3565,12 @@ class PressureSensorUI:
         
         # 设置窗口图标
         try:
-            dialog.iconbitmap("icon.ico")
+            import sys, os
+            base_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+            icon_path = os.path.join(base_dir, 'icon.ico')
+            if not os.path.exists(icon_path):
+                icon_path = os.path.join(os.getcwd(), 'icon.ico')
+            dialog.iconbitmap(icon_path)
         except Exception:
             pass
         
@@ -5612,6 +5648,17 @@ class PressureSensorUI:
     def start_sarcneuro_analysis_for_session(self):
         """使用SarcNeuro Edge API为检测会话进行分析"""
         try:
+            # 再次防御性清空，避免任何路径复用
+            try:
+                self._last_analysis_result = None
+            except Exception:
+                pass
+            try:
+                if getattr(self, 'algorithm_engine', None) and hasattr(self.algorithm_engine, 'clear_cache'):
+                    self.algorithm_engine.clear_cache()
+            except Exception:
+                pass
+
             # 检查算法引擎是否可用
             if not self.algorithm_engine or not self.algorithm_engine.is_initialized:
                 self.log_ai_message("[ERROR] 算法引擎未初始化")
@@ -6106,6 +6153,17 @@ class PressureSensorUI:
         original_patient = self.current_patient
         
         try:
+            # 进入新会话报告前，清空上次结果并清缓存
+            try:
+                self._last_analysis_result = None
+            except Exception:
+                pass
+            try:
+                if getattr(self, 'algorithm_engine', None) and hasattr(self.algorithm_engine, 'clear_cache'):
+                    self.algorithm_engine.clear_cache()
+            except Exception:
+                pass
+
             # 获取会话信息，包括患者ID
             session_info = db.get_test_session_by_id(session_id)
             if not session_info:
@@ -6155,6 +6213,19 @@ class PressureSensorUI:
     def start_ai_analysis(self):
         """开始AI分析并生成报告"""
         try:
+            # 在每次分析前清空上一次的分析结果，避免复用
+            try:
+                self._last_analysis_result = None
+            except Exception:
+                pass
+
+            # 主动清空算法引擎缓存（若启用过缓存）
+            try:
+                if getattr(self, 'algorithm_engine', None) and hasattr(self.algorithm_engine, 'clear_cache'):
+                    self.algorithm_engine.clear_cache()
+            except Exception:
+                pass
+
             if not self.current_session or not self.current_patient:
                 messagebox.showerror("错误", "没有有效的检测会话或患者信息")
                 return

@@ -96,10 +96,10 @@ class AlgorithmEngineManager:
                     sys.path.insert(0, gemsage_dir)
                     logger.info(f"添加gemsage目录到路径: {gemsage_dir}")
                 
-                # 直接导入模块
-                from gemsage.GemSage_GaitAnalysis_Professional import UltimateFixReportGenerator
-                self.UltimateFixReportGenerator = UltimateFixReportGenerator
-                logger.info("成功导入GemSage单文件类")
+                # 仅导入All-In-One医疗版（不保留Professional回退）
+                from gemsage.GemSage_Medical_Report_All_In_One import GemSageMedicalReportGenerator
+                self.GemSageMedicalReportGenerator = GemSageMedicalReportGenerator
+                logger.info("成功导入GemSage医疗级报告生成器（All-In-One）")
                 
             except ImportError as e:
                 logger.error(f"GemSage模块导入失败: {e}")
@@ -202,124 +202,68 @@ class AlgorithmEngineManager:
             }
             patient_gender = gender_mapping.get(raw_gender, '男')
             
-            if self.UltimateFixReportGenerator:
-                # 方式1：直接调用类方法生成完整报告
-                try:
-                    generator = self.UltimateFixReportGenerator()
-                    
-                    # 准备输出路径（使用绝对路径）
-                    # 获取程序运行目录
-                    if getattr(sys, 'frozen', False):
-                        # 打包后的exe
-                        base_dir = os.path.dirname(sys.executable)
-                    else:
-                        # 开发环境
-                        base_dir = os.path.dirname(os.path.abspath(__file__))
-                    
-                    reports_dir = os.path.join(base_dir, "tmp", today, "reports")
-                    os.makedirs(reports_dir, exist_ok=True)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
-                    output_path = os.path.join(reports_dir, output_filename)
-                    logger.info(f"报告将生成到: {output_path}")
-                    
-                    # 直接生成完整报告
-                    generator.generate_ultimate_report(
-                        folder_path=temp_dir,
-                        group_name=patient_name,
-                        age=patient_age,
-                        output_path=output_path,
-                        gender=patient_gender
-                    )
-                    
-                    # 读取生成的HTML文件内容
-                    if os.path.exists(output_path):
-                        with open(output_path, 'r', encoding='utf-8') as f:
-                            report_html = f.read()
-                        combined_result = {
-                            'success': True,
-                            'report_path': output_path,
-                            'report_html': report_html,
-                            'message': '报告生成成功'
-                        }
-                    else:
-                        combined_result = {
-                            'success': False,
-                            'error': f'报告文件未生成: {output_path}',
-                            'report_path': output_path
-                        }
-                    logger.info("通过类方法调用GemSage分析完成")
-                except Exception as e:
-                    logger.error(f"类方法调用失败: {e}")
-                    combined_result = {'error': str(e), 'success': False}
-            else:
-                # 方式2：使用subprocess调用命令行
-                try:
-                    # 获取程序运行目录
-                    if getattr(sys, 'frozen', False):
-                        # 打包后的exe
-                        base_dir = os.path.dirname(sys.executable)
-                    else:
-                        # 开发环境
-                        base_dir = os.path.dirname(os.path.abspath(__file__))
-                    
-                    reports_dir = os.path.join(base_dir, "tmp", today, "reports")
-                    os.makedirs(reports_dir, exist_ok=True)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
-                    output_path = os.path.join(reports_dir, output_filename)
-                    logger.info(f"[subprocess] 报告将生成到: {output_path}")
-                    
-                    import subprocess
-                    # 判断是否是打包后的exe
-                    if getattr(sys, 'frozen', False):
-                        # 打包后，使用python命令（需要系统安装Python）或直接导入模块
-                        # 最好直接使用类方法，避免subprocess
-                        logger.error("打包环境下subprocess调用不可用，请使用类方法调用")
-                        combined_result = {'error': 'Subprocess not available in frozen mode', 'success': False}
-                        return combined_result
-                    else:
-                        # 开发环境，使用Python解释器
-                        cmd = [
-                            sys.executable, self.gemsage_script_path,
-                            '--data_folder', temp_dir,
-                            '--name', patient_name,
-                            '--age', str(patient_age),
-                            '--gender', patient_gender,
-                            '--output', output_path
-                        ]
-                    
-                    logger.info(f"执行GemSage命令: {' '.join(cmd)}")
-                    
-                    # 设置环境变量以支持UTF-8编码
-                    env = os.environ.copy()
-                    env['PYTHONIOENCODING'] = 'utf-8'
-                    
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env, encoding='utf-8')
-                    
-                    if result.returncode == 0:
-                        logger.info("subprocess调用GemSage分析完成")
-                        # 读取生成的HTML文件内容
-                        if os.path.exists(output_path):
-                            with open(output_path, 'r', encoding='utf-8') as f:
-                                report_html = f.read()
-                            combined_result = {
-                                'report_html': report_html,
-                                'report_path': output_path,
-                                'success': True
-                            }
-                        else:
-                            combined_result = {'success': True, 'report_path': output_path}
-                    else:
-                        logger.error(f"GemSage执行失败: {result.stderr}")
-                        combined_result = {'error': result.stderr, 'success': False}
-                        
-                except subprocess.TimeoutExpired:
-                    logger.error("GemSage执行超时")
-                    combined_result = {'error': 'Analysis timeout', 'success': False}
-                except Exception as e:
-                    logger.error(f"subprocess调用异常: {e}")
-                    combined_result = {'error': str(e), 'success': False}
+            # 使用 All-In-One 医疗版生成综合报告
+            try:
+                generator = self.GemSageMedicalReportGenerator()
+                
+                # 获取程序运行目录（保证EXE/开发环境均可用）
+                if getattr(sys, 'frozen', False):
+                    base_dir = os.path.dirname(sys.executable)
+                else:
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                reports_dir = os.path.join(base_dir, "tmp", today, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                output_path = os.path.join(reports_dir, output_filename)
+                logger.info(f"报告将生成到: {output_path}")
+                
+                # 解析数据并生成医疗级HTML
+                data_dict = {}
+                import glob
+                for file_path in glob.glob(os.path.join(temp_dir, '*.csv')):
+                    filename = os.path.basename(file_path)
+                    if '第1步' in filename or '静坐' in filename:
+                        data_dict['sitting'] = generator.parse_csv_data(file_path)
+                    elif '第2步' in filename or '起坐' in filename:
+                        data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                    elif '第3步' in filename or '静态站立' in filename:
+                        data_dict['standing'] = generator.parse_csv_data(file_path)
+                    elif '第4步' in filename or '前后脚' in filename:
+                        data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                    elif '第5步' in filename or '双脚前后' in filename:
+                        data_dict['tandem_side'] = generator.parse_csv_data(file_path)
+                    elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
+                        data_dict['walking'] = generator.parse_csv_data(file_path)
+                
+                html_report = generator.generate_medical_report(
+                    patient_name=patient_name,
+                    patient_gender=patient_gender,
+                    patient_age=str(patient_age),
+                    patient_id="",
+                    department="",
+                    education="",
+                    sitting_data=data_dict.get('sitting'),
+                    sitstand_data=data_dict.get('sitstand'),
+                    standing_data=data_dict.get('standing'),
+                    tandem_front_data=data_dict.get('tandem_front'),
+                    tandem_side_data=data_dict.get('tandem_side'),
+                    walking_data=data_dict.get('walking')
+                )
+                
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(html_report)
+                
+                combined_result = {
+                    'success': True,
+                    'report_path': output_path,
+                    'report_html': html_report,
+                    'message': '报告生成成功（All-In-One）'
+                }
+            except Exception as e:
+                logger.error(f"All-In-One报告生成失败: {e}")
+                combined_result = {'error': str(e), 'success': False}
             
             # 处理报告生成
             if generate_report:
@@ -508,128 +452,75 @@ class AlgorithmEngineManager:
             
             # 执行分析
             if test_type.upper() == "COMPREHENSIVE":
-                logger.info("执行综合分析...")
+                logger.info("执行综合分析（All-In-One）...")
                 logger.info(f"CSV文件路径: {temp_csv_path}")
                 
-                # 使用GemSage单文件处理单个文件
+                # 使用 All-In-One 医疗版处理所在目录的文件
                 csv_dir = os.path.dirname(temp_csv_path)
                 patient_name = patient_info.get('name', '测试者')
                 patient_age = patient_info.get('age', 65)
-                # 性别参数映射：将英文映射为中文
                 raw_gender = patient_info.get('gender', '男')
                 gender_mapping = {
-                    'MALE': '男',
-                    'FEMALE': '女', 
-                    'male': '男',
-                    'female': '女',
-                    '男': '男',
-                    '女': '女'
+                    'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女', '男': '男', '女': '女'
                 }
                 patient_gender = gender_mapping.get(raw_gender, '男')
                 
-                if self.UltimateFixReportGenerator:
-                    # 方式1：直接调用类方法
-                    try:
-                        generator = self.UltimateFixReportGenerator()
-                        analysis_results = generator.process_test_data_with_ultimate_fixes(
-                            folder_path=csv_dir,
-                            group_name=patient_name, 
-                            age=patient_age,
-                            gender=patient_gender
-                        )
-                    except Exception as e:
-                        logger.error(f"单文件分析失败: {e}")
-                        analysis_results = {'error': str(e)}
-                else:
-                    logger.error("GemSage类未正确导入，无法进行单文件分析")
-                    analysis_results = {'error': 'GemSage not available'}
-                
-                # 打印JSON格式的分析结果
-                import json
-                # 分析结果处理完成
-                
-                # 分析结果直接从generator返回
-                raw_result = analysis_results
-                logger.info(f"ultimate_fix分析返回结果: {raw_result}")
-                
-                # 将患者信息保存到分析结果中（转换性别为中文）
-                if raw_result:
-                    # 复制患者信息并转换性别
-                    processed_patient_info = patient_info.copy()
-                    gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
-                    if 'gender' in processed_patient_info:
-                        original_gender = processed_patient_info['gender']
-                        processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
-                        logger.info(f"性别转换: {original_gender} -> {processed_patient_info['gender']}")
-                    
-                    raw_result['original_patient_info'] = processed_patient_info
-                    logger.info(f"保存处理后的患者信息到分析结果: {processed_patient_info}")
-                
-                # 第二步：使用 generate_reports_from_analyses_json 生成报告（直接传递JSON数据）
-                logger.info("生成综合报告...")
                 try:
-                    # 准备分析结果
-                    if 'original_patient_info' not in raw_result:
-                        # 补充患者信息时也要转换性别
-                        processed_patient_info = patient_info.copy()
-                        gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
-                        if 'gender' in processed_patient_info:
-                            original_gender = processed_patient_info['gender']
-                            processed_patient_info['gender'] = gender_map.get(original_gender, original_gender)
-                            logger.info(f"补充时性别转换: {original_gender} -> {processed_patient_info['gender']}")
-                        
-                        raw_result['original_patient_info'] = processed_patient_info
-                        logger.info(f"补充处理后的患者信息到分析结果: {processed_patient_info}")
-                    else:
-                        logger.info(f"分析结果中已存在患者信息: {raw_result['original_patient_info']}")
+                    generator = self.GemSageMedicalReportGenerator()
                     
-                    # 生成HTML报告模板
-                    report_html = generator.generate_corrected_html_template()
-                    # 替换模板变量
-                    for k, v in raw_result.items():
-                        report_html = report_html.replace(f"{{{{{k}}}}}", str(v))
+                    # 构建数据字典（兼容单文件/多文件目录）
+                    data_dict = {}
+                    import glob
+                    for file_path in glob.glob(os.path.join(csv_dir, '*.csv')):
+                        filename = os.path.basename(file_path)
+                        if '第1步' in filename or '静坐' in filename:
+                            data_dict['sitting'] = generator.parse_csv_data(file_path)
+                        elif '第2步' in filename or '起坐' in filename:
+                            data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                        elif '第3步' in filename or '静态站立' in filename:
+                            data_dict['standing'] = generator.parse_csv_data(file_path)
+                        elif '第4步' in filename or '前后脚' in filename:
+                            data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                        elif '第5步' in filename or '双脚前后' in filename:
+                            data_dict['tandem_side'] = generator.parse_csv_data(file_path)
+                        elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
+                            data_dict['walking'] = generator.parse_csv_data(file_path)
                     
-                    # 保存HTML报告到文件
+                    # 生成医疗级报告HTML
+                    report_html = generator.generate_medical_report(
+                        patient_name=patient_name,
+                        patient_gender=patient_gender,
+                        patient_age=str(patient_age),
+                        patient_id="",
+                        department="",
+                        education="",
+                        sitting_data=data_dict.get('sitting'),
+                        sitstand_data=data_dict.get('sitstand'),
+                        standing_data=data_dict.get('standing'),
+                        tandem_front_data=data_dict.get('tandem_front'),
+                        tandem_side_data=data_dict.get('tandem_side'),
+                        walking_data=data_dict.get('walking')
+                    )
+                    
+                    # 保存报告
                     today = datetime.now().strftime("%Y-%m-%d")
                     reports_dir = os.path.join("tmp", today, "reports")
                     os.makedirs(reports_dir, exist_ok=True)
-                    
-                    # 生成报告文件名：名字_性别_年龄_当天日期
-                    patient_name = patient_info.get('name', '未知患者')
-                    patient_gender_raw = patient_info.get('gender', '未知')
-                    patient_age = patient_info.get('age', '未知')
                     today_date = datetime.now().strftime("%Y%m%d")
-                    
-                    # 转换性别为中文
-                    gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
-                    patient_gender = gender_map.get(patient_gender_raw, patient_gender_raw)
-                    
                     report_filename = f"{patient_name}_{patient_gender}_{patient_age}岁_{today_date}.html"
                     report_path = os.path.join(reports_dir, report_filename)
-                    
-                    # 写入报告文件
                     with open(report_path, 'w', encoding='utf-8') as f:
                         f.write(report_html)
-                    
                     logger.info(f"✅ 报告生成成功: {report_path}")
-                    report_success = True
                     
-                    # 将生成的HTML添加到结果中
-                    raw_result['report_html'] = report_html
-                    raw_result['report_path'] = report_path
-                    
-                    # 清理临时文件（如果有的话）
-                    pass
-                    
+                    # 组装简化raw_result
+                    raw_result = {
+                        'report_html': report_html,
+                        'report_path': report_path
+                    }
                 except Exception as e:
-                    logger.error(f"❌ 报告生成失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    report_success = False
-                
-                logger.info(f"最终分析结果: {raw_result}")
-                
-                # AI引擎已移除，跳过AI评估
+                    logger.error(f"All-In-One单文件分析失败: {e}")
+                    raw_result = {'error': str(e)}
                         
             else:
                 # 其他分析类型

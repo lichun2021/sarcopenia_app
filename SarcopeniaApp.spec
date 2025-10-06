@@ -8,7 +8,8 @@ a = Analysis(
     datas=[
         ('gemsage', 'gemsage'), 
         ('config.ini', '.'),
-        ('icon.ico', '.')
+        ('icon.ico', '.'),
+        ('chrome', 'chrome')
     ],
     hiddenimports=[
         # Tkinter and GUI
@@ -49,6 +50,12 @@ a = Analysis(
         
         # Algorithm engine
         'algorithm_engine_manager',
+        
+        # scikit-image 相关（确保PyInstaller收集子模块）
+        'skimage', 'skimage.filters', 'skimage.morphology', 'skimage.measure',
+        'skimage.util', 'skimage.color', 'skimage.draw', 'skimage.io',
+        # 依赖库（通常PyInstaller会自动处理，这里显式声明更稳妥）
+        'imageio', 'tifffile', 'lazy_loader',
         
         # GemSage单文件模块 (已融合为单文件)
         # 注意：不需要导入具体模块，因为是通过importlib动态加载
