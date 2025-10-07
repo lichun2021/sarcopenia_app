@@ -77,6 +77,56 @@ async def inject_print_color_css(page) -> None:
 	await page.add_style_tag(content=css)
 
 
+async def inject_layout_safety_css(page) -> None:
+	"""注入布局安全样式，避免超宽元素溢出与被分页裁剪。
+
+	- 使图片/图表自适应宽度
+	- 表格固定布局并允许单元格换行
+	- 代码块/长文本自动换行
+	- 提供.page-break类用于强制分页
+	"""
+	css = """
+	  html, body {
+	    margin: 0;
+	    padding: 0;
+	    overflow: visible !important;
+	  }
+
+	  img, svg, canvas, video {
+	    max-width: 100% !important;
+	    height: auto !important;
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	  }
+
+	  .section, .block, .card, .panel, .chart, .figure, figure, .table-wrapper, .keep-together, .__pdf_keep_together {
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	  }
+
+	  table {
+	    width: 100% !important;
+	    table-layout: fixed !important;
+	    border-collapse: collapse;
+	  }
+	  th, td {
+	    word-break: break-word;
+	    overflow-wrap: anywhere;
+	  }
+
+	  pre, code, .code, .log, .nowrap {
+	    white-space: pre-wrap !important;
+	    word-break: break-word !important;
+	  }
+
+	  .page-break {
+	    page-break-before: always !important;
+	    break-before: page !important;
+	  }
+	"""
+	await page.add_style_tag(content=css)
+
+
 async def ensure_lazy_content_rendered(page) -> None:
 	"""Trigger lazy-loaded content by scrolling the page before printing."""
 	await page.evaluate(
@@ -247,6 +297,7 @@ async def convert_html_to_pdf(
 		await page.emulate_media(media=media)
 		await page.goto(file_url, wait_until=wait_state)
 		await inject_print_color_css(page)
+		await inject_layout_safety_css(page)
 		await group_images_with_captions(page)
 		await ensure_lazy_content_rendered(page)
 		# Wait a bit more for any post-scroll lazy resources
@@ -256,14 +307,19 @@ async def convert_html_to_pdf(
 			"prefer_css_page_size": True,
 			"landscape": landscape,
 			"margin": {
-				"top": "10mm",
-				"right": "10mm",
-				"bottom": "10mm",
-				"left": "10mm",
+				"top": "12mm",
+				"right": "12mm",
+				"bottom": "12mm",
+				"left": "12mm",
 			},
+			# 轻微缩放，减少被裁剪概率；若模板自带@page可忽略
+			"scale": 0.95,
 		}
 		if page_format:
 			pdf_options["format"] = page_format
+		else:
+			# 默认A4，更符合医疗报告打印习惯
+			pdf_options["format"] = "A4"
 		# Ensure parent directory exists for output
 		output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
 		await page.pdf(path=str(output_pdf_path), **pdf_options)

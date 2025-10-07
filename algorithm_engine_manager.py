@@ -72,9 +72,66 @@ class AlgorithmEngineManager:
         self.async_client = None
         self.cache = {} if app_config['cache_results'] else None
         self.timeout = app_config['timeout']
+        # 打印捕获器开关（需要时可改为配置）
+        self._capture_prints = True
+        # 可选：把引擎内部过程日志透传到UI
+        self.log_callback = None
         
         # 初始化算法模块
         self._initialize_modules()
+
+    # ========== 内部工具：捕获GemSage内部print到logger ==========
+    class _StdRedirector:
+        def __init__(self, logger_fn):
+            self.logger_fn = logger_fn
+            self._buffer = ""
+        def write(self, s):
+            try:
+                self._buffer += s
+                while "\n" in self._buffer:
+                    line, self._buffer = self._buffer.split("\n", 1)
+                    line = line.strip()
+                    if line:
+                        self.logger_fn(line)
+            except Exception:
+                pass
+        def flush(self):
+            try:
+                if self._buffer.strip():
+                    self.logger_fn(self._buffer.strip())
+                self._buffer = ""
+            except Exception:
+                pass
+
+    from contextlib import contextmanager
+    @contextmanager
+    def _capture_gemsage_prints(self, prefix: str = "GemSage"):
+        import sys as _sys
+        if not self._capture_prints:
+            yield
+            return
+        def _log(line):
+            try:
+                logger.info(f"[{prefix}] {line}")
+                if callable(getattr(self, 'log_callback', None)):
+                    try:
+                        self.log_callback(f"[{prefix}] {line}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        stdout_backup, stderr_backup = _sys.stdout, _sys.stderr
+        redirector = self._StdRedirector(_log)
+        try:
+            _sys.stdout = redirector
+            _sys.stderr = redirector
+            yield
+        finally:
+            try:
+                redirector.flush()
+            except Exception:
+                pass
+            _sys.stdout, _sys.stderr = stdout_backup, stderr_backup
     
     def _initialize_modules(self):
         """初始化算法模块"""
@@ -222,22 +279,28 @@ class AlgorithmEngineManager:
                 # 解析数据并生成医疗级HTML
                 data_dict = {}
                 import glob
-                for file_path in glob.glob(os.path.join(temp_dir, '*.csv')):
-                    filename = os.path.basename(file_path)
-                    if '第1步' in filename or '静坐' in filename:
-                        data_dict['sitting'] = generator.parse_csv_data(file_path)
-                    elif '第2步' in filename or '起坐' in filename:
-                        data_dict['sitstand'] = generator.parse_csv_data(file_path)
-                    elif '第3步' in filename or '静态站立' in filename:
-                        data_dict['standing'] = generator.parse_csv_data(file_path)
-                    elif '第4步' in filename or '前后脚' in filename:
-                        data_dict['tandem_front'] = generator.parse_csv_data(file_path)
-                    elif '第5步' in filename or '双脚前后' in filename:
-                        data_dict['tandem_side'] = generator.parse_csv_data(file_path)
-                    elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
-                        data_dict['walking'] = generator.parse_csv_data(file_path)
-                
-                html_report = generator.generate_medical_report(
+                with self._capture_gemsage_prints():
+                    for file_path in glob.glob(os.path.join(temp_dir, '*.csv')):
+                        filename = os.path.basename(file_path)
+                        if '第1步' in filename or '静坐' in filename:
+                            data_dict['sitting'] = generator.parse_csv_data(file_path)
+                        elif '第2步' in filename or '起坐' in filename:
+                            data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                        elif '第3步' in filename or '静态站立' in filename:
+                            data_dict['standing'] = generator.parse_csv_data(file_path)
+                        elif '第4步' in filename or '前后脚' in filename:
+                            data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                        elif '第5步' in filename or '双脚前后' in filename:
+                            data_dict['tandem_side'] = generator.parse_csv_data(file_path)
+                        elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
+                            data_dict['walking'] = generator.parse_csv_data(file_path)
+                # 统计帧数日志
+                for k in ['sitting','sitstand','standing','tandem_front','tandem_side','walking']:
+                    v = data_dict.get(k)
+                    logger.info(f"[{k}] 帧数: {0 if v is None else getattr(v, 'shape', [0])[0]}")
+
+                with self._capture_gemsage_prints():
+                    html_report = generator.generate_medical_report(
                     patient_name=patient_name,
                     patient_gender=patient_gender,
                     patient_age=str(patient_age),
@@ -471,23 +534,28 @@ class AlgorithmEngineManager:
                     # 构建数据字典（兼容单文件/多文件目录）
                     data_dict = {}
                     import glob
-                    for file_path in glob.glob(os.path.join(csv_dir, '*.csv')):
-                        filename = os.path.basename(file_path)
-                        if '第1步' in filename or '静坐' in filename:
-                            data_dict['sitting'] = generator.parse_csv_data(file_path)
-                        elif '第2步' in filename or '起坐' in filename:
-                            data_dict['sitstand'] = generator.parse_csv_data(file_path)
-                        elif '第3步' in filename or '静态站立' in filename:
-                            data_dict['standing'] = generator.parse_csv_data(file_path)
-                        elif '第4步' in filename or '前后脚' in filename:
-                            data_dict['tandem_front'] = generator.parse_csv_data(file_path)
-                        elif '第5步' in filename or '双脚前后' in filename:
-                            data_dict['tandem_side'] = generator.parse_csv_data(file_path)
-                        elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
-                            data_dict['walking'] = generator.parse_csv_data(file_path)
+                    with self._capture_gemsage_prints():
+                        for file_path in glob.glob(os.path.join(csv_dir, '*.csv')):
+                            filename = os.path.basename(file_path)
+                            if '第1步' in filename or '静坐' in filename:
+                                data_dict['sitting'] = generator.parse_csv_data(file_path)
+                            elif '第2步' in filename or '起坐' in filename:
+                                data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                            elif '第3步' in filename or '静态站立' in filename:
+                                data_dict['standing'] = generator.parse_csv_data(file_path)
+                            elif '第4步' in filename or '前后脚' in filename:
+                                data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                            elif '第5步' in filename or '双脚前后' in filename:
+                                data_dict['tandem_side'] = generator.parse_csv_data(file_path)
+                            elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
+                                data_dict['walking'] = generator.parse_csv_data(file_path)
+                    for k in ['sitting','sitstand','standing','tandem_front','tandem_side','walking']:
+                        v = data_dict.get(k)
+                        logger.info(f"[{k}] 帧数: {0 if v is None else getattr(v, 'shape', [0])[0]}")
                     
                     # 生成医疗级报告HTML
-                    report_html = generator.generate_medical_report(
+                    with self._capture_gemsage_prints():
+                        report_html = generator.generate_medical_report(
                         patient_name=patient_name,
                         patient_gender=patient_gender,
                         patient_age=str(patient_age),

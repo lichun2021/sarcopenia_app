@@ -2251,6 +2251,12 @@ class PressureSensorUI:
         try:
             # 使用算法引擎管理器
             self.algorithm_engine = get_algorithm_engine()
+            # 将UI日志回调注入引擎，透传内部分析过程日志
+            try:
+                if hasattr(self, 'log_ai_message') and callable(self.log_ai_message):
+                    self.algorithm_engine.log_callback = lambda msg: self.log_ai_message(str(msg))
+            except Exception:
+                pass
             self.data_converter = SarcopeniaDataConverter()
             print("[OK] 算法引擎初始化完成")
         except Exception as e:
@@ -2608,18 +2614,22 @@ class PressureSensorUI:
             
             # 如果有多个文件，使用新的多文件分析方法
             if len(csv_files) > 1:
-                # 准备文件路径列表（需要保存为临时文件）
+                # 如果传入的是原始路径，直接使用；否则写临时文件
                 import tempfile
                 import os
-                temp_dir = tempfile.mkdtemp(prefix="multi_csv_")
                 csv_paths = []
-                
-                for i, csv_file in enumerate(csv_files):
-                    # 保存每个CSV到临时文件
-                    temp_path = os.path.join(temp_dir, csv_file['filename'])
-                    with open(temp_path, 'w', encoding='utf-8') as f:
-                        f.write(csv_file['content'])
-                    csv_paths.append(temp_path)
+                has_path = any(isinstance(item, dict) and item.get('path') for item in csv_files)
+                if has_path:
+                    for item in csv_files:
+                        if isinstance(item, dict) and item.get('path') and os.path.exists(item['path']):
+                            csv_paths.append(item['path'])
+                else:
+                    temp_dir = tempfile.mkdtemp(prefix="multi_csv_")
+                    for i, csv_file in enumerate(csv_files):
+                        temp_path = os.path.join(temp_dir, csv_file['filename'])
+                        with open(temp_path, 'w', encoding='utf-8') as f:
+                            f.write(csv_file['content'])
+                        csv_paths.append(temp_path)
                 
                 self.log_ai_message(f"[DEBUG] 使用多文件分析模式: {len(csv_files)} 个文件")
                 self.log_ai_message(f"[DEBUG] 患者信息: {patient_info}")
@@ -2810,11 +2820,11 @@ class PressureSensorUI:
                     if 'data' not in df.columns:
                         raise Exception(f"CSV文件格式错误：{os.path.basename(file_path)} 必须包含'data'列")
                     
-                    # 转换为CSV字符串
-                    csv_content = df.to_csv(index=False)
+                    # 仅传递原始文件路径，避免二次序列化造成解析差异
                     all_csv_data.append({
                         'filename': os.path.basename(file_path),
-                        'content': csv_content,
+                        'path': file_path,
+                        
                         'rows': len(df)
                     })
                     total_rows += len(df)
@@ -2908,7 +2918,7 @@ class PressureSensorUI:
                 
                 if result and result.get('status') == 'success':
                     analysis_data = result['data']
-                    self.log_ai_message("[OK] AI分析完成！")
+                    # 分析完成
                     
                     # 保存分析结果供后续使用
                     self._last_analysis_result = result.get('result', {})
@@ -2918,8 +2928,7 @@ class PressureSensorUI:
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
                     confidence = analysis_data.get('confidence', 0)
                     
-                    self.log_ai_message(f"[DATA] 综合评分: {overall_score:.1f}/100")
-                    self.log_ai_message(f"[WARN] 风险等级: {risk_level}")
+                    # 评分与风险等级日志已取消
                     self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
                     
                     # 分析成功，获取完整结果并生成报告
@@ -5729,12 +5738,20 @@ class PressureSensorUI:
                 all_csv_data = []
                 for file_path in temp_files:
                     try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            csv_content = f.read()
+                        # 仅传递路径，避免二次序列化导致的兼容问题
+                        # 计算行数用于日志
+                        try:
+                            import pandas as pd
+                            df_tmp = pd.read_csv(file_path)
+                            row_count = len(df_tmp)
+                        except Exception:
+                            # 回退到逐行计数
+                            with open(file_path, 'r', encoding='utf-8') as fr:
+                                row_count = max(0, sum(1 for _ in fr) - 1)
                         all_csv_data.append({
                             'filename': os.path.basename(file_path),
-                            'content': csv_content,
-                            'rows': len(csv_content.split('\n')) - 1  # 减去标题行
+                            'path': file_path,
+                            'rows': row_count
                         })
                         self.log_ai_message(f"[DATA] 读取文件: {os.path.basename(file_path)}")
                     except Exception as e:
@@ -5756,7 +5773,7 @@ class PressureSensorUI:
                 if result and result.get('status') == 'success':
                     analysis_data = result['data']
                     
-                    self.log_ai_message("[OK] AI分析完成！")
+                    # 分析完成
                     
                     # 保存分析结果供后续使用
                     self._last_analysis_result = result.get('result', {})
@@ -5766,8 +5783,7 @@ class PressureSensorUI:
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
                     confidence = analysis_data.get('confidence', 0)
                     
-                    self.log_ai_message(f"[DATA] 综合评分: {overall_score:.1f}/100")
-                    self.log_ai_message(f"[WARN] 风险等级: {risk_level}")
+                    # 评分与风险等级日志已取消
                     self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
                     
                     # 使用与CSV导入相同的逻辑获取报告
