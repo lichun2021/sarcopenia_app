@@ -31,7 +31,12 @@ def load_config():
         'enable_async': 'false',
         'timeout': '300',
         'cache_results': 'false',
-        'max_workers': '1'
+        'max_workers': '1',
+        # REPORT 段默认值
+        'report_department': '老年康复学科',
+        'report_institution': '中国人民解放军总医院\\n第二医学中心',
+        'report_title': '《身体运动能力测评报告》',
+        'report_version': 'v7.2'
     }
     
     # 尝试读取配置文件
@@ -46,6 +51,10 @@ def load_config():
             cfg[key] = config.getboolean('ALGORITHM', key, fallback=default_value.lower() == 'true')
         elif key in ['timeout', 'max_workers']:
             cfg[key] = config.getint('ALGORITHM', key, fallback=int(default_value))
+        elif key.startswith('report_'):
+            # 从 REPORT 配置段读取
+            opt_name = key.replace('report_', '')
+            cfg[key] = config.get('REPORT', opt_name, fallback=default_value)
         else:
             cfg[key] = config.get('ALGORITHM', key, fallback=default_value)
     
@@ -153,10 +162,10 @@ class AlgorithmEngineManager:
                     sys.path.insert(0, gemsage_dir)
                     logger.info(f"添加gemsage目录到路径: {gemsage_dir}")
                 
-                # 仅导入All-In-One医疗版（不保留Professional回退）
-                from gemsage.GemSage_Medical_Report_All_In_One import GemSageMedicalReportGenerator
+                # 仅导入All-In-One医疗版（v7）
+                from gemsage.GemSage_Medical_Report_All_In_One_v7 import GemSageMedicalReportGenerator
                 self.GemSageMedicalReportGenerator = GemSageMedicalReportGenerator
-                logger.info("成功导入GemSage医疗级报告生成器（All-In-One）")
+                logger.info("成功导入GemSage医疗级报告生成器（All-In-One v7）")
                 
             except ImportError as e:
                 logger.error(f"GemSage模块导入失败: {e}")
@@ -220,29 +229,38 @@ class AlgorithmEngineManager:
             start_time = time.time()
             logger.info(f"开始分析 {len(csv_files)} 个CSV文件 - 患者: {patient_info.get('name', '未知')}")
             
-            # 创建临时目录存放CSV文件
+            # 支持目录路径（CLI的 --data_folder 语义）或文件列表
             today = datetime.now().strftime("%Y-%m-%d")
-            temp_dir = os.path.join("tmp", today, "multi_csv_analysis")
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            # 复制CSV文件到临时目录
-            temp_csv_paths = []
-            for i, csv_file in enumerate(csv_files):
-                # 保留原文件名以便分类
-                original_name = os.path.basename(csv_file)
-                temp_path = os.path.join(temp_dir, original_name)
-                
-                # 如果是文件路径，直接复制
-                if os.path.exists(csv_file):
-                    import shutil
-                    shutil.copy2(csv_file, temp_path)
-                else:
-                    # 如果是CSV内容，写入文件
-                    with open(temp_path, 'w', encoding='utf-8') as f:
-                        f.write(csv_file)
-                
-                temp_csv_paths.append(temp_path)
-                logger.info(f"  文件 {i+1}: {original_name}")
+            parse_dir = None
+            discovered_files_count = 0
+            if isinstance(csv_files, str) and os.path.isdir(csv_files):
+                parse_dir = csv_files
+                import glob as _glob
+                discovered_files_count = len(_glob.glob(os.path.join(parse_dir, '*.csv')))
+                logger.info(f"按目录解析: {parse_dir}，发现 {discovered_files_count} 个CSV")
+            elif isinstance(csv_files, list) and len(csv_files) == 1 and os.path.isdir(csv_files[0]):
+                parse_dir = csv_files[0]
+                import glob as _glob
+                discovered_files_count = len(_glob.glob(os.path.join(parse_dir, '*.csv')))
+                logger.info(f"按目录解析: {parse_dir}，发现 {discovered_files_count} 个CSV")
+            else:
+                # 兼容旧逻辑：将提供的文件复制/写入到临时目录
+                temp_dir = os.path.join("tmp", today, "detection_data")
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_csv_paths = []
+                for i, csv_file in enumerate(csv_files):
+                    original_name = os.path.basename(csv_file)
+                    temp_path = os.path.join(temp_dir, original_name)
+                    if os.path.exists(csv_file):
+                        import shutil
+                        shutil.copy2(csv_file, temp_path)
+                    else:
+                        with open(temp_path, 'w', encoding='utf-8') as f:
+                            f.write(csv_file)
+                    temp_csv_paths.append(temp_path)
+                    logger.info(f"  文件 {i+1}: {original_name}")
+                parse_dir = temp_dir
+                discovered_files_count = len(temp_csv_paths)
             
             # 使用GemSage单文件处理多文件
             patient_name = patient_info.get('name', '测试者')
@@ -272,32 +290,53 @@ class AlgorithmEngineManager:
                 reports_dir = os.path.join(base_dir, "tmp", today, "reports")
                 os.makedirs(reports_dir, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_filename = f"{patient_name}_综合报告_{timestamp}.html"
-                output_path = os.path.join(reports_dir, output_filename)
+                user_output = patient_info.get('output') or patient_info.get('output_path')
+                if user_output:
+                    output_path = user_output
+                else:
+                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                    output_path = os.path.join(reports_dir, output_filename)
                 logger.info(f"报告将生成到: {output_path}")
                 
                 # 解析数据并生成医疗级HTML
                 data_dict = {}
                 import glob
+                walking_sr = None
+                sitstand_sr = None
+                standing_sr = None
                 with self._capture_gemsage_prints():
-                    for file_path in glob.glob(os.path.join(temp_dir, '*.csv')):
+                    for file_path in glob.glob(os.path.join(parse_dir, '*.csv')):
                         filename = os.path.basename(file_path)
                         if '第1步' in filename or '静坐' in filename:
-                            data_dict['sitting'] = generator.parse_csv_data(file_path)
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['sitting'] = data
                         elif '第2步' in filename or '起坐' in filename:
-                            data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['sitstand'] = data
+                            sitstand_sr = sr
                         elif '第3步' in filename or '静态站立' in filename:
-                            data_dict['standing'] = generator.parse_csv_data(file_path)
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['standing'] = data
+                            standing_sr = sr
                         elif '第4步' in filename or '前后脚' in filename:
-                            data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['tandem_front'] = data
                         elif '第5步' in filename or '双脚前后' in filename:
-                            data_dict['tandem_side'] = generator.parse_csv_data(file_path)
-                        elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
-                            data_dict['walking'] = generator.parse_csv_data(file_path)
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['tandem_side'] = data
+                        elif '第6步' in filename or '步道' in filename or '3米' in filename:
+                            data, sr = generator.parse_csv_data(file_path)
+                            data_dict['walking'] = data
+                            walking_sr = sr
                 # 统计帧数日志
                 for k in ['sitting','sitstand','standing','tandem_front','tandem_side','walking']:
                     v = data_dict.get(k)
-                    logger.info(f"[{k}] 帧数: {0 if v is None else getattr(v, 'shape', [0])[0]}")
+                    frames = 0
+                    try:
+                        frames = 0 if v is None else (v.shape[0] if hasattr(v, 'shape') else len(v))
+                    except Exception:
+                        frames = 0
+                    logger.info(f"[{k}] 帧数: {frames}")
 
                 with self._capture_gemsage_prints():
                     html_report = generator.generate_medical_report(
@@ -312,16 +351,53 @@ class AlgorithmEngineManager:
                     standing_data=data_dict.get('standing'),
                     tandem_front_data=data_dict.get('tandem_front'),
                     tandem_side_data=data_dict.get('tandem_side'),
-                    walking_data=data_dict.get('walking')
+                    walking_data=data_dict.get('walking'),
+                    walking_sampling_rate=walking_sr or 100.0,
+                    sitstand_sampling_rate=sitstand_sr or 3.6,
+                    manual_distance=None,
+                    sampling_rates={
+                        'standing': standing_sr or 3.6,
+                        'sitstand': sitstand_sr or 3.6,
+                        'walking': walking_sr or 100.0
+                    }
                 )
                 
                 with open(output_path, "w", encoding="utf-8") as f:
                     f.write(html_report)
-                
+
+                # 注入页眉页脚（覆写同一路径），PDF不在此处生成
+                try:
+                    from gemsage.add_header_footer_to_existing_report import add_a4_print_layout
+                    subject_info = {
+                        'name': patient_name,
+                        'age': str(patient_age),
+                        'gender': patient_gender,
+                        'patient_id': patient_info.get('patient_id', ''),
+                        'department': patient_info.get('department', app_config.get('report_department', '老年康复学科')),
+                        'education': patient_info.get('education', '')
+                    }
+                    institution = patient_info.get('institution', app_config.get('report_institution', '中国人民解放军总医院\\n第二医学中心'))
+                    title = patient_info.get('title', app_config.get('report_title', '《身体运动能力测评报告》'))
+                    version = patient_info.get('version', app_config.get('report_version', 'v7.2'))
+                    add_a4_print_layout(
+                        input_html_path=output_path,
+                        output_html_path=output_path,
+                        subject_info=subject_info,
+                        institution=institution,
+                        report_title=title,
+                        version=version
+                    )
+                    # 读取注入后的HTML
+                    with open(output_path, 'r', encoding='utf-8') as rf:
+                        final_html = rf.read()
+                except Exception as hf_err:
+                    logger.warning(f"页眉页脚注入/转换PDF失败: {hf_err}")
+                    final_html = html_report
+
                 combined_result = {
                     'success': True,
                     'report_path': output_path,
-                    'report_html': html_report,
+                    'report_html': final_html,
                     'message': '报告生成成功（All-In-One）'
                 }
             except Exception as e:
@@ -330,43 +406,13 @@ class AlgorithmEngineManager:
             
             # 处理报告生成
             if generate_report:
-                # 检查是否已经有报告路径（subprocess方式生成的）
+                # 确认报告路径存在时，确保report_html同步最新内容
                 if 'report_path' in combined_result and os.path.exists(combined_result['report_path']):
-                    logger.info(f"报告已生成: {combined_result['report_path']}")
-                    # 读取报告内容
-                    with open(combined_result['report_path'], 'r', encoding='utf-8') as f:
-                        combined_result['report_html'] = f.read()
-                elif self.UltimateFixReportGenerator and 'error' not in combined_result:
-                    # 如果使用类方法调用成功，需要手动生成HTML报告
                     try:
-                        generator = self.UltimateFixReportGenerator()
-                        template = generator.generate_ultimate_html_template()
-                        
-                        # 替换模板变量
-                        for k, v in combined_result.items():
-                            placeholder = f"{{{{{k}}}}}"
-                            template = template.replace(placeholder, str(v))
-                        
-                        # 保存HTML报告
-                        reports_dir = os.path.join("tmp", today, "reports")
-                        os.makedirs(reports_dir, exist_ok=True)
-                        
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        safe_patient_name = patient_info.get('name', '未知').replace(' ', '_')
-                        report_filename = f"{safe_patient_name}_综合报告_{timestamp}.html"
-                        report_path = os.path.join(reports_dir, report_filename)
-                        
-                        with open(report_path, 'w', encoding='utf-8') as f:
-                            f.write(template)
-                        
-                        logger.info(f"报告已保存: {report_path}")
-                        
-                        combined_result['report_html'] = template
-                        combined_result['report_path'] = report_path
-                        
-                    except Exception as e:
-                        logger.error(f"生成HTML报告失败: {e}")
-                        combined_result['report_error'] = str(e)
+                        with open(combined_result['report_path'], 'r', encoding='utf-8') as f:
+                            combined_result['report_html'] = f.read()
+                    except Exception:
+                        pass
             
             # 清理临时文件（可选）
             # import shutil
@@ -408,7 +454,7 @@ class AlgorithmEngineManager:
                 'patient_info': patient_info,
                 'metadata': {
                     'analysis_time': time.time() - start_time,
-                    'files_count': len(csv_files),
+                    'files_count': discovered_files_count,
                     'engine_type': 'multi_file_analysis'
                 }
             }
@@ -534,24 +580,41 @@ class AlgorithmEngineManager:
                     # 构建数据字典（兼容单文件/多文件目录）
                     data_dict = {}
                     import glob
+                    walking_sr = None
+                    sitstand_sr = None
+                    standing_sr = None
                     with self._capture_gemsage_prints():
                         for file_path in glob.glob(os.path.join(csv_dir, '*.csv')):
                             filename = os.path.basename(file_path)
                             if '第1步' in filename or '静坐' in filename:
-                                data_dict['sitting'] = generator.parse_csv_data(file_path)
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['sitting'] = data
                             elif '第2步' in filename or '起坐' in filename:
-                                data_dict['sitstand'] = generator.parse_csv_data(file_path)
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['sitstand'] = data
+                                sitstand_sr = sr
                             elif '第3步' in filename or '静态站立' in filename:
-                                data_dict['standing'] = generator.parse_csv_data(file_path)
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['standing'] = data
+                                standing_sr = sr
                             elif '第4步' in filename or '前后脚' in filename:
-                                data_dict['tandem_front'] = generator.parse_csv_data(file_path)
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['tandem_front'] = data
                             elif '第5步' in filename or '双脚前后' in filename:
-                                data_dict['tandem_side'] = generator.parse_csv_data(file_path)
-                            elif '第6步' in filename or '步道' in filename or '4.5米' in filename:
-                                data_dict['walking'] = generator.parse_csv_data(file_path)
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['tandem_side'] = data
+                            elif '第6步' in filename or '步道' in filename or '3米' in filename:
+                                data, sr = generator.parse_csv_data(file_path)
+                                data_dict['walking'] = data
+                                walking_sr = sr
                     for k in ['sitting','sitstand','standing','tandem_front','tandem_side','walking']:
                         v = data_dict.get(k)
-                        logger.info(f"[{k}] 帧数: {0 if v is None else getattr(v, 'shape', [0])[0]}")
+                        frames = 0
+                        try:
+                            frames = 0 if v is None else (v.shape[0] if hasattr(v, 'shape') else len(v))
+                        except Exception:
+                            frames = 0
+                        logger.info(f"[{k}] 帧数: {frames}")
                     
                     # 生成医疗级报告HTML
                     with self._capture_gemsage_prints():
@@ -567,7 +630,15 @@ class AlgorithmEngineManager:
                         standing_data=data_dict.get('standing'),
                         tandem_front_data=data_dict.get('tandem_front'),
                         tandem_side_data=data_dict.get('tandem_side'),
-                        walking_data=data_dict.get('walking')
+                        walking_data=data_dict.get('walking'),
+                        walking_sampling_rate=walking_sr or 100.0,
+                        sitstand_sampling_rate=sitstand_sr or 3.6,
+                        manual_distance=None,
+                        sampling_rates={
+                            'standing': standing_sr or 3.6,
+                            'sitstand': sitstand_sr or 3.6,
+                            'walking': walking_sr or 100.0
+                        }
                     )
                     
                     # 保存报告
@@ -1244,13 +1315,11 @@ AI智能评估结果:
                 
                 logger.info(f"📥 转换为PDF格式...")
                 
-                # 使用新的HTML转PDF转换器
+                # 使用新的HTML转PDF转换器（采用接近Chrome打印设置，media=print）
                 asyncio.run(convert_html_to_pdf(
                     input_html_path=Path(temp_html_path),
                     output_pdf_path=Path(output_path),
-                    media="screen",
-                    wait_state="networkidle",
-                    page_format="A4"
+                    media="print"
                 ))
                 
                 logger.info(f"PDF生成成功: {output_path}")

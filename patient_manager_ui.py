@@ -172,11 +172,11 @@ class PatientManagerDialog:
         list_frame.pack(fill="both", expand=True, pady=(0, 10))
         
         # 创建树状视图 - 支持多选，添加检测状态列
-        columns = ("姓名", "性别", "年龄", "身高", "体重", "电话", "检测状态", "创建时间")
+        columns = ("姓名", "性别", "年龄", "身高", "体重", "电话", "教育程度", "检测状态", "创建时间")
         self.patient_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15, selectmode="extended")
         
         # 设置列标题和宽度
-        column_widths = {"姓名": 120, "性别": 80, "年龄": 80, "身高": 100, "体重": 100, "电话": 140, "检测状态": 120, "创建时间": 170}
+        column_widths = {"姓名": 120, "性别": 80, "年龄": 80, "身高": 100, "体重": 100, "电话": 140, "教育程度": 120, "检测状态": 120, "创建时间": 170}
         for col in columns:
             self.patient_tree.heading(col, text=col)
             self.patient_tree.column(col, width=column_widths.get(col, 100), minwidth=50, anchor="center")
@@ -303,6 +303,7 @@ class PatientManagerDialog:
                 f"{patient['height']:.1f}cm" if patient['height'] else "-",
                 f"{patient['weight']:.1f}kg" if patient['weight'] else "-",
                 patient['phone'] or "-",
+                patient.get('education', '大学') or '大学',
                 detection_status,
                 patient['created_time'][:19].replace('T', ' ')
             )
@@ -596,7 +597,7 @@ class PatientManagerDialog:
         
         # 简化显示内容
         detail_text = f"""基本信息: {patient['name']} ({patient['gender']}, {patient['age']}岁)
-身高体重: {height_str} / {weight_str}  •  电话: {patient['phone'] or "未填写"}
+身高体重: {height_str} / {weight_str}  •  电话: {patient['phone'] or "未填写"}  •  教育程度: {patient.get('education', '大学') or '大学'}
 检测状态: {detection_status}{report_info}
 创建时间: {patient['created_time'][:16].replace('T', ' ')}"""
         
@@ -1129,18 +1130,20 @@ class PatientEditDialog:
         age_entry.pack(fill="x", pady=(2, 0))
         self.dynamic_widgets.append(age_entry)
         
-        # 电话
-        phone_frame = ttk.Frame(row2_frame)
-        phone_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
-        self.dynamic_widgets.append(phone_frame)
+        # 教育程度（新增下拉）
+        edu_frame = ttk.Frame(row2_frame)
+        edu_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(edu_frame)
         
-        ttk.Label(phone_frame, text="联系电话", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
-        self.phone_var = tk.StringVar(value=self.patient_data.get('phone', '') or '')
-        phone_entry = ttk.Entry(phone_frame, textvariable=self.phone_var, font=('Microsoft YaHei UI', self.base_font_size))
-        phone_entry.pack(fill="x", pady=(2, 0))
-        self.dynamic_widgets.append(phone_entry)
+        ttk.Label(edu_frame, text="受教育程度", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
+        self.education_var = tk.StringVar(value=self.patient_data.get('education', '大学') or '大学')
+        education_combo = ttk.Combobox(edu_frame, textvariable=self.education_var,
+                                      values=["博士", "硕士", "大学", "大专", "高中", "初中", "小学"],
+                                      font=('Microsoft YaHei UI', self.base_font_size), state="readonly")
+        education_combo.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(education_combo)
         
-        # 第三行：身高和体重
+        # 第三行：身高和体重与电话
         row3_frame = ttk.Frame(info_frame)
         row3_frame.pack(fill="x")
         self.dynamic_widgets.append(row3_frame)
@@ -1158,8 +1161,18 @@ class PatientEditDialog:
         
         # 体重
         weight_frame = ttk.Frame(row3_frame)
-        weight_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        weight_frame.pack(side="left", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
         self.dynamic_widgets.append(weight_frame)
+        # 电话
+        phone_frame = ttk.Frame(row3_frame)
+        phone_frame.pack(side="right", fill="x", expand=True, padx=(self.base_padding * 0.4, 0))
+        self.dynamic_widgets.append(phone_frame)
+        
+        ttk.Label(phone_frame, text="联系电话", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
+        self.phone_var = tk.StringVar(value=self.patient_data.get('phone', '') or '')
+        phone_entry = ttk.Entry(phone_frame, textvariable=self.phone_var, font=('Microsoft YaHei UI', self.base_font_size))
+        phone_entry.pack(fill="x", pady=(2, 0))
+        self.dynamic_widgets.append(phone_entry)
         
         ttk.Label(weight_frame, text="体重 (kg)", font=('Microsoft YaHei UI', self.base_font_size)).pack(anchor="w")
         self.weight_var = tk.StringVar(value=str(self.patient_data.get('weight', '') or ''))
@@ -1297,6 +1310,7 @@ class PatientEditDialog:
             'height': float(self.height_var.get()) if self.height_var.get().strip() else None,
             'weight': float(self.weight_var.get()) if self.weight_var.get().strip() else None,
             'phone': self.phone_var.get().strip() or None,
+            'education': self.education_var.get().strip() or '大学',
             'notes': self.notes_text.get(1.0, tk.END).strip() or None
         }
         

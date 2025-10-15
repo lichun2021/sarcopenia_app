@@ -135,11 +135,11 @@ class DetectionWizardDialog:
                 "description": "请患者在脚垫上采用双脚前后站立姿势，脚跟对脚尖排列。\n此步骤用于测量更高难度的平衡控制能力。"
             },
             6: {
-                "name": "4.5米步道折返",
+                "name": "3米步道折返",
                 "device": "步道",
                 "duration": 60,
                 "auto_finish": False,
-                "description": "请患者在4.5米长的步道上来回行走，保持正常步行速度。\n此步骤用于测量步态参数和行走过程中的压力分布。"
+                "description": "请患者在3米长的步道上来回行走，保持正常步行速度。\n此步骤用于测量步态参数和行走过程中的压力分布。"
             }
         }
         
@@ -339,7 +339,7 @@ class DetectionWizardDialog:
         self.next_btn.pack(side="left", padx=(0, 50))  # 增加间距
         
         # 右侧按钮组
-        self.start_btn = ttk.Button(button_frame, text="🚀 开始检测", 
+        self.start_btn = ttk.Button(button_frame, text="🚀 检测", 
                                    command=self.start_current_step,
                                    style="Success.TButton")
         self.start_btn.pack(side="right", padx=(10, 0))
@@ -402,20 +402,30 @@ class DetectionWizardDialog:
         # 更新按钮状态
         self.prev_btn.config(state="normal" if self.current_step > 1 else "disabled")
         
-        # 检查当前步骤是否已完成，决定下一步按钮状态
-        if self.current_step in self.step_results and self.step_results[self.current_step]['status'] == 'completed':
-            # 如果当前步骤已完成，可以进入下一步
+        # 检查当前步骤是否已完成，决定“下一步/检测”显示
+        # 未检测过的步骤：不显示“下一步”，只显示“检测”
+        # 已完成：显示“下一步”，右侧禁用为“已完成”
+        self.next_btn.config(text="下一步 ▶️", command=self.next_step)
+        is_completed = (self.current_step in self.step_results and self.step_results[self.current_step]['status'] == 'completed')
+        if is_completed:
+            # 确保显示并启用“下一步”
+            try:
+                self.next_btn.pack_info()
+            except tk.TclError:
+                self.next_btn.pack(side="left", padx=(0, 50))
             self.next_btn.config(state="normal" if self.current_step < self.total_steps else "disabled")
             self.start_btn.config(state="disabled", text="✅ 已完成")
             self.finish_btn.config(state="disabled")
         else:
-            # 未完成的步骤
-            self.next_btn.config(state="disabled")
-            # 如果设备未配置，禁用开始按钮
+            # 未完成：隐藏“下一步”，显示“检测”
+            try:
+                self.next_btn.pack_forget()
+            except tk.TclError:
+                pass
             if not device_configured:
                 self.start_btn.config(state="disabled", text="❌ 设备未配置")
             else:
-                self.start_btn.config(state="normal", text="🚀 开始检测")
+                self.start_btn.config(state="normal", text="🚀 检测")
             self.finish_btn.config(state="disabled")
         
         # 重置运行状态
@@ -433,7 +443,7 @@ class DetectionWizardDialog:
                 3: '脚垫',   # 静态站立
                 4: '脚垫',   # 前后脚站立
                 5: '脚垫',   # 双脚前后站立
-                6: '步道'    # 4.5米步道折返
+                6: '步道'    # 3米步道折返
             }
             
             current_device_type = step_device_map.get(self.current_step, '未知')
@@ -612,19 +622,11 @@ class DetectionWizardDialog:
             self.start_btn.config(state="disabled")
             self.finish_btn.config(state="disabled")
             
-            # 启用下一步按钮或显示完成
+            # 完成后自动跳转或结束
             if self.current_step < self.total_steps:
                 self.next_btn.config(state="normal")
-                
-                # 检查是否是自动完成
-                if hasattr(self, '_auto_finishing') and self._auto_finishing:
-                    # 自动完成时直接跳转到下一步，不询问
-                    self.dialog.after(500, self.auto_next_step)
-                else:
-                    # 手动完成时询问是否自动跳转到下一步
-                    if messagebox.askyesno("步骤完成", f"第{self.current_step}步检测完成！\n\n是否自动进入下一步？"):
-                        # 延迟500ms后自动跳转到下一步
-                        self.dialog.after(500, self.auto_next_step)
+                # 统一改为自动跳转，不再弹出确认
+                self.dialog.after(500, self.auto_next_step)
             else:
                 messagebox.showinfo("检测完成", "🎉 所有检测步骤已完成！\n\n即将生成分析报告。")
                 self.complete_all_steps()

@@ -99,6 +99,61 @@ async def inject_layout_safety_css(page) -> None:
 	    break-inside: avoid-page !important;
 	  }
 
+	  /* 单图容器：避免分页，并限制最大高度以防被拆分（控制在单页可视区内） */
+	  figure, .figure, .chart, .heatmap, .gait-plot, .balance-plot, .image-block, .img-block, .__pdf_keep_together {
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	    max-height: 90vh !important;
+	    overflow: visible !important;
+	  }
+
+	  /* 热力图容器与图片：强制66%宽度，等比缩放且不被分页切割 */
+	  .heatmap-container { text-align: center !important; }
+	  .heatmap-container img {
+	    width: 66% !important;
+	    max-width: 66% !important;
+	    height: auto !important;
+	    object-fit: contain !important;
+	    display: block !important;
+	    margin: 0 auto !important;
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	  }
+
+	  /* 单图：限制最大高度，保持等比缩放，确保整张图落在同一页 */
+	  figure img, .figure img, .chart img, .heatmap img, .gait-plot img, .balance-plot img, .image-block img, .img-block img {
+	    max-height: 85vh !important;
+	    width: 66% !important;      /* A4内容区宽度的66% */
+	    max-width: 66% !important;
+	    height: auto !important;
+	    object-fit: contain !important;
+	    display: block !important;
+	    margin: 0 auto !important;
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	  }
+
+	  /* 针对带 alt 的独立图片（如：静态站立压力分布、热力图等）统一缩放为66%且不分页 */
+	  img[alt*="压力"],
+	  img[alt*="压力分布"],
+	  img[alt*="热力"],
+	  img[alt*="热力图"],
+	  img[alt*="站立"],
+	  img[alt*="步态"],
+	  img[alt*="步道"],
+	  img[alt*="平衡"],
+	  img[alt*="足底"] {
+	    max-height: 85vh !important;
+	    width: 66% !important;
+	    max-width: 66% !important;
+	    height: auto !important;
+	    object-fit: contain !important;
+	    display: block !important;
+	    margin: 0 auto !important;
+	    page-break-inside: avoid !important;
+	    break-inside: avoid-page !important;
+	  }
+
 	  .section, .block, .card, .panel, .chart, .figure, figure, .table-wrapper, .keep-together, .__pdf_keep_together {
 	    page-break-inside: avoid !important;
 	    break-inside: avoid-page !important;
@@ -306,14 +361,8 @@ async def convert_html_to_pdf(
 			"print_background": True,
 			"prefer_css_page_size": True,
 			"landscape": landscape,
-			"margin": {
-				"top": "12mm",
-				"right": "12mm",
-				"bottom": "12mm",
-				"left": "12mm",
-			},
 			# 轻微缩放，减少被裁剪概率；若模板自带@page可忽略
-			"scale": 0.95,
+			"scale": 1,
 		}
 		if page_format:
 			pdf_options["format"] = page_format

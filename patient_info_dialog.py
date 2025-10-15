@@ -76,18 +76,27 @@ class PatientInfoDialog:
                                    values=["男", "女"], width=22, font=('Microsoft YaHei UI', 10))
         gender_combo.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=5)
         gender_combo.state(['readonly'])
+
+        # 受教育程度
+        ttk.Label(info_frame, text="受教育程度:").grid(row=3, column=0, sticky="w", pady=5)
+        self.education_var = tk.StringVar(value="大学")
+        education_combo = ttk.Combobox(info_frame, textvariable=self.education_var,
+                                      values=["博士", "硕士", "大学", "大专", "高中", "初中", "小学"],
+                                      width=22, font=('Microsoft YaHei UI', 10))
+        education_combo.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=5)
+        education_combo.state(['readonly'])
         
         # 身高
-        ttk.Label(info_frame, text="身高 (cm):").grid(row=3, column=0, sticky="w", pady=5)
+        ttk.Label(info_frame, text="身高 (cm):").grid(row=4, column=0, sticky="w", pady=5)
         self.height_var = tk.StringVar(value="")
         height_entry = ttk.Entry(info_frame, textvariable=self.height_var, width=25, font=('Microsoft YaHei UI', 10))
-        height_entry.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=5)
+        height_entry.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=5)
         
         # 体重
-        ttk.Label(info_frame, text="体重 (kg):").grid(row=4, column=0, sticky="w", pady=5)
+        ttk.Label(info_frame, text="体重 (kg):").grid(row=5, column=0, sticky="w", pady=5)
         self.weight_var = tk.StringVar(value="")
         weight_entry = ttk.Entry(info_frame, textvariable=self.weight_var, width=25, font=('Microsoft YaHei UI', 10))
-        weight_entry.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=5)
+        weight_entry.grid(row=5, column=1, sticky="ew", padx=(10, 0), pady=5)
         
         # 配置列权重
         info_frame.columnconfigure(1, weight=1)
@@ -204,6 +213,7 @@ class PatientInfoDialog:
             'name': self.name_var.get().strip(),
             'age': int(self.age_var.get()),
             'gender': self.gender_var.get(),
+            'education': self.education_var.get(),
             'height': float(self.height_var.get()) if self.height_var.get().strip() else None,
             'weight': float(self.weight_var.get()) if self.weight_var.get().strip() else None,
             'test_date': self.date_var.get(),

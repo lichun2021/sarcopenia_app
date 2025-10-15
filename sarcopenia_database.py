@@ -34,12 +34,23 @@ class SarcopeniaDatabase:
                     height REAL CHECK (height IS NULL OR (height >= 50 AND height <= 250)),
                     weight REAL CHECK (weight IS NULL OR (weight >= 10 AND weight <= 300)),
                     phone TEXT,
+                    education TEXT,
                     notes TEXT,
                     is_active BOOLEAN DEFAULT 1,
                     created_time TEXT NOT NULL,
                     updated_time TEXT NOT NULL
                 )
             ''')
+
+            # 迁移：确保存在education列
+            try:
+                cursor.execute("PRAGMA table_info(patients)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'education' not in cols:
+                    cursor.execute("ALTER TABLE patients ADD COLUMN education TEXT")
+                    cursor.execute("UPDATE patients SET education = '大学' WHERE education IS NULL OR education = ''")
+            except Exception:
+                pass
             
             # 设备配置表
             cursor.execute('''
@@ -133,7 +144,7 @@ class SarcopeniaDatabase:
     # ==================== 患者档案管理 ====================
     def add_patient(self, name: str, gender: str, age: int, height: Optional[float] = None, 
                    weight: Optional[float] = None, phone: Optional[str] = None, 
-                   notes: Optional[str] = None) -> int:
+                   notes: Optional[str] = None, education: Optional[str] = '大学') -> int:
         """添加新患者档案"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -142,9 +153,9 @@ class SarcopeniaDatabase:
             current_time = datetime.now().isoformat()
             cursor.execute('''
                 INSERT INTO patients 
-                (name, gender, age, height, weight, phone, notes, created_time, updated_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (name, gender, age, height, weight, phone, notes, current_time, current_time))
+                (name, gender, age, height, weight, phone, education, notes, created_time, updated_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, gender, age, height, weight, phone, education, notes, current_time, current_time))
             
             patient_id = cursor.lastrowid
             conn.commit()
@@ -165,7 +176,7 @@ class SarcopeniaDatabase:
         
         try:
             cursor.execute('''
-                SELECT id, name, gender, age, height, weight, phone, notes, created_time, updated_time
+                SELECT id, name, gender, age, height, weight, phone, education, notes, created_time, updated_time
                 FROM patients
                 WHERE is_active = 1
                 ORDER BY created_time DESC
@@ -192,7 +203,7 @@ class SarcopeniaDatabase:
         
         try:
             cursor.execute('''
-                SELECT id, name, gender, age, height, weight, phone, notes, created_time, updated_time
+                SELECT id, name, gender, age, height, weight, phone, education, notes, created_time, updated_time
                 FROM patients
                 WHERE id = ? AND is_active = 1
             ''', (patient_id,))
@@ -216,7 +227,7 @@ class SarcopeniaDatabase:
         
         try:
             cursor.execute('''
-                SELECT id, name, gender, age, height, weight, phone, notes, created_time, updated_time
+                SELECT id, name, gender, age, height, weight, phone, education, notes, created_time, updated_time
                 FROM patients
                 WHERE is_active = 1 AND (name LIKE ? OR phone LIKE ? OR notes LIKE ?)
                 ORDER BY updated_time DESC
@@ -246,7 +257,7 @@ class SarcopeniaDatabase:
             fields = []
             values = []
             for key, value in kwargs.items():
-                if key in ['name', 'gender', 'age', 'height', 'weight', 'phone', 'notes']:
+                if key in ['name', 'gender', 'age', 'height', 'weight', 'phone', 'education', 'notes']:
                     fields.append(f"{key} = ?")
                     values.append(value)
             
@@ -380,7 +391,7 @@ class SarcopeniaDatabase:
                 (3, "静态站立", "脚垫", 10, 1),  
                 (4, "前后脚站立", "脚垫", 10, 1),
                 (5, "双脚前后站立", "脚垫", 10, 1),
-                (6, "4.5米步道折返", "步道", 60, 1)
+                (6, "3米步道折返", "步道", 60, 1)
             ]
             
             for step_num, step_name, device, duration, reps in test_steps:
@@ -698,7 +709,7 @@ class SarcopeniaDatabase:
         try:
             base_query = '''
                 SELECT p.id, p.name, p.gender, p.age, p.height, p.weight, 
-                       p.phone, p.created_time, p.notes
+                       p.phone, p.education, p.created_time, p.notes
                 FROM patients p
                 WHERE p.is_active = 1
             '''
@@ -752,7 +763,7 @@ class SarcopeniaDatabase:
         try:
             base_query = '''
                 SELECT p.id, p.name, p.gender, p.age, p.height, p.weight, 
-                       p.phone, p.created_time, p.notes
+                       p.phone, p.education, p.created_time, p.notes
                 FROM patients p
                 WHERE p.is_active = 1
             '''

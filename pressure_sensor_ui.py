@@ -1037,9 +1037,9 @@ class PressureSensorUI:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-第七步：4.5米步道折返    🚶
+第七步：3米步道折返    🚶
 ──────────────────────────────────────────
-• 以正常速度行走4.5米
+• 以正常速度行走3米
 • 转身后返回起点
 • 系统记录完整步态数据
 • 用途：分析步态稳定性和行走能力
@@ -4752,7 +4752,7 @@ class PressureSensorUI:
                                  style='Hospital.TButton')
         self._prev_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        # 下一步按钮
+        # 下一步按钮（用于翻页导航）
         self._next_btn = ttk.Button(self._nav_frame, 
                                  text="▶️ 下一步", 
                                  command=None,
@@ -4780,7 +4780,7 @@ class PressureSensorUI:
                 {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
                 {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
                 {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
-                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
+                {"number": 6, "name": "3米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在3米长的步道上来回行走"}
             ]
             
             # 初始化当前步骤索引（支持导航）
@@ -4866,8 +4866,8 @@ class PressureSensorUI:
                     self._action_btn.config(text=f"🔄 重新测试第{current_step['number']}步", 
                                           command=lambda: self.start_detection_step(current_step))
                 else:
-                    # 未完成，显示开始按钮
-                    self._action_btn.config(text=f"🚀 开始第{current_step['number']}步", 
+                    # 未完成，显示检测按钮
+                    self._action_btn.config(text=f"🚀 检测第{current_step['number']}步", 
                                           command=lambda: self.start_detection_step(current_step))
             
             print(f"[DEBUG] 步骤内容更新完成: 当前步骤={current_step['number']}, 状态={step_status}")
@@ -4916,7 +4916,7 @@ class PressureSensorUI:
                 {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫"},
                 {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫"},
                 {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫"},
-                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道"}
+                {"number": 6, "name": "3米步道折返", "duration": 60, "device_type": "步道"}
             ]
             
             if hasattr(self, 'current_step_index') and self.current_step_index < len(detection_steps) - 1:
@@ -5481,7 +5481,7 @@ class PressureSensorUI:
                 {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
                 {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
                 {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
-                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
+                {"number": 6, "name": "3米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在3米长的步道上来回行走"}
             ]
             
             if 0 <= step_index < len(detection_steps):
@@ -5528,7 +5528,7 @@ class PressureSensorUI:
                 {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫", "description": "请患者在脚垫上保持自然站立姿势"},
                 {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用前后脚站立姿势（一脚在前，一脚在后）"},
                 {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫", "description": "请患者采用双脚前后站立姿势，脚跟对脚尖排列"},
-                {"number": 6, "name": "4.5米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在4.5米长的步道上来回行走"}
+                {"number": 6, "name": "3米步道折返", "duration": 60, "device_type": "步道", "description": "请患者在3米长的步道上来回行走"}
             ]
             
             if self.current_session:
@@ -5695,6 +5695,7 @@ class PressureSensorUI:
                 'gender': patient_gender,  # 使用转换后的英文性别
                 'height': str(self.current_patient.get('height', '')),  # 转为字符串
                 'weight': str(self.current_patient.get('weight', '')),  # 转为字符串
+                'education': self.current_patient.get('education', '大学') or '大学',
                 'test_type': 'COMPREHENSIVE',
                 'test_names': [f"第{step['step_number']}步检测" for step in session_steps if step['status'] == 'completed']
             }
