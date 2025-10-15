@@ -2967,19 +2967,8 @@ class PressureSensorUI:
                                         # 尝试生成PDF
                                         try:
                                             self.log_ai_message("📥 转换为PDF格式...")
-                                            # 生成PDF文件名：名字_性别_年龄_当天日期
-                                            patient_name = patient_info.get('name', '未知患者')
-                                            patient_gender_raw = patient_info.get('gender', '未知')
-                                            patient_age = patient_info.get('age', '未知')
-                                            today_date = datetime.now().strftime("%Y%m%d")
-                                            
-                                            # 转换性别为中文
-                                            gender_map = {'MALE': '男', 'FEMALE': '女', 'male': '男', 'female': '女'}
-                                            patient_gender = gender_map.get(patient_gender_raw, patient_gender_raw)
-                                            
-                                            pdf_filename = f"{patient_name}_{patient_gender}_{patient_age}岁_{today_date}.pdf"
-                                            pdf_dir = os.path.dirname(report_path)
-                                            pdf_path_new = os.path.join(pdf_dir, pdf_filename)
+                                            # PDF文件名与HTML保持一致（仅替换扩展名）
+                                            pdf_path_new = report_path[:-5] + ".pdf" if report_path.lower().endswith('.html') else report_path + ".pdf"
                                             
                                             pdf_path = self.algorithm_engine.convert_html_to_pdf(report_html, pdf_path_new)
                                             if pdf_path and os.path.exists(pdf_path):

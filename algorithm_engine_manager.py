@@ -289,12 +289,13 @@ class AlgorithmEngineManager:
                 
                 reports_dir = os.path.join(base_dir, "tmp", today, "reports")
                 os.makedirs(reports_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
                 user_output = patient_info.get('output') or patient_info.get('output_path')
                 if user_output:
                     output_path = user_output
                 else:
-                    output_filename = f"{patient_name}_综合报告_{timestamp}.html"
+                    # HTML 文件名：姓名_性别_年龄_yyyyMMddHHmmss.html（性别为中文，年龄为数字）
+                    output_filename = f"{patient_name}_{patient_gender}_{str(patient_age)}_{timestamp}.html"
                     output_path = os.path.join(reports_dir, output_filename)
                 logger.info(f"报告将生成到: {output_path}")
                 
@@ -372,7 +373,8 @@ class AlgorithmEngineManager:
                         'name': patient_name,
                         'age': str(patient_age),
                         'gender': patient_gender,
-                        'patient_id': patient_info.get('patient_id', ''),
+                        # 传入真实患者ID（若有），否则留空
+                        'patient_id': str(patient_info.get('id') or patient_info.get('patient_id') or ''),
                         'department': patient_info.get('department', app_config.get('report_department', '老年康复学科')),
                         'education': patient_info.get('education', '')
                     }
