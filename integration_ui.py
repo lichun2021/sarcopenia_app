@@ -382,7 +382,7 @@ class SarcopeniaAnalysisPanel:
             # 核心评估结果
             overall_score = result_data.get('overall_score', 0)
             risk_level = result_data.get('risk_level', 'UNKNOWN')
-            confidence = result_data.get('confidence', 0)
+            # 去除置信度
             
             # 风险等级颜色和描述
             risk_info = {
@@ -396,7 +396,6 @@ class SarcopeniaAnalysisPanel:
             
             self.result_text.insert(tk.END, f"综合评分: {overall_score:.1f}/100\n")
             self.result_text.insert(tk.END, f"风险等级: {risk_display['color']} {risk_display['desc']} ({risk_level})\n")
-            self.result_text.insert(tk.END, f"置信度: {confidence:.1%}\n\n")
             
             # 医学解释
             interpretation = result_data.get('interpretation', '无解释信息')

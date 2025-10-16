@@ -636,6 +636,14 @@ class PressureSensorUI:
                     # 立即自动连接设备（解决问题1：切换设备时立即连接）
                     self.root.after(100, self.auto_connect_device)  # 快速连接
                     
+                    # 同步更新热力图到当前步骤所需设备（避免切换后热力图未更新）
+                    try:
+                        current_step_device = self.get_current_step_hardware()
+                        if isinstance(current_step_device, str) and current_step_device not in ("未知", "未开始", "检测已完成"):
+                            self.switch_to_current_heatmap({'device_type': current_step_device, 'name': '设备切换'})
+                    except Exception:
+                        pass
+                    
                 break
     
     def check_port_availability(self, port_name):
@@ -2677,7 +2685,6 @@ class PressureSensorUI:
                     'data': {
                         'overall_score': analysis_data.get('overall_score', 0),
                         'risk_level': 'LOW' if analysis_data.get('overall_score', 0) >= 70 else 'HIGH',
-                        'confidence': 0.85,
                         'analysis_summary': '多文件综合分析完成',
                         'analysis_id': 'local_' + str(int(time.time())),
                         'test_id': 'local_' + str(int(time.time())),
@@ -2926,10 +2933,7 @@ class PressureSensorUI:
                     # 显示分析结果摘要
                     overall_score = analysis_data.get('overall_score', 0)
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
-                    confidence = analysis_data.get('confidence', 0)
-                    
-                    # 评分与风险等级日志已取消
-                    self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
+                    # 评分与风险等级日志已取消（去除置信度）
                     
                     # 分析成功，获取完整结果并生成报告
                     analysis_id = analysis_data.get('analysis_id')
@@ -2999,7 +3003,7 @@ class PressureSensorUI:
 [DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
-• 置信度：{confidence:.1%}
+ 
 
 [WARN] 注意：报告生成失败，但AI分析数据完整。"""
                             
@@ -3012,7 +3016,7 @@ class PressureSensorUI:
 [DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
-• 置信度：{confidence:.1%}
+ 
 
 [WARN] 注意：无法生成报告（缺少必要ID）。"""
                         
@@ -3122,7 +3126,7 @@ class PressureSensorUI:
 ------------------------------------------
 • 综合评分: {analysis_data.get('overall_score', 0):.1f}/100
 • 风险等级: {analysis_data.get('risk_level', 'UNKNOWN')}
-• 分析置信度: {analysis_data.get('confidence', 0):.1%}
+ 
 
 🔬 详细分析数据
 ------------------------------------------"""
@@ -3323,7 +3327,7 @@ class PressureSensorUI:
         """
         overall_score = analysis_data.get('overall_score', 0)
         risk_level = analysis_data.get('risk_level', 'UNKNOWN')
-        confidence = analysis_data.get('confidence', 0)
+        
         
         # 检查报告文件类型
         import os
@@ -3341,7 +3345,7 @@ class PressureSensorUI:
 [DATA] 分析结果:
 • 综合评分: {overall_score:.1f}/100
 • 风险等级: {risk_level}
-• 置信度: {confidence:.1%}
+ 
 
 [INFO] {file_type}已生成: {filename}
 
@@ -4300,7 +4304,11 @@ class PressureSensorUI:
                 print(f"[DEBUG] 重置当前步骤索引")
             
             # 创建新的检测会话
-            session_name = f"检测-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            # 统一本次会话的文件时间戳（用于所有步骤CSV命名确保一致）
+            session_token = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.session_timestamp_token = session_token
+            # 保持会话名原有格式（不含下划线），便于恢复时解析
+            session_name = f"检测-{session_token.replace('_', '')}"
             print(f"[DEBUG] 创建会话: 患者ID={self.current_patient['id']}, 会话名={session_name}")
             session_id = db.create_test_session(self.current_patient['id'], session_name)
             print(f"[DEBUG] 创建会话结果: session_id={session_id}")
@@ -4396,6 +4404,19 @@ class PressureSensorUI:
                 'current_step': session['current_step'],
                 'total_steps': session['total_steps']
             }
+
+            # 从会话名解析统一时间戳（YYYYmmdd_HHMMSS），用于统一CSV命名
+            try:
+                import re
+                name = self.current_session.get('session_name') or ''
+                m = re.search(r'(\d{14})$', name)
+                if m:
+                    raw = m.group(1)
+                    self.session_timestamp_token = f"{raw[:8]}_{raw[8:]}"
+                else:
+                    self.session_timestamp_token = datetime.now().strftime('%Y%m%d_%H%M%S')
+            except Exception:
+                self.session_timestamp_token = datetime.now().strftime('%Y%m%d_%H%M%S')
             
             self.detection_in_progress = True
             
@@ -4927,6 +4948,27 @@ class PressureSensorUI:
                     completed_steps = len([step for step in session_steps if step['status'] == 'completed'])
                     self.current_step_index = completed_steps
             
+            # 在刷新界面前，先根据下一步所需设备切换设备与热力图
+            try:
+                # 计算下一步的设备类型
+                detection_steps = [
+                    {"number": 1, "name": "静坐检测", "duration": 10, "device_type": "坐垫"},
+                    {"number": 2, "name": "起坐测试", "duration": 30, "device_type": "坐垫"},
+                    {"number": 3, "name": "静态站立", "duration": 10, "device_type": "脚垫"},
+                    {"number": 4, "name": "前后脚站立", "duration": 10, "device_type": "脚垫"},
+                    {"number": 5, "name": "双脚前后站立", "duration": 10, "device_type": "脚垫"},
+                    {"number": 6, "name": "3米步道折返", "duration": 60, "device_type": "步道"}
+                ]
+                if 0 <= self.current_step_index < len(detection_steps):
+                    next_step = detection_steps[self.current_step_index]
+                    next_device = next_step['device_type']
+                    # 切换设备
+                    self.switch_main_ui_device(next_device)
+                    # 切换热力图
+                    self.switch_to_current_heatmap({'device_type': next_device, 'name': next_step['name']})
+            except Exception:
+                pass
+            
             # 刷新界面显示下一步
             self.refresh_embedded_detection()
             
@@ -5141,6 +5183,7 @@ class PressureSensorUI:
             import csv
             import os
             from datetime import datetime
+            import re
             
             # 创建按日期组织的数据目录
             today = datetime.now().strftime("%Y-%m-%d")
@@ -5148,12 +5191,25 @@ class PressureSensorUI:
             os.makedirs(data_dir, exist_ok=True)
             
             # 生成文件名 - 使用患者姓名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 使用会话统一时间戳（若不可用，则从会话名解析；再退回当前时间）
+            timestamp = None
+            if hasattr(self, 'session_timestamp_token') and self.session_timestamp_token:
+                timestamp = self.session_timestamp_token
+            elif self.current_session and self.current_session.get('session_name'):
+                m = re.search(r'(\d{14})$', self.current_session['session_name'])
+                if m:
+                    raw = m.group(1)
+                    timestamp = f"{raw[:8]}_{raw[8:]}"
+            if not timestamp:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             patient_name = self.current_patient['name'] if self.current_patient else "未知患者"
             step_number = step_info.get('number', 1)
             step_name = step_info.get('name', '未知步骤')
             filename = f"{patient_name}-第{step_number}步-{step_name}-{timestamp}.csv"
             self.current_data_file = os.path.join(data_dir, filename)
+            
+            # 若文件已存在（单步重新开始），则覆盖写入
+            # 这里直接以 'w' 模式创建即可覆盖，确保后续写入行以追加
             
             # 创建CSV文件并写入正确的头格式
             with open(self.current_data_file, 'w', newline='', encoding='utf-8') as f:
@@ -5771,10 +5827,7 @@ class PressureSensorUI:
                     # 显示分析结果摘要
                     overall_score = analysis_data.get('overall_score', 0)
                     risk_level = analysis_data.get('risk_level', 'UNKNOWN')
-                    confidence = analysis_data.get('confidence', 0)
-                    
-                    # 评分与风险等级日志已取消
-                    self.log_ai_message(f"🎯 置信度: {confidence:.1%}")
+                    # 评分与风险等级日志已取消（去除置信度）
                     
                     # 使用与CSV导入相同的逻辑获取报告
                     analysis_id = analysis_data.get('analysis_id')
@@ -5837,7 +5890,7 @@ class PressureSensorUI:
                                                         analysis_type="AI分析报告",
                                                         analysis_data=analysis_data,
                                                         ai_report_path=pdf_path,
-                                                        confidence_score=analysis_data.get('confidence', 0)
+                                                        confidence_score=None
                                                     )
                                                     self.log_ai_message(f"[INFO] 报告路径已保存到数据库")
                                                 except Exception as db_error:
@@ -5854,7 +5907,7 @@ class PressureSensorUI:
                                                         analysis_type="AI分析报告",
                                                         analysis_data=analysis_data,
                                                         ai_report_path=report_path,
-                                                        confidence_score=analysis_data.get('confidence', 0)
+                                                        confidence_score=None
                                                     )
                                                     self.log_ai_message(f"[INFO] HTML报告路径已保存到数据库")
                                                 except Exception as db_error:
@@ -5883,7 +5936,7 @@ class PressureSensorUI:
 [DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
-• 置信度：{confidence:.1%}
+ 
 
 [WARN] 注意：报告生成失败，但AI分析数据完整。"""
                             
@@ -5896,7 +5949,7 @@ class PressureSensorUI:
 [DATA] 分析结果：
 • 综合评分：{overall_score:.1f}/100  
 • 风险等级：{risk_level}
-• 置信度：{confidence:.1%}
+ 
 
 [WARN] 注意：无法生成报告（缺少必要ID）。"""
                         

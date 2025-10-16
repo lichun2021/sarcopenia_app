@@ -36,6 +36,22 @@ class DetectionWizardDialog:
         self.session_info = session_info
         self.total_steps = 6
         
+        # 统一本会话的文件时间戳，用于每步CSV命名一致
+        # 优先从会话名解析 YYYYmmdd_HHMMSS，其次使用当前时间
+        try:
+            import re
+            token = None
+            if session_info and 'session_name' in session_info and session_info['session_name']:
+                m = re.search(r'(\d{14})$', session_info['session_name'])
+                if m:
+                    raw = m.group(1)
+                    token = f"{raw[:8]}_{raw[8:]}"
+            if not token:
+                token = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.session_timestamp_token = token
+        except Exception:
+            self.session_timestamp_token = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
         # 从会话信息中恢复当前步骤
         if session_info and 'id' in session_info:
             # 获取已完成的步骤信息
@@ -560,6 +576,13 @@ class DetectionWizardDialog:
             
             # 启动计时器
             self.start_timer()
+
+            # 额外：开始后确保热力图也切换到当前设备
+            self.switch_main_ui_device(device_type)
+            if hasattr(self, 'main_ui') and hasattr(self.main_ui, 'switch_to_current_heatmap'):
+                step_cfg = self.steps_config.get(self.current_step, {}) if hasattr(self, 'steps_config') else {}
+                step_name = step_cfg.get('name', f"第{self.current_step}步")
+                self.main_ui.switch_to_current_heatmap({'device_type': device_type, 'name': step_name})
             
         except Exception as e:
             messagebox.showerror("错误", f"开始检测失败：{e}")
@@ -739,6 +762,7 @@ class DetectionWizardDialog:
         """创建当前步骤的数据文件"""
         try:
             import csv
+            import re
             
             # 创建按日期组织的数据目录
             today = datetime.now().strftime("%Y-%m-%d")
@@ -746,13 +770,23 @@ class DetectionWizardDialog:
             os.makedirs(data_dir, exist_ok=True)
             
             # 生成文件名 - 使用患者姓名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 使用会话统一时间戳（若无则回退当前时间）
+            timestamp = None
+            if hasattr(self, 'session_timestamp_token') and self.session_timestamp_token:
+                timestamp = self.session_timestamp_token
+            elif self.session_info and self.session_info.get('session_name'):
+                m = re.search(r'(\d{14})$', self.session_info['session_name'])
+                if m:
+                    raw = m.group(1)
+                    timestamp = f"{raw[:8]}_{raw[8:]}"
+            if not timestamp:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             step_config = self.steps_config[self.current_step]
             patient_name = self.patient_info['name']
             filename = f"{patient_name}-第{self.current_step}步-{step_config['name']}-{timestamp}.csv"
             self.current_data_file = os.path.join(data_dir, filename)
             
-            # 创建CSV文件并写入正确的头格式
+            # 创建CSV文件并写入正确的头格式（若存在则覆盖，满足单步重测覆盖需求）
             with open(self.current_data_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # 写入CSV头：time,max,timestamp,area,press,data
@@ -902,6 +936,17 @@ class DetectionWizardDialog:
         """自动跳转到下一步"""
         try:
             if self.current_step < self.total_steps:
+                # 在跳转前确保主界面设备与热力图切至下一个步骤所需设备
+                try:
+                    next_step_number = self.current_step + 1
+                    next_step_config = self.steps_config[next_step_number]
+                    next_device = next_step_config.get('device') or next_step_config.get('device_type')
+                    if next_device:
+                        self.switch_main_ui_device(next_device)
+                        if hasattr(self, 'main_ui') and hasattr(self.main_ui, 'switch_to_current_heatmap'):
+                            self.main_ui.switch_to_current_heatmap({'device_type': next_device, 'name': next_step_config['name']})
+                except Exception:
+                    pass
                 self.next_step()
             # 重置自动完成标记
             if hasattr(self, '_auto_finishing'):

@@ -112,6 +112,38 @@ class AlgorithmEngineManager:
             except Exception:
                 pass
 
+    def _copy_file_with_retry(self, src: str, dst: str, max_attempts: int = 10, sleep_seconds: float = 0.2) -> None:
+        """在Windows上带重试地复制文件，缓解 WinError 32 文件被占用问题。
+
+        会尝试短暂打开源文件，若失败或复制异常则退避重试。
+        成功复制且目标文件存在且非空即返回，耗尽重试则抛出最后一次异常。
+        """
+        import shutil
+        last_err = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # 确认源文件可读（若被独占占用，open 可能抛出异常）
+                with open(src, 'rb'):
+                    pass
+                shutil.copy2(src, dst)
+                if os.path.exists(dst):
+                    try:
+                        if os.path.getsize(dst) > 0:
+                            return
+                    except Exception:
+                        # 无法获取大小也视为已复制，避免误报
+                        return
+            except Exception as e:
+                last_err = e
+                try:
+                    logger.warning(f"复制文件失败(第{attempt}次): {src} -> {dst}, 原因: {e}")
+                except Exception:
+                    pass
+                time.sleep(sleep_seconds * attempt)
+        # 耗尽重试仍失败
+        if last_err:
+            raise last_err
+
     from contextlib import contextmanager
     @contextmanager
     def _capture_gemsage_prints(self, prefix: str = "GemSage"):
@@ -233,6 +265,7 @@ class AlgorithmEngineManager:
             today = datetime.now().strftime("%Y-%m-%d")
             parse_dir = None
             discovered_files_count = 0
+            selected_files = None  # 若提供的是具体文件路径列表，则直接使用这些文件
             if isinstance(csv_files, str) and os.path.isdir(csv_files):
                 parse_dir = csv_files
                 import glob as _glob
@@ -248,19 +281,23 @@ class AlgorithmEngineManager:
                 temp_dir = os.path.join("tmp", today, "detection_data")
                 os.makedirs(temp_dir, exist_ok=True)
                 temp_csv_paths = []
+                selected_files = []
                 for i, csv_file in enumerate(csv_files):
                     original_name = os.path.basename(csv_file)
                     temp_path = os.path.join(temp_dir, original_name)
                     if os.path.exists(csv_file):
-                        import shutil
-                        shutil.copy2(csv_file, temp_path)
+                        # 不再强制复制，直接使用现有CSV路径，避免WinError 32
+                        selected_files.append(csv_file)
                     else:
                         with open(temp_path, 'w', encoding='utf-8') as f:
                             f.write(csv_file)
-                    temp_csv_paths.append(temp_path)
+                        temp_csv_paths.append(temp_path)
+                        selected_files.append(temp_path)
                     logger.info(f"  文件 {i+1}: {original_name}")
-                parse_dir = temp_dir
-                discovered_files_count = len(temp_csv_paths)
+                # 当存在从纯文本写入的临时文件时，parse_dir 指向该目录；否则保持None
+                if temp_csv_paths:
+                    parse_dir = temp_dir
+                discovered_files_count = len(selected_files) if selected_files else len(temp_csv_paths)
             
             # 使用GemSage单文件处理多文件
             patient_name = patient_info.get('name', '测试者')
@@ -305,8 +342,18 @@ class AlgorithmEngineManager:
                 walking_sr = None
                 sitstand_sr = None
                 standing_sr = None
+                import glob
+                # 优先使用明确传入的文件列表；仅在提供目录时遍历目录下的CSV
+                input_files = None
+                if selected_files and isinstance(selected_files, list) and len(selected_files) > 0:
+                    input_files = selected_files
+                elif parse_dir:
+                    input_files = glob.glob(os.path.join(parse_dir, '*.csv'))
+                else:
+                    input_files = []
+
                 with self._capture_gemsage_prints():
-                    for file_path in glob.glob(os.path.join(parse_dir, '*.csv')):
+                    for file_path in input_files:
                         filename = os.path.basename(file_path)
                         if '第1步' in filename or '静坐' in filename:
                             data, sr = generator.parse_csv_data(file_path)
@@ -444,7 +491,6 @@ class AlgorithmEngineManager:
                 'data': {
                     'overall_score': overall_score,
                     'risk_level': 'LOW' if overall_score >= 70 else 'HIGH',
-                    'confidence': 0.85,
                     'analysis_summary': f'综合分析{len(csv_files)}个文件完成',
                     'gait_parameters': gait_params,
                     'balance_analysis': combined_result.get('balance_analysis', {}),
@@ -1012,7 +1058,7 @@ class AlgorithmEngineManager:
 AI智能评估结果:
 • 综合评分: {ai_assessment.overall_score:.1f}/100 分
 • 风险等级: {risk_text}
-• AI置信度: {ai_assessment.confidence:.1f}%
+ 
 • 六维度评分: {dimension_text}
 • 评估明细: {len(detailed_report.评估明细)} 项发现
 • 诊断建议: {len(diagnostic_suggestions)} 条建议

@@ -46,6 +46,15 @@ if exist dist (
     ) else (
         echo 警告：未找到 icon.ico，跳过复制
     )
+
+    echo 复制 config.ini 到 dist 根目录...
+    if exist config.ini (
+        copy /Y "config.ini" "dist\config.ini" >nul
+    ) else (
+        echo 警告：未找到 config.ini，跳过复制
+    )
+
+    
 )
 
 if exist dist\SarcopeniaApp.exe (
